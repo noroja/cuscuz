@@ -2788,6 +2788,43 @@ mark.exam-highlight {
           </div>
           <div class="cards-grid" id="decks-grid"></div>
         </div>
+
+        <!-- MODAL: Importar flashcards do Anki -->
+        <div id="modal-anki-import" class="modal-overlay" style="display:none">
+          <div class="modal-content" style="max-width:640px;max-height:85vh;overflow-y:auto">
+            <div class="modal-header">
+              <h3 style="margin:0;font-size:18px">📥 Importar Flashcards do Anki</h3>
+              <button class="modal-close" onclick="fecharModalAnki()">&times;</button>
+            </div>
+            <div class="modal-body" style="padding:20px 0">
+              <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
+                Os arquivos <code>.apkg</code> são do Anki Desktop. Para importar aqui, exporte do Anki como
+                <b>Texto separado por tab (TSV)</b> e cole abaixo, ou baixe o arquivo da pasta do Drive.
+              </p>
+              <div style="margin-bottom:20px">
+                <label style="display:block;font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px">
+                  Arquivos .apkg na pasta do Drive
+                </label>
+                <div id="anki-lista-apkg" style="max-height:260px;overflow-y:auto;border:1px solid var(--border-muted);border-radius:8px;padding:10px;background:var(--bg-surface)">
+                  <div style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">Carregando…</div>
+                </div>
+              </div>
+              <div style="margin-bottom:16px">
+                <label style="display:block;font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px">
+                  Ou cole o conteúdo exportado (TSV/CSV) do Anki
+                </label>
+                <textarea id="anki-tsv-colado" rows="6" style="width:100%;font-family:var(--font-mono);font-size:12px;padding:10px;border-radius:8px;background:var(--bg-elevated);border:1px solid var(--border-muted);color:var(--text-primary)" placeholder="Frente\tVerso\tAssunto
+O que é infarto?\tObstrução de artéria coronariana\tCardiologia
+Sintomas de pneumonia\tFebre, tosse, dispneia\tPneumologia"></textarea>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Formato: frente \t verso \t assunto (opcional). Separe por tab ou vírgula.</div>
+              </div>
+              <div class="modal-actions" style="display:flex;gap:10px;justify-content:flex-end">
+                <button class="btn-outline" onclick="fecharModalAnki()">Cancelar</button>
+                <button class="btn-primary" onclick="importarAnkiTSVColado()">Importar cards colados</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- TELA DO SIMULADOR DE PROVA (TREINO LIVRE RUNNER) -->
@@ -11762,22 +11799,76 @@ function enterDriveCourse(id, name) {
 <script type="module" src="/js/medreader-integracao.js"></script>
 <script type="module" src="/js/anki-importer.js"></script>
 <script type="module">
+  function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+<script type="module">
   import { importarAnki } from '/js/anki-importer.js';
   window.importarAnkiDoDrive = async function() {
-    const arquivos = await importarAnki();
-    if (!arquivos || !arquivos.length) {
-      toast('Nenhum arquivo .apkg encontrado na pasta configurada no Drive.','info');
-      return;
+    const modal = document.getElementById('modal-anki-import');
+    if (modal) modal.style.display = 'flex';
+    carregarListaApkg();
+  };
+  window.fecharModalAnki = function() {
+    const modal = document.getElementById('modal-anki-import');
+    if (modal) modal.style.display = 'none';
+  };
+  async function carregarListaApkg() {
+    const el = document.getElementById('anki-lista-apkg');
+    if (!el) return;
+    try {
+      const r = await fetch('/api/anki/importar', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const j = await r.json();
+      const arquivos = (j && j.arquivos) || [];
+      if (!arquivos.length) {
+        el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:20px">Nenhum .apkg encontrado na pasta configurada.</div>';
+        return;
+      }
+      el.innerHTML = arquivos.map(a => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 4px;border-bottom:1px solid var(--border-subtle);font-size:12px">
+          <span title="${esc(a.name)}">${esc(a.name)}</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn-outline btn-sm" onclick="baixarApkg('${a.id}','${esc(a.name)}')" style="font-size:10px;padding:2px 6px">Baixar</button>
+            <button class="btn-outline btn-sm" onclick="abrirDrive('${a.webViewLink}')" style="font-size:10px;padding:2px 6px">Drive</button>
+          </div>
+        </div>
+      `).join('');
+    } catch (e) {
+      el.innerHTML = '<div style="font-size:12px;color:var(--rose);padding:20px">Erro ao carregar: ' + esc(String(e.message)) + '</div>';
     }
+  }
+  window.baixarApkg = async function(fileId, nome) {
+    if (!fileId) return;
+    window.location.href = '/api/anki/download/' + encodeURIComponent(fileId);
+    toast('Baixando ' + nome + '…','info');
+  };
+  window.abrirDrive = function(url) {
+    if (!url) return;
+    window.open(url, '_blank');
+  };
+  window.importarAnkiTSVColado = function() {
+    const ta = document.getElementById('anki-tsv-colado');
+    if (!ta) return;
+    const texto = ta.value.trim();
+    if (!texto) { toast('Cole o conteúdo primeiro','warning'); return; }
+    const linhas = texto.split(/\r?\n/).filter(l => l.trim());
     let n = 0;
-    for (const a of arquivos) {
-      FCS.push({ f: a.name.replace('.apkg',''), b: 'Baixar: ' + (a.webViewLink || '#'), s: 'Anki' });
+    for (const linha of linhas) {
+      // suporta tab, vírgula ou ponto-e-vírgula
+      const partes = linha.split(/\t|;|,/).map(p => p.trim()).filter(Boolean);
+      if (partes.length < 2) continue;
+      FCS.push({ f: partes[0], b: partes[1], s: partes[2] || 'Anki' });
       n++;
     }
+    if (n === 0) { toast('Nenhum card válido encontrado','warning'); return; }
     saveFC();
     renderDecks();
-    toast(n + ' card(s) do Anki importado(s) — aparecem na revisão de hoje','success');
+    fecharModalAnki();
+    ta.value = '';
+    toast(n + ' card(s) importado(s) — aparecem na revisão de hoje','success');
   };
+  // fecha modal clicando fora
+  document.getElementById('modal-anki-import')?.addEventListener('click', (e) => {
+    if (e.target.id === 'modal-anki-import') fecharModalAnki();
+  });
 </script>
 <script defer src="/js/onboarding-tour.js"></script>
 

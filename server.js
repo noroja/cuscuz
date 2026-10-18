@@ -3610,6 +3610,31 @@ app.post('/api/anki/importar', async (req, res) => {
   }
 });
 
+/* ═══ DOWNLOAD DE .APKG DO DRIVE ══════════════════════════════════════════════════════
+   Proxy de download para o navegador salvar o .apkg (ou abrir no Drive). ═══════════════════════════════════════════════════ */
+app.get('/api/anki/download/:fileId', async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    if (!fileId) return res.status(400).json({ success: false, error: 'fileId obrigatório' });
+    const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+    const r = await driveFetchWithRetry(url, { signal: AbortSignal.timeout(120000) });
+    if (!r.ok) {
+      const texto = await r.text().catch(() => '');
+      return res.status(r.status).json({ success: false, error: `Drive ${r.status}: ${texto.slice(0, 200)}` });
+    }
+    const nome = r.headers.get('content-disposition') || 'arquivo.apkg';
+    const m = nome.match(/filename="?([^"]+)"?/);
+    const fileName = m ? m[1] : 'arquivo.apkg';
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    const body = await r.buffer();
+    return res.send(body);
+  } catch (err) {
+    console.error('[Anki Download]', err && err.message);
+    res.status(500).json({ success: false, error: err && err.message });
+  }
+});
+
 // Serve static assets from root directory
 app.use(express.static(__dirname, {
   dotfiles: 'deny',
