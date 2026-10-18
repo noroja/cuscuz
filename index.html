@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#080c14">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/css/medreader.css">
+<link rel="stylesheet" href="/css/onboarding-tour.css">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -4661,7 +4662,8 @@ function applyCloud(cl){lsSet(LS,Object.assign(JSON.parse(JSON.stringify(DEFDB))
  lsSet('acv_resumos',cl.resumos||{});lsSet('acv_fc',cl.fc||[]);lsSet('acv_fc_srs',cl.fcsrs||{});if(cl.plv2)lsSet('planner-v2-plan',cl.plv2)}
 
 function startApp(){
- $('login-screen').style.display='none'; 
+ window.CuscuzTour && window.CuscuzTour.onAppReady(); // dispara o tour de boas-vindas no 1º acesso
+ $('login-screen').style.display='none';
  goToLobby(); // Vai pro lobby primeiro para tocar a música
  catalog();refreshAll();setDot(CLOUD_ON?'ok':'off');
  loadDriveFolder(DRIVE_ROOT_ID, 'Cursos', false);
@@ -11727,5 +11729,6 @@ function enterDriveCourse(id, name) {
 <script defer type="module" src="/js/medreader-flashcards.js"></script>
 <script defer type="module" src="/js/medreader-export.js"></script>
 <script defer src="/js/medreader-integracao.js"></script>
+<script defer src="/js/onboarding-tour.js"></script>
 </body>
 </html>
