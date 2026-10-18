@@ -590,7 +590,7 @@ async function materiaisDoDrivePorPasta(parentId) {
 
 function materiaisDoCatalogoPorPasta(parentId) {
   const cat = lerExtra();
-  if (!cat || !parent) return null;
+  if (!cat || !parentId) return null;
   const pdfs = [], apostilas = [];
   for (const m of (cat.materials || [])) {
     if (m.pid !== parentId) continue;
