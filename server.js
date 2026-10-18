@@ -6,6 +6,7 @@ import {
   GOOGLE_DRIVE_RECORDINGS_FOLDER_ID, getDriveStatus, uploadToDrive,
   createFolder, findFolderByName, listFolder, getFileMeta, temConta, emailConta
 } from './src/drive.js';
+import { registerAuthRoutes, authMiddleware } from './src/auth-multiuser.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,6 +14,12 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+
+// Registrar rotas de autenticação (Supabase + fallback local)
+registerAuthRoutes(app);
+
+// Middleware de autenticação para rotas /api (exceto /api/auth/*, /api/health, /api/config e /api/drive/*)
+app.use('/api', authMiddleware);
 
 // Servir arquivos estáticos (index.html, css, js, etc.)
 app.use(express.static(path.join(__dirname), { index: 'index.html' }));
