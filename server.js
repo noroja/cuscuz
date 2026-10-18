@@ -699,13 +699,18 @@ app.get('/api/drive/materials', async (req, res) => {
   }
   // Now moduleId is the grandparent if possible, else parent, else video's parent
   const pdfs = [], apostilas = [];
+  const vistosPdf = new Set(), vistosHtml = new Set(); // evita o mesmo nome repetido (ex.: "Apostila - PED 1.pdf" em varias subpastas)
   for (const m of (cat.materials || [])) {
     if (!isDescendantOf(m.pid, moduleId)) continue;
     const nome = String(m.d || '');
     const lower = nome.toLowerCase();
     if (lower.endsWith('.pdf')) {
+      if (vistosPdf.has(lower)) continue;
+      vistosPdf.add(lower);
       pdfs.push({ id: m.id, nome, isHtml: false, aulaNome: '', url: '' });
     } else if (lower.endsWith('.html') || lower.endsWith('.htm')) {
+      if (vistosHtml.has(lower)) continue;
+      vistosHtml.add(lower);
       apostilas.push({ id: m.id, nome, isHtml: true, aulaNome: '', url: '' });
     }
   }
