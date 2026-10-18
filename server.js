@@ -17,9 +17,9 @@ import { registerPlanner } from './src/planner-routes.js';
 import { registerAula } from './src/aula.js';
 import { registerApostilaReader } from './src/apostila-reader.js';
 import { registerAuthRoutes, authMiddleware, getUserFilePath, getUserDataDir, validateSession, updateUserProfile } from './src/auth-multiuser.js';
-import { varrerExtras, juntar as juntarExtras, lerExtra, STATUS as EXTRA_STATUS, EXTRA_IDS, setCatalogo } from './src/extra-drive.js';
+import { varrerExtras, juntar as juntarExtras, lerExtra, STATUS as EXTRA_STATUS, EXTRA_IDS, setCatalogo, CAT } from './src/extra-drive.js';
 import { resetCatalogo } from './src/planner-engine.js';
-import { temConta, emailConta, erroConta, driveFetchWithRetry, cleanDriveId } from './src/drive-auth.js';
+import { temConta, emailConta, erroConta, driveFetch, authHeaders, driveFetchWithRetry, cleanDriveId } from './src/drive-auth.js';
 import { uploadToDrive, createFolder, findFolderByName, GOOGLE_DRIVE_RECORDINGS_FOLDER_ID as DRIVE_RECORDINGS_ID } from './src/drive.js';
 import { downloadCatalogFromSupabase, supabaseCatalogReady, ensureSupabaseBucket } from './src/supabase-catalog.js';
 

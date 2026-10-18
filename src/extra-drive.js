@@ -53,7 +53,7 @@ export const TOKEN_FILE = path.join(VOLUME_DIR, 'sync-token.json');        // St
 
 /* Catálogo em memória (carregado do volume no boot; enriquecido na varredura).
    folders: { id: { name, parent } } → mapa da árvore p/ recriar caminhos no Delta. */
-let CAT = { generatedAt: null, roots: [], videos: [], materials: [], folders: {} };
+export let CAT = { generatedAt: null, roots: [], videos: [], materials: [], folders: {} };
 let TOKEN = null;
 let MEMLEGADO = null; // catálogo antigo (modo "catálogo fixo + extras")
 
