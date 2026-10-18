@@ -6,7 +6,23 @@ import {
   GOOGLE_DRIVE_RECORDINGS_FOLDER_ID, getDriveStatus, uploadToDrive,
   createFolder, findFolderByName, listFolder, getFileMeta, temConta, emailConta
 } from './src/drive.js';
-import { registerAuthRoutes, authMiddleware } from './src/auth-multiuser.js';
+
+// Importar auth com tratamento de erro
+let registerAuthRoutes, authMiddleware;
+try {
+  const authModule = await import('./src/auth-multiuser.js');
+  registerAuthRoutes = authModule.registerAuthRoutes;
+  authMiddleware = authModule.authMiddleware;
+  console.log('✅ [Auth] Módulo de autenticação carregado com sucesso');
+} catch (e) {
+  console.error('❌ [Auth] Falha ao carregar módulo de autenticação:', e.message);
+  registerAuthRoutes = (app) => {
+    app.post('/api/auth/login', (req, res) => {
+      res.status(500).json({ success: false, error: 'Módulo de autenticação não carregado' });
+    });
+  };
+  authMiddleware = (req, res, next) => next();
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,8 +31,19 @@ const app = express();
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
+// Log de requisições para debug
+app.use('/api', (req, res, next) => {
+  console.log(`[API] ${req.method} ${req.path}`);
+  next();
+});
+
 // Registrar rotas de autenticação (Supabase + fallback local)
-registerAuthRoutes(app);
+try {
+  registerAuthRoutes(app);
+  console.log('✅ [Auth] Rotas de autenticação registradas');
+} catch (e) {
+  console.error('❌ [Auth] Falha ao registrar rotas de autenticação:', e.message);
+}
 
 // Middleware de autenticação para rotas /api (exceto /api/auth/*, /api/health, /api/config e /api/drive/*)
 app.use('/api', authMiddleware);
@@ -260,7 +287,7 @@ app.post('/api/recordings', async (req, res) => {
       return res.status(400).json({ error: 'fileData é obrigatório', success: false });
     }
 
-    const fileData = req.body.fileData; // base64 ou Buffer
+    const fileData = req.body.fileData;
     const buffer = Buffer.isBuffer(fileData) ? fileData : Buffer.from(fileData, 'base64');
 
     // Nome do arquivo: aula-AAAA-MM-DD-HHmm.webm
@@ -328,4 +355,5 @@ app.listen(PORT, HOST, () => {
       console.log(`   Pasta de gravações: ${GOOGLE_DRIVE_RECORDINGS_FOLDER_ID}`);
     }
   }
+  console.log(`   Auth routes: registradas`);
 });
