@@ -128,7 +128,17 @@ export async function getApostilaHtml(fileId) {
     try {
       const resp = await driveFetch(url, { signal: AbortSignal.timeout(15000) });
       if (resp.ok) {
+        const ctype = String(resp.headers.get('content-type') || '').toLowerCase();
+        // Arquivo binário (PDF etc.) não é apostila HTML: não lê como texto nem coloca em cache
+        if (/application\/(pdf|octet-stream|zip)|^(image|video|audio)\//.test(ctype) && !/html/.test(ctype)) {
+          lastErr = new Error('O arquivo não é uma apostila HTML (' + ctype + ')');
+          continue;
+        }
         const text = await resp.text();
+        if (/^\s*%PDF-/.test(text)) {
+          lastErr = new Error('O arquivo é um PDF, não uma apostila HTML');
+          continue;
+        }
         if (text && text.length > 50) {
           html = text;
           break;

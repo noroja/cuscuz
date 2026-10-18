@@ -153,7 +153,7 @@ function medreaderCarregarMateriaisDaAula(aula) {
 
   (materiais || []).forEach((m) => {
     const nome = String(m.nome || '');
-    const isApostila = m.isHtml || /^(html|htm)$/i.test(nome.split('.').pop() || '') || nome.toLowerCase().includes('apostila');
+    const isApostila = m.isHtml === true || /^(html|htm)$/i.test(nome.split('.').pop() || '');
     const entry = {
       id: m.id,
       nome: nome.endsWith('.pdf') || nome.endsWith('.html') || nome.endsWith('.htm') ? nome : nome + '.pdf',
