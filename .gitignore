@@ -19,3 +19,7 @@ data/questions-bank.json
 data/questions-bank.json.tmp
 data/hwq-mirror.json
 data/extra-manifest.json
+
+# Gerados ao vivo pela sincronização incremental (Changes API) — ficam no volume /app/data
+data/acervo-manifest.json
+data/sync-token.json
