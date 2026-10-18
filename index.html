@@ -2783,6 +2783,7 @@ mark.exam-highlight {
               <button class="btn-outline btn-sm" onclick="startWrongQuiz()"><i class="ph ph-rotate-ccw"></i> Revisar erradas (<span id="wrong-count">0</span>)</button>
               <button class="btn-outline btn-sm" onclick="openFCModal()"><i class="ph ph-plus"></i> Novo card</button>
               <button class="btn-outline btn-sm" onclick="exportAnki()"><i class="ph ph-download-simple"></i> Exportar p/ Anki</button>
+              <button class="btn-outline btn-sm" onclick="importarAnkiDoDrive()"><i class="ph ph-upload"></i> Importar do Anki (.apkg)</button>
             </div>
           </div>
           <div class="cards-grid" id="decks-grid"></div>
@@ -11759,6 +11760,25 @@ function enterDriveCourse(id, name) {
 <script defer type="module" src="/js/medreader-flashcards.js"></script>
 <script defer type="module" src="/js/medreader-export.js"></script>
 <script type="module" src="/js/medreader-integracao.js"></script>
+<script type="module" src="/src/anki-importer.js"></script>
+<script type="module">
+  import { importarAnki } from '/src/anki-importer.js';
+  window.importarAnkiDoDrive = async function() {
+    const arquivos = await importarAnki();
+    if (!arquivos || !arquivos.length) {
+      toast('Nenhum arquivo .apkg encontrado na pasta configurada no Drive.','info');
+      return;
+    }
+    let n = 0;
+    for (const a of arquivos) {
+      FCS.push({ f: a.name.replace('.apkg',''), b: 'Baixar: ' + (a.webViewLink || '#'), s: 'Anki' });
+      n++;
+    }
+    saveFC();
+    renderDecks();
+    toast(n + ' card(s) do Anki importado(s) — aparecem na revisão de hoje','success');
+  };
+</script>
 <script defer src="/js/onboarding-tour.js"></script>
 
 <script>
