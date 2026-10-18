@@ -209,7 +209,11 @@ export async function uploadToDrive(fileBuffer, fileName, mimeType = 'audio/webm
 
   if (!initResp.ok) {
     const texto = await initResp.text().catch(() => '');
-    throw new Error('Falha ao iniciar upload no Drive: ' + initResp.status + ' ' + texto);
+    const msg = 'Falha ao iniciar upload no Drive: ' + initResp.status + ' ' + texto;
+    if (/storageQuotaExceeded|do not have storage quota/.test(texto)) {
+      throw new Error(msg + ' | DICA: Service Accounts não têm cota de armazenamento própria. Use uma pasta dentro de um Shared Drive (Google Workspace) como GOOGLE_DRIVE_RECORDINGS_FOLDER_ID, ou configure OAuth delegation (domain-wide delegation) em vez de Service Account.');
+    }
+    throw new Error(msg);
   }
 
   const uploadUrl = initResp.headers.get('Location');

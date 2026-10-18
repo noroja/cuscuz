@@ -92,6 +92,20 @@ app.use((req, res, next) => {
 // Initialize Google Gemini Client with official @google/genai SDK
 const geminiApiKey = process.env.GEMINI_API_KEY;
 let ai = null;
+// Circuit breaker de quota do Gemini: quando a API retorna 429 (quota esgotada),
+// bloqueia novas chamadas até o tempo de retry expirar (evita poluir logs e gastar tentativas inúteis).
+let geminiQuotaBlockedUntil = 0;
+const GEMINI_QUOTA_DEFAULT_BLOCK_MS = 8 * 60 * 60 * 1000; // 8h padrão se o retryDelay não vier parseável
+
+function parseRetryDelayMs(err) {
+  try {
+    const msg = String(err.message || err || '');
+    const m = msg.match(/"retryDelay"\s*:\s*"(\d+)s"/);
+    if (m) return parseInt(m[1], 10) * 1000;
+  } catch (_) {}
+  return null;
+}
+
 function getGeminiClient() {
   if (ai) return ai;
   const key = process.env.GEMINI_API_KEY;
@@ -118,6 +132,15 @@ getGeminiClient();
 async function generateWithGemini(params) {
   const client = getGeminiClient();
   if (!client) throw new Error('GEMINI_API_KEY não configurada no servidor.');
+
+  // Circuit breaker: se a quota está esgotada, não bate na API até o tempo de retry expirar
+  const agora = Date.now();
+  if (agora < geminiQuotaBlockedUntil) {
+    const restanteMs = geminiQuotaBlockedUntil - agora;
+    const restanteMin = Math.ceil(restanteMs / 60000);
+    throw new Error(`Gemini quota esgotada — tente novamente em aproximadamente ${restanteMin} min.`);
+  }
+
   const models = ['gemini-3.8-flash'];
   let lastErr = null;
 
@@ -132,6 +155,14 @@ async function generateWithGemini(params) {
       } catch (err) {
         lastErr = err;
         const msg = String(err.message || '');
+        // Detecta erro de quota (429 / RESOURCE_EXHAUSTED) e ativa o circuit breaker
+        if (/429|RESOURCE_EXHAUSTED|quota|exceeded your current quota/i.test(msg)) {
+          const retryMs = parseRetryDelayMs(err) || GEMINI_QUOTA_DEFAULT_BLOCK_MS;
+          geminiQuotaBlockedUntil = Date.now() + retryMs;
+          const bloqueadoEm = new Date(geminiQuotaBlockedUntil).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+          console.warn(`[Gemini] Quota esgotada. Circuit breaker ativado até ~${bloqueadoEm} (${Math.round(retryMs / 60000)} min). Chamadas ao Gemini estarão bloqueadas até então.`);
+          throw err; // repassa para o caller tratar com fallback
+        }
         if (msg.includes('API key not valid') || msg.includes('API_KEY_INVALID') || msg.includes('UNAUTHENTICATED')) {
           throw new Error('A chave GEMINI_API_KEY configurada não é válida para este serviço.');
         }
@@ -347,7 +378,10 @@ function driveErrorInfo(status, bodyText) {
   else if (/service_disabled|accessnotconfigured|has not been used|is disabled|api_key_service_blocked|blocked/.test(blob)) hint = 'A Google Drive API não está ativada ou a chave não a permite. Ative em APIs e serviços > Biblioteca e marque "Google Drive API" nas restrições da chave.';
   else if (/ratelimit|quota|userratelimit/.test(blob)) hint = 'Cota do Google atingida. Tente de novo em alguns minutos.';
   else if (status === 404 || /notfound/.test(blob)) hint = 'Pasta não encontrada. Confira GOOGLE_DRIVE_FOLDER_ID e se a pasta está como "Qualquer pessoa com o link".';
-  else if (status === 403) hint = 'Acesso negado pelo Google. Confira se a pasta está como "Qualquer pessoa com o link" e as permissões da chave.';
+  else if (status === 403) {
+    if (/storageQuotaExceeded|do not have storage quota/.test(blob)) hint = 'Service Account não tem cota de armazenamento própria no Google Drive. Use uma pasta dentro de um Shared Drive (Google Workspace) como GOOGLE_DRIVE_FOLDER_ID / GOOGLE_DRIVE_RECORDINGS_FOLDER_ID, ou configure OAuth delegation (domain-wide delegation) em vez de Service Account.';
+    else hint = 'Acesso negado pelo Google. Confira se a pasta está como "Qualquer pessoa com o link" e as permissões da chave.';
+  }
   else hint = 'Erro do Google Drive (' + status + '). Veja os logs do Render.';
   return { reason: reason || ('http_' + status), hint };
 }
@@ -1167,7 +1201,7 @@ Retorne estritamente o objeto JSON com os 3 campos solicitados. Seja conciso, cl
         }
       } catch (err) {
         const msg = String(err.message || '');
-        if (msg.includes('API key not valid') || msg.includes('API_KEY_INVALID') || msg.includes('UNAUTHENTICATED') || msg.includes('503')) {
+        if (msg.includes('API key not valid') || msg.includes('API_KEY_INVALID') || msg.includes('UNAUTHENTICATED') || msg.includes('503') || /429|RESOURCE_EXHAUSTED|quota|exceeded your current quota/i.test(msg)) {
           geminiUnavailable = true;
           console.log('[Radar Médico] Gemini indisponível no momento, aplicando resumos clínicos pré-estruturados.');
         }
