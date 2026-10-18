@@ -262,6 +262,13 @@ async function varrerFull(key) {
     const alvos = [];
     // 1) Pastas de 1º nível do Drive principal viram cursos; arquivos na raiz → 'Geral'
     const itensRaiz = await filhos(MAIN_ID(), key);
+    // Diagnóstico: mostra qual pasta a conta de serviço está enxergando
+    try {
+      const raiz = await get(`${API}/drive/v3/files/${encodeURIComponent(MAIN_ID())}?fields=id,name,mimeType&supportsAllDrives=true&includeItemsFromAllDrives=true`);
+      STATUS.raiz = { id: MAIN_ID(), name: raiz.name || '', mimeType: raiz.mimeType || '' };
+      console.log(`📘 [Acervo] Pasta raiz configurada: "${raiz.name}" (${MAIN_ID()}) → ${itensRaiz.length} item(ns) no 1º nível`);
+      if (!itensRaiz.length) console.warn(`⚠️ [Acervo] A pasta "${raiz.name}" está VAZIA para a conta ${temConta() ? emailConta() : 'da chave de API'}. Verifique: (1) se este é o ID da pasta certa no Railway, (2) se os cursos estão mesmo dentro dela, (3) se ela é um atalho para o conteúdo real.`);
+    } catch (e) { STATUS.raiz = { id: MAIN_ID(), name: '', mimeType: '', erro: String(e.message || e).slice(0, 120) }; }
     for (const it of itensRaiz) {
       const alvoId = it.shortcutDetails && it.shortcutDetails.targetId || it.id;
       const mime = it.shortcutDetails && it.shortcutDetails.targetMimeType || it.mimeType;
