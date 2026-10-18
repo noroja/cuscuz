@@ -11760,9 +11760,9 @@ function enterDriveCourse(id, name) {
 <script defer type="module" src="/js/medreader-flashcards.js"></script>
 <script defer type="module" src="/js/medreader-export.js"></script>
 <script type="module" src="/js/medreader-integracao.js"></script>
-<script type="module" src="/src/anki-importer.js"></script>
+<script type="module" src="/js/anki-importer.js"></script>
 <script type="module">
-  import { importarAnki } from '/src/anki-importer.js';
+  import { importarAnki } from '/js/anki-importer.js';
   window.importarAnkiDoDrive = async function() {
     const arquivos = await importarAnki();
     if (!arquivos || !arquivos.length) {

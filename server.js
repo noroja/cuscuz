@@ -19,7 +19,7 @@ import { registerApostilaReader } from './src/apostila-reader.js';
 import { registerAuthRoutes, authMiddleware, getUserFilePath, getUserDataDir, validateSession, updateUserProfile } from './src/auth-multiuser.js';
 import { varrerExtras, juntar as juntarExtras, lerExtra, STATUS as EXTRA_STATUS, EXTRA_IDS, setCatalogo } from './src/extra-drive.js';
 import { resetCatalogo } from './src/planner-engine.js';
-import { temConta, emailConta, erroConta, driveFetch, authHeaders, cleanDriveId } from './src/drive-auth.js';
+import { temConta, emailConta, erroConta, driveFetchWithRetry, cleanDriveId } from './src/drive-auth.js';
 import { uploadToDrive, createFolder, findFolderByName, GOOGLE_DRIVE_RECORDINGS_FOLDER_ID as DRIVE_RECORDINGS_ID } from './src/drive.js';
 import { downloadCatalogFromSupabase, supabaseCatalogReady, ensureSupabaseBucket } from './src/supabase-catalog.js';
 
@@ -3554,6 +3554,58 @@ app.post('/api/recordings', async (req, res) => {
     res.json({ success: true, file: resultado, message: 'Gravação salva no Drive com sucesso' });
   } catch (err) {
     console.error('[Recordings]', err && err.message);
+    res.status(500).json({ success: false, error: err && err.message });
+  }
+});
+
+/* ═══ IMPORTAÇÃO DE FLASHCARDS ANKI (.apkg) ════════════════════════════════════════
+   Busca arquivos .apkg estritamente dentro de GOOGLE_DRIVE_ANKI_FOLDER_ID.
+   Nunca varre o Drive inteiro. Fail-fast se a variável não estiver configurada. ════════════════════════════════════════════════ */
+app.post('/api/anki/importar', async (req, res) => {
+  try {
+    const folderId = process.env.GOOGLE_DRIVE_ANKI_FOLDER_ID || '';
+    if (!folderId) {
+      console.warn('[Anki Importer] ID da pasta não configurado no .env, pulando importação.');
+      return res.status(503).json({ success: false, error: 'GOOGLE_DRIVE_ANKI_FOLDER_ID não configurada' });
+    }
+
+    const cleanId = cleanDriveId(folderId);
+    if (!cleanId) {
+      return res.status(503).json({ success: false, error: 'GOOGLE_DRIVE_ANKI_FOLDER_ID inválida' });
+    }
+
+    const q = encodeURIComponent(`'${cleanId}' in parents and trashed = false and name contains '.apkg'`);
+    const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType,size,webViewLink,createdTime,modifiedTime)');
+    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=${fields}&orderBy=name_natural&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+
+    const arquivos = [];
+    let pageToken = '';
+    do {
+      const pageParam = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '';
+      const r = await driveFetchWithRetry(url + pageParam, { signal: AbortSignal.timeout(30000) });
+      if (!r.ok) {
+        const texto = await r.text().catch(() => '');
+        throw new Error(`Drive ${r.status}: ${texto.slice(0, 200)}`);
+      }
+      const data = await r.json();
+      if (data.files && Array.isArray(data.files)) {
+        arquivos.push(...data.files.map(f => ({
+          id: f.id,
+          name: f.name,
+          mimeType: f.mimeType,
+          size: f.size,
+          webViewLink: f.webViewLink,
+          createdTime: f.createdTime,
+          modifiedTime: f.modifiedTime
+        })));
+      }
+      pageToken = data.nextPageToken || '';
+    } while (pageToken);
+
+    console.log(`[Anki Importer] ${arquivos.length} arquivo(s) .apkg encontrado(s) na pasta ${cleanId}.`);
+    return res.json({ success: true, arquivos });
+  } catch (err) {
+    console.error('[Anki Importer]', err && err.message);
     res.status(500).json({ success: false, error: err && err.message });
   }
 });
