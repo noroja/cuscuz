@@ -4128,7 +4128,7 @@ async function saveRecording(blob) {
     toast('📤 Enviando gravação ao Drive...', 'info');
     const r = await fetch('/api/recordings', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (localStorage.getItem('cuscuz_token') || '') },
       body: JSON.stringify({
         fileData: base64,
         fileName: fileName,
@@ -4188,7 +4188,7 @@ async function retryPendingRecordings() {
       try {
         const r = await fetch('/api/recordings', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (localStorage.getItem('cuscuz_token') || '') },
           body: JSON.stringify({
             fileData: item.base64,
             fileName: item.fileName,
