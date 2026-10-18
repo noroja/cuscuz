@@ -18,6 +18,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { temConta, emailConta, driveFetch, driveFetchWithRetry } from './drive-auth.js';
+import { uploadCatalogToSupabase, supabaseCatalogReady } from './supabase-catalog.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const API = (process.env.DRIVE_API_BASE || 'https://www.googleapis.com').replace(/\/$/, '');
@@ -55,6 +56,20 @@ export const TOKEN_FILE = path.join(VOLUME_DIR, 'sync-token.json');        // St
 let CAT = { generatedAt: null, roots: [], videos: [], materials: [], folders: {} };
 let TOKEN = null;
 let MEMLEGADO = null; // catálogo antigo (modo "catálogo fixo + extras")
+
+/* Injeta catálogo baixado do Supabase (Single Source of Truth). Usado pelo server.js no boot. */
+export function setCatalogo(catalogo) {
+  if (!catalogo) return false;
+  CAT = {
+    generatedAt: catalogo.generatedAt || null,
+    roots: catalogo.roots || [],
+    videos: catalogo.videos || [],
+    materials: catalogo.materials || [],
+    folders: catalogo.folders || {}
+  };
+  console.log(`📥 [Acervo] Catálogo injetado do Supabase: ${CAT.videos.length} vídeos, ${CAT.materials.length} materiais (gerado em ${CAT.generatedAt || '?'})`);
+  return true;
+}
 
 /* Lê volume no boot: se existem catálogo + token → PULA a varredura do zero */
 export function carregarEstado() {
@@ -240,6 +255,10 @@ async function deltaSync(key) {
     if (novoToken) TOKEN = novoToken;        // avança a âncora p/ próximo delta
     STATUS.at = new Date().toISOString(); Object.assign(STATUS, { modo: 'delta', erro: '' });
     salvarEstado();
+    // Persiste no Supabase (Single Source of Truth) — não bloqueia o fluxo principal
+    if (supabaseCatalogReady()) {
+      uploadCatalogToSupabase(CAT).catch(() => {}); // fire-and-forget
+    }
     console.log(`🔄 [Acervo] Delta Sync OK: ${processadas} mudança(s) em ${((Date.now() - t0) / 1000).toFixed(1)}s → ${CAT.videos.length} vídeos, ${CAT.materials.length} materiais`);
     return { videos: CAT.videos.length, materials: CAT.materials.length, mudancas: processadas, modo: 'delta' };
   } catch (e) {
@@ -321,6 +340,10 @@ async function varrerFull(key) {
     CAT = pronto;
     try { await getStartPageToken(); salvarEstado(); } // ⬅ CHANGES API injetada aqui (âncora p/ deltas)
     catch (e) { console.warn('⚠️ [Acervo] Sem token de changes (fará Full sempre):', e.message); salvarEstado(); }
+    // Persiste no Supabase (Single Source of Truth) — não bloqueia o fluxo principal
+    if (supabaseCatalogReady()) {
+      uploadCatalogToSupabase(CAT).catch(() => {}); // fire-and-forget
+    }
     STATUS.at = new Date().toISOString(); Object.assign(STATUS, { modo: 'full', erro: '' });
     console.log(`✅ [Acervo] Full Sync: ${videos.length} vídeos, ${materials.length} materiais, ${roots.length} cursos em ${((Date.now() - t0) / 1000).toFixed(0)}s. Delta Sync ativo.`);
     return { videos: videos.length, materials: materials.length, mudancas: 0, modo: 'full' };

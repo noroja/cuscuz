@@ -17,10 +17,11 @@ import { registerJarvis } from './src/jarvis.js';
 import { registerAula } from './src/aula.js';
 import { registerApostilaReader } from './src/apostila-reader.js';
 import { registerAuthRoutes, authMiddleware, getUserFilePath, getUserDataDir, validateSession, updateUserProfile } from './src/auth-multiuser.js';
-import { varrerExtras, juntar as juntarExtras, lerExtra, STATUS as EXTRA_STATUS, EXTRA_IDS } from './src/extra-drive.js';
+import { varrerExtras, juntar as juntarExtras, lerExtra, STATUS as EXTRA_STATUS, EXTRA_IDS, setCatalogo } from './src/extra-drive.js';
 import { resetCatalogo } from './src/planner-engine.js';
 import { temConta, emailConta, erroConta, driveFetch, authHeaders, cleanDriveId } from './src/drive-auth.js';
 import { uploadToDrive, createFolder, findFolderByName, GOOGLE_DRIVE_RECORDINGS_FOLDER_ID as DRIVE_RECORDINGS_ID } from './src/drive.js';
+import { downloadCatalogFromSupabase, supabaseCatalogReady, ensureSupabaseBucket } from './src/supabase-catalog.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -371,6 +372,39 @@ async function checkDriveKey() {
 }
 const DRIVE_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
+/* ═══ BOOT 100% NUVEM — Supabase como Single Source of Truth ═══════════════════
+   1) Garante bucket no Supabase Storage
+   2) Tenta baixar acervo-manifest.json do Supabase (zero cota do Drive)
+   3) Se Supabase indisponível / arquivo não existir → Full Sync de emergência no Drive
+   ═════════════════════════════════════════════════════════════════════════════════ */
+async function inicializarCatalogoNuvem() {
+  try {
+    await ensureSupabaseBucket();
+  } catch (e) { console.warn('⚠️ [Boot] Não foi garantir bucket Supabase:', e.message); }
+
+  if (!supabaseCatalogReady()) {
+    console.warn('⚠️ [Boot] Supabase não configurado — seguindo com catálogo local/Drive.');
+    return;
+  }
+
+  const catNuvem = await downloadCatalogFromSupabase();
+  if (catNuvem && (catNuvem.videos || []).length + (catNuvem.materials || []).length > 0) {
+    setCatalogo(catNuvem);
+    console.log('✅ [Boot] Catálogo carregado 100% da nuvem (Supabase).');
+    return;
+  }
+
+  console.warn('⚠️ [Boot] Catálogo não encontrado no Supabase — disparando Full Sync de emergência no Google Drive...');
+  try {
+    const r = await varrerExtras(process.env.GOOGLE_DRIVE_API_KEY || '');
+    if (r) {
+      console.log(`✅ [Boot] Full Sync de emergência concluído: ${r.videos} vídeos, ${r.materials} materiais.`);
+    }
+  } catch (e) {
+    console.error('❌ [Boot] Full Sync de emergência falhou:', e.message);
+  }
+}
+
 // Snapshot offline local do Google Drive (fallback automático caso a chave expire ou falhe)
 let snapshotIndex = null;
 function initSnapshotIndex() {
@@ -436,7 +470,7 @@ function initSnapshotIndex() {
     console.warn('⚠️ Falha ao inicializar snapshot local do Drive:', err.message);
   }
 }
-initSnapshotIndex();
+inicializarCatalogoNuvem().then(() => initSnapshotIndex());
 
 function getFilesFromSnapshot(folderId) {
   if (!snapshotIndex) return null;
