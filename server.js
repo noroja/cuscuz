@@ -546,8 +546,89 @@ app.get('/api/drive/list', async (req, res) => {
 });
 
 // Busca materiais (PDFs e apostilas HTML) diretamente no Drive por curso e disciplina
+/* ═══ MATERIAIS CONTEXTUAIS — 'irmãos' da pasta do vídeo ═══════════════════════════
+   Regra de negócio: os materiais do painel pertencem à MESMA pasta do vídeo em
+   reprodução (parent_folder_id). Duas fontes, em ordem de custo de cota:
+     1) CATÁLOGO em memória — a varredura do acervo guarda o pid (pasta-pai) de cada
+        arquivo → filtrar é local, ZERO chamada à API do Google por clique.
+     2) FALLBACK files.list — restrito à pasta do vídeo, com cache de 10 min por
+        pasta (protege a cota quando o arquivo não está no catálogo ainda).
+   Classificação: PDFs (.pdf/.doc/.ppt ou mime pdf e afins) × Apostilas (.html/.htm
+   ou text/html). Resposta: { success, videoId, parent, source, pdfs[], apostilas[] }. */
+const matsCtxCache = new Map(); // parentId → { at, pdfs, apostilas, fonte }
+const MATS_CTX_TTL = 10 * 60 * 1000;
+const matCtxPdf = (n, m) => /\.pdf$/i.test(n || '') || /pdf/i.test(m || '') || /\.(docx?|pptx?)$/i.test(n || '');
+const matCtxHtml = (n, m) => /\.(html?|htm)$/i.test(n || '') || /text\/html|application\/xhtml/.test(m || '');
+
+async function materiaisDoDrivePorPasta(parentId) {
+  const hit = matsCtxCache.get(parentId);
+  if (hit) return hit;
+  const itens = [];
+  let pageToken = '';
+  do {
+    const q = encodeURIComponent(`'${parentId}' in parents and trashed=false`);
+    const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType,shortcutDetails)');
+    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=${fields}&orderBy=folder,name_natural&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true${pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : ''}`;
+    const r = await driveFetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) break;
+    const d = await r.json();
+    itens.push(...(d.files || []));
+    pageToken = d.nextPageToken || '';
+  } while (pageToken);
+  const pdfs = [], apostilas = [];
+  for (const it of itens) {
+    const id = (it.shortcutDetails && it.shortcutDetails.targetId) || it.id;
+    const mime = (it.shortcutDetails && it.shortcutDetails.targetMimeType) || it.mimeType;
+    const nome = String(it.name || '');
+    if (matCtxHtml(nome, mime)) apostilas.push({ id, nome, isHtml: true });
+    else if (matCtxPdf(nome, mime)) pdfs.push({ id, nome, isHtml: false });
+  }
+  const val = { at: Date.now(), pdfs, apostilas, fonte: 'drive' };
+  matsCtxCache.set(parentId, val);
+  return val;
+}
+
+function materiaisDoCatalogoPorPasta(parentId) {
+  const cat = lerExtra();
+  if (!cat || !parent) return null;
+  const pdfs = [], apostilas = [];
+  for (const m of (cat.materials || [])) {
+    if (m.pid !== parentId) continue;
+    const nome = String(m.d || '');
+    if (matCtxHtml(nome, '')) apostilas.push({ id: m.id, nome, isHtml: true });
+    else if (matCtxPdf(nome, '')) pdfs.push({ id: m.id, nome, isHtml: false });
+  }
+  if (!pdfs.length && !apostilas.length) return null;
+  const val = { at: Date.now(), pdfs, apostilas, fonte: 'catalogo' };
+  matsCtxCache.set(parentId, val);
+  return val;
+}
+
+async function materiaisContexto(res, videoId, parentIdQ) {
+  try {
+    let parent = parentIdQ;
+    if (!parent && videoId) {
+      const cat = lerExtra();
+      const reg = (cat.videos || []).find(x => x.id === videoId) || (cat.materials || []).find(x => x.id === videoId);
+      if (reg && reg.pid) parent = reg.pid;
+    }
+    if (!parent) return res.json({ success: false, hint: 'vídeo sem pasta-pai conhecida', videoId, parent: '', total: 0, pdfs: [], apostilas: [] });
+    // 1) catálogo (0 cota) → 2) files.list com cache por pasta
+    const val = materiaisDoCatalogoPorPasta(parent) || await materiaisDoDrivePorPasta(parent).catch(() => ({ pdfs: [], apostilas: [], fonte: 'drive-erro' }));
+    return res.json({ success: true, videoId, parent, total: val.pdfs.length + val.apostilas.length, pdfs: val.pdfs, apostilas: val.apostilas, source: val.fonte });
+  } catch (e) {
+    console.warn('⚠️ [Materials ctx]', e.message);
+    return res.json({ success: false, error: String(e.message || e).slice(0, 200), videoId, parent: parentIdQ, total: 0, pdfs: [], apostilas: [] });
+  }
+}
+
 // Usado como fallback quando o acervo-manifest.json não tem os materiais
 app.get('/api/drive/materials', async (req, res) => {
+  /* ── NOVO: busca contextual por irmãos (parent_folder_id / videoId) ── */
+  const matCtxVideoId = cleanDriveId(req.query.videoId || '');
+  const matCtxParent = cleanDriveId(req.query.parent || '');
+  if (matCtxVideoId || matCtxParent) return await materiaisContexto(res, matCtxVideoId, matCtxParent);
+
   const course = (req.query.course || '').trim();
   const disc = (req.query.disc || '').trim();
   const aula = (req.query.aula || '').trim();

@@ -6,9 +6,9 @@
    - Comentários em português
    ========================================================================== */
 
-import { MedReaderCore } from './js/medreader-core.js';
-import { FlashcardManager, FlashcardReviewModal, Highlighter } from './js/medreader-flashcards.js';
-import { FlashcardExport } from './js/medreader-export.js';
+import { MedReaderCore } from './medreader-core.js';
+import { FlashcardManager, FlashcardReviewModal, Highlighter } from './medreader-flashcards.js';
+import { FlashcardExport } from './medreader-export.js';
 
 // Estado global da integração MedReader
 window.medreader = {

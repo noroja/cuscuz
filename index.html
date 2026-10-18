@@ -11217,6 +11217,23 @@ async function ac2Materiais(v) {
   let mats = [];
   let driveFetched = false;
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // FONTE ZERO (primária): irmãos da pasta do vídeo no Drive (parent_folder_id).
+  // O servidor filtra o catálogo em memória pelo pid do vídeo → rápido e sem
+  // consumir cota da API. Regra de negócio: materiais da MESMA pasta do vídeo.
+  // ═════════════════════════════════════════════════════════════════════════
+  try {
+    const rCtx = await fetch('/api/drive/materials?videoId=' + encodeURIComponent(v.id || ''), { cache: 'no-cache' });
+    if (rCtx.ok) {
+      const dCtx = await rCtx.json();
+      const ctx = [].concat(dCtx.pdfs || [], dCtx.apostilas || []);
+      if (dCtx.success && ctx.length) {
+        mats = ctx.map(m => ({ id: m.id, nome: m.nome, isHtml: !!m.isHtml, aulaNome: v.titulo || '' }));
+        driveFetched = true;
+      }
+    }
+  } catch (_) { /* segue para as fontes antigas */ }
+
   try {
     const res = await fetch('/api/drive/materials?course=' + encodeURIComponent(v.curso) + '&disc=' + encodeURIComponent(v.disc) + '&aula=' + encodeURIComponent(v.id), { cache: 'no-cache' });
     if (res.ok) {
@@ -11293,10 +11310,18 @@ async function ac2Materiais(v) {
     ).join('') || (driveFetched && total === 0 ? '<span style="font-size:13px;color:var(--text-muted);padding:20px;display:block">Nenhum PDF na pasta da disciplina no Drive</span>' : '<span style="font-size:13px;color:var(--text-muted);padding:20px;display:block">Nenhum PDF disponível</span>');
   }
 
+  // Wrapper de abertura de apostila: prioriza o MedReader novo (overlay fullscreen
+  // com destaque/flashcards); se o módulo ainda não carregou (cache antigo), cai no
+  // leitor inline original — em ambos os casos o HTML nunca é baixado.
+  window.matAbrirApostila = window.matAbrirApostila || function (id, nome) {
+    if (typeof window.medreaderApostilaInlineOpen === 'function') return window.medreaderApostilaInlineOpen(id, nome);
+    if (typeof apostilaInlineOpen === 'function') return apostilaInlineOpen(id, nome);
+  };
+
   // Renderiza Apostilas
   if (boxApo) {
     boxApo.innerHTML = displayApos.map(m =>
-      '<div class="material-chip" style="cursor:pointer" onclick="apostilaInlineOpen(\'' + esc(m.id) + '\', \'' + esc(m.nome) + '\')" title="Ler ' + esc(m.nome) + '">' +
+      '<div class="material-chip" style="cursor:pointer" onclick="matAbrirApostila(\'' + esc(m.id) + '\', \'' + esc(m.nome) + '\')" title="Ler ' + esc(m.nome) + ' no MedReader">' +
         '<span class="pdf-icon" style="background:rgba(99,102,241,.14);color:#6366f1"><i class="ph ph-book-open"></i></span>' +
         '<div class="mat-info">' +
           '<span class="mat-title">' + esc(m.nome) + '</span>' +
@@ -11728,7 +11753,7 @@ function enterDriveCourse(id, name) {
 <script defer type="module" src="/js/medreader-core.js"></script>
 <script defer type="module" src="/js/medreader-flashcards.js"></script>
 <script defer type="module" src="/js/medreader-export.js"></script>
-<script defer src="/js/medreader-integracao.js"></script>
+<script type="module" src="/js/medreader-integracao.js"></script>
 <script defer src="/js/onboarding-tour.js"></script>
 </body>
 </html>
