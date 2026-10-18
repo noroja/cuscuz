@@ -604,6 +604,16 @@ function materiaisDoCatalogoPorPasta(parentId) {
   return val;
 }
 
+function isDescendantOf(childId, ancestorId) {
+  let cur = childId;
+  while (cur && cur !== ancestorId) {
+    const info = CAT.folders?.[cur];
+    if (!info || !info.parent) break;
+    cur = info.parent;
+  }
+  return cur === ancestorId;
+}
+
 async function materiaisContexto(res, videoId, parentIdQ) {
   try {
     let parent = parentIdQ;
@@ -624,131 +634,48 @@ async function materiaisContexto(res, videoId, parentIdQ) {
 
 // Usado como fallback quando o acervo-manifest.json não tem os materiais
 app.get('/api/drive/materials', async (req, res) => {
-  /* ── NOVO: busca contextual por irmãos (parent_folder_id / videoId) ── */
-  const matCtxVideoId = cleanDriveId(req.query.videoId || '');
-  const matCtxParent = cleanDriveId(req.query.parent || '');
-  if (matCtxVideoId || matCtxParent) return await materiaisContexto(res, matCtxVideoId, matCtxParent);
-
-  const course = (req.query.course || '').trim();
-  const disc = (req.query.disc || '').trim();
-  const aula = (req.query.aula || '').trim();
-  if (!course || !disc) return res.status(400).json({ error: 'course e disc são obrigatórios', materials: [] });
-  if (!DRIVE_OK) return res.status(503).json({ error: 'GOOGLE_DRIVE_API_KEY ausente', materials: [] });
-
-  // Normaliza texto (remove acentos, caixa baixa, caracteres especiais)
-  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
-  const limpaTnome = n => norm(String(n || ''));
-
-  try {
-    const rootId = process.env.GOOGLE_DRIVE_FOLDER_ID || DRIVE_ROOT_FOLDER_ID;
-    const cleanRoot = cleanDriveId(rootId);
-    if (!cleanRoot) return res.json({ materials: [], hint: 'GOOGLE_DRIVE_FOLDER_ID não configurado' });
-
-    // Helper para listar filhos de uma pasta
-    async function listFolder(folderId) {
-      const files = [];
-      let pageToken = '';
-      do {
-        const q = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
-        const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType,shortcutDetails,webViewLink)');
-        const pageParam = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '';
-        const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=${fields}&orderBy=folder,name_natural&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true${pageParam}`;
-        const r = await driveFetch(url, { signal: AbortSignal.timeout(10000) });
-        if (!r.ok) break;
-        const data = await r.json();
-        if (data.files) files.push(...data.files);
-        pageToken = data.nextPageToken || '';
-      } while (pageToken);
-      return files;
-    }
-
-    // 1. Encontrar a pasta do curso na raiz do Drive
-    const rootFiles = await listFolder(cleanRoot);
-    const cursoPasta = rootFiles.find(f => {
-      const nome = String(f.name || '').toLowerCase();
-      const c = String(course || '').toLowerCase();
-      return nome.includes(c) || c.includes(nome) || limpaTnome(f.name) === limpaTnome(course);
-    });
-
-    if (!cursoPasta) return res.json({ materials: [], hint: 'Pasta do curso não encontrada no Drive' });
-
-    const cursoId = cursoPasta.shortcutDetails?.targetId || cursoPasta.id;
-
-    // 2. Listar subpastas da pasta do curso para encontrar a pasta da disciplina
-    const cursoFiles = await listFolder(cursoId);
-    const discNorm = norm(disc);
-
-    // Busca subpasta que corresponda à disciplina
-    const discPasta = cursoFiles.find(f => {
-      if (!f.isFolder && f.mimeType !== 'application/vnd.google-apps.folder') return false;
-      const nome = String(f.name || '').toLowerCase();
-      const nNorm = norm(nome);
-      return nNorm.includes(discNorm) || discNorm.includes(nNome.replace(/\.(pdf|html?|htm|doc|docx)$/i, '')) || limpaTnome(f.name) === limpaTnome(disc);
-    });
-
-    // 3. Lista arquivos da pasta da disciplina (se existir subpasta)
-    let targetFiles = [];
-    let fromDiscFolder = false;
-
-    if (discPasta) {
-      const discFolderId = discPasta.shortcutDetails?.targetId || discPasta.id;
-      targetFiles = await listFolder(discFolderId);
-      fromDiscFolder = true;
-    } else {
-      // Se não encontrou subpasta da disciplina, busca arquivos diretamente na pasta do curso
-      // que contenham o nome da disciplina no título do arquivo
-      targetFiles = cursoFiles;
-    }
-
-    const materials = [];
-    const pdfExt = /\.(pdf|doc|docx)$/i;
-    const htmlExt = /\.(html?|htm)$/i;
-
-    for (const f of targetFiles) {
-      const nome = String(f.name || '');
-      const nomeNorm = norm(nome);
-      const isShortcut = f.mimeType === 'application/vnd.google-apps.shortcut';
-      const effectiveId = isShortcut && f.shortcutDetails?.targetId ? f.shortcutDetails.targetId : f.id;
-      const effectiveMime = isShortcut && f.shortcutDetails?.targetMimeType ? f.shortcutDetails.targetMimeType : f.mimeType;
-      const isFolder = effectiveMime === 'application/vnd.google-apps.folder';
-
-      // Só aceita arquivos (não pastas) que sejam PDF ou HTML
-      if (isFolder) continue;
-
-      const isPdf = !nomeNorm.match(htmlExt) && (pdfExt.test(nome) || /pdf|document|presentation/i.test(effectiveMime));
-      const isHtml = htmlExt.test(nome) || /html/i.test(effectiveMime);
-
-      // Se não veio de subpasta de disciplina, filtrar por nome do arquivo contendo a disciplina
-      if (!fromDiscFolder) {
-        const discClean = discNorm.replace(/\.(pdf|html?|htm|doc|docx)$/i, '');
-        const nomeMatch = nomeNorm.includes(discNorm) || nomeNorm.includes(discClean) || discNorm.includes(nomeNorm.replace(/\.(pdf|html?|htm|doc|docx)$/i, ''));
-        if (!nomeMatch) continue;
-      }
-
-      if (isPdf || isHtml) {
-        materials.push({
-          id: effectiveId,
-          nome: nome.replace(/\.(pdf|html?|htm|doc|docx)$/i, '').trim(),
-          rawName: nome,
-          mimeType: effectiveMime,
-          isFolder: false,
-          isPdf,
-          isHtml,
-          curso,
-          disc,
-          aulaId: aula || null,
-          webViewLink: f.webViewLink || `https://drive.google.com/file/d/${effectiveId}/preview`
-        });
-      }
-    }
-
-    // Remove duplicados por id
-    const uniq = materials.filter((m, idx, self) => idx === self.findIndex(m2 => m2.id === m.id));
-    return res.json({ materials: uniq, total: uniq.length, course, disc, aula, fromDiscFolder });
-  } catch (err) {
-    console.error('[Drive Materials]', err.message);
-    return res.status(500).json({ error: err.message, materials: [] });
+  const videoId = cleanDriveId(req.query.videoId || '');
+  if (!videoId) {
+    // No videoId provided: return empty (could extend to old course/disc logic if needed)
+    return res.json({ success: true, videoId: '', parent: '', total: 0, pdfs: [], apostilas: [] });
   }
+  const cat = lerExtra();
+  if (!cat || !cat.folders) {
+    // Catalog unavailable or no folder tree: return empty
+    return res.json({ success: true, videoId: '', parent: '', total: 0, pdfs: [], apostilas: [] });
+  }
+  // Find video record
+  const videoRec = (cat.videos || []).find(v => v.id === videoId);
+  if (!videoRec) {
+    // Video not found in catalog
+    return res.json({ success: true, videoId, parent: '', total: 0, pdfs: [], apostilas: [] });
+  }
+  let moduleId = videoRec.pid;
+  // Go up two levels: video -> parent (video's folder) -> grandparent (module)
+  const firstUp = CAT.folders?.[moduleId]?.parent;
+  let secondUp = null;
+  if (firstUp) {
+    secondUp = CAT.folders?.[firstUp]?.parent;
+  }
+  if (secondUp) {
+    moduleId = secondUp;
+  } else if (firstUp) {
+    // Only one level up available
+    moduleId = firstUp;
+  }
+  // Now moduleId is the grandparent if possible, else parent, else video's parent
+  const pdfs = [], apostilas = [];
+  for (const m of (cat.materials || [])) {
+    if (!isDescendantOf(m.pid, moduleId)) continue;
+    const nome = String(m.d || '');
+    const lower = nome.toLowerCase();
+    if (lower.endsWith('.pdf')) {
+      pdfs.push({ id: m.id, nome, isHtml: false, aulaNome: '', url: '' });
+    } else if (lower.endsWith('.html') || lower.endsWith('.htm')) {
+      apostilas.push({ id: m.id, nome, isHtml: true, aulaNome: '', url: '' });
+    }
+  }
+  return res.json({ success: true, videoId, parent: moduleId, total: pdfs.length + apostilas.length, pdfs, apostilas });
 });
 
 // Endpoint para alterar nome de exibição do usuário
