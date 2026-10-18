@@ -4215,6 +4215,7 @@ async function retryPendingRecordings() {
 // Tentar reenviar gravações pendentes na inicialização
 setTimeout(retryPendingRecordings, 3000);
 
+function setMusicVolume(val, fromUser) {
   val = Math.max(0, Math.min(100, parseInt(val, 10) || 0));
   if (fromUser) {
     currentMusicVolume = val;
@@ -11229,7 +11230,6 @@ async function ac2Materiais(v) {
 
     // Apostilas s�o organizadas por macro�rea/disciplina (curso+disc), n�o por aula individual.
     // Nenhum filtro adicional por aulaId necess�rio.
-  }
 
   // ============================================================
   // FONTE SECUNDÁRIA: Se o Drive não retornou nada, usa o cache local AC2.MAT
@@ -11275,7 +11275,7 @@ async function ac2Materiais(v) {
   const displayApos = apostilas.length ? apostilas : defaultMats;
 
   const total = pdfs.length + apostilas.length;
-  if (badge) badge.textContent = total + (total === 1 ? ' arquivo disponível' : ' arquivos disponíveis') + ' (macroárea)');
+  if (badge) badge.textContent = total + (total === 1 ? ' arquivo disponível' : ' arquivos disponíveis') + ' (macroárea)';
 
   // Renderiza PDFs
   if (boxPdf) {

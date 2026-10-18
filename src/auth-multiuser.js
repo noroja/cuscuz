@@ -324,10 +324,13 @@ export const registerAuthRoutes = setupAuthRoutes;
 
 // Middleware de autenticação para rotas /api (exceto /api/auth/*, /api/health, /api/config e /api/drive/*)
 export function authMiddleware(req, res, next) {
-  if (req.path.startsWith('/api/auth/')) return next();
-  if (req.path === '/api/health') return next();
-  if (req.path === '/api/config') return next();
-  if (req.path.startsWith('/api/drive/')) return next();
+  // Dentro de app.use('/api', ...), req.path NÃO contém o prefixo /api.
+  // Usar req.originalUrl (caminho completo) para comparar corretamente.
+  const full = String(req.originalUrl || req.url || '').split('?')[0];
+  if (full.startsWith('/api/auth/')) return next();
+  if (full === '/api/health') return next();
+  if (full === '/api/config') return next();
+  if (full.startsWith('/api/drive/')) return next();
   const authHeader = req.headers.authorization || '';
   const token =
     authHeader.startsWith('Bearer ') ? authHeader.slice(7) :
