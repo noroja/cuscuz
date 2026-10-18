@@ -227,7 +227,7 @@ async function deltaSync(key) {
   let tok = TOKEN, novoToken = null, processadas = 0;
   try {
     while (tok) {
-      const campos = 'nextPageToken,newStartPageToken,changes(fileId,trashed,removed,file(id,name,mimeType,parents,shortcutDetails))';
+      const campos = 'nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,trashed,parents,shortcutDetails))';
       const d = await get(`${API}/drive/v3/changes?pageToken=${encodeURIComponent(tok)}&includeRemoved=true&restrictToMyDrive=false&spaces=drive&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=${encodeURIComponent(campos)}`);
       for (const ch of (d.changes || [])) { await aplicarMudanca(ch); processadas++; }
       if (d.newStartPageToken) { novoToken = d.newStartPageToken; break; }
