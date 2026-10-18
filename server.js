@@ -3501,8 +3501,8 @@ app.post('/api/recordings', async (req, res) => {
     const dateFolder = `${yyyy}-${mm}-${dd}`;
     const finalFileName = fileName || `aula-${yyyy}-${mm}-${dd}-${hh}${mi}.webm`;
 
-    let targetFolderId = cleanDriveId(DRIVE_RECORDINGS_ID || '') || DRIVE_ROOT_FOLDER_ID;
-    if (!targetFolderId) return res.status(503).json({ success: false, error: 'Drive não configurado (GOOGLE_DRIVE_RECORDINGS_FOLDER_ID ou GOOGLE_DRIVE_FOLDER_ID)' });
+    let targetFolderId = cleanDriveId(DRIVE_RECORDINGS_ID || '');
+    if (!targetFolderId) return res.status(503).json({ success: false, error: 'GOOGLE_DRIVE_RECORDINGS_FOLDER_ID não configurada — upload de gravação bloqueado' });
 
     // Organiza em subpasta AAAA-MM-DD quando há pasta dedicada de gravações
     if (DRIVE_RECORDINGS_ID) {

@@ -17,7 +17,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { temConta, emailConta, driveFetch } from './drive-auth.js';
+import { temConta, emailConta, driveFetch, driveFetchWithRetry } from './drive-auth.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const API = (process.env.DRIVE_API_BASE || 'https://www.googleapis.com').replace(/\/$/, '');
@@ -103,6 +103,10 @@ async function get(url, tent = 6) {
       if (r.status === 429 || r.status >= 500) { await new Promise(s => setTimeout(s, 900 * i * i)); continue; }
       if (!r.ok) {
         const corpo = await r.text().catch(() => '');
+        // 403 rateLimitExceeded / usageLimits → retry com exponential backoff (2s, 4s, 8s)
+        if (r.status === 403 && /ratelimit|usagelimits|quota|rate/i.test(corpo)) {
+          if (i < tent) { await new Promise(s => setTimeout(s, 2000 * i)); continue; }
+        }
         let hint = '';
         if (r.status === 400) hint = 'chave do Drive inválida (GOOGLE_DRIVE_API_KEY)';
         else if (r.status === 403) hint = /referer|ip address|blocked/i.test(corpo) ? 'a chave tem restrição de site/IP — no Google Cloud deixe "Restrições de aplicativo: Nenhuma"' : /disabled|not been used|accessNotConfigured/i.test(corpo) ? 'a Google Drive API não está ativada para essa chave' : /quota|rate/i.test(corpo) ? 'cota da chave esgotada — aumente EXTRA_SCAN_S' : (temConta() ? 'sem permissão — compartilhe a pasta (Leitor) com ' + emailConta() + ' e ative a Google Drive API no projeto' : 'sem permissão (pasta privada ou chave sem acesso à Drive API)');

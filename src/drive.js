@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import { driveFetchWithRetry } from './drive-auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -114,7 +115,7 @@ export async function listFolder(folderId) {
     const fields = encodeURIComponent('nextPageToken,files(id,name,mimeType,shortcutDetails,webViewLink,parents,size,modifiedTime)');
     const pageParam = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '';
     const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=${fields}&orderBy=folder,name_natural&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true${pageParam}`;
-    const r = await driveFetch(url, { signal: AbortSignal.timeout(15000) });
+    const r = await driveFetchWithRetry(url, { signal: AbortSignal.timeout(15000) });
     if (!r.ok) break;
     const data = await r.json();
     if (data.files) files.push(...data.files);
@@ -172,15 +173,23 @@ export async function getDriveStatus() {
   }
 }
 
-/* ── Upload resumable para gravações ── */
+/* ── Upload resumable para gravações ──
+   GRAVAÇÕES DEVEM IR ESTRICTAMENTE PARA A PASTA DESTINADA (shared drive / pasta compartilhada).
+   Service Accounts NÃO têm cota de armazenamento própria → sempre usar parents com a pasta de gravações. */
 export async function uploadToDrive(fileBuffer, fileName, mimeType = 'audio/webm', folderId = null) {
   if (!driveReady) throw new Error('Drive não configurado');
 
-  const targetFolderId = folderId || GOOGLE_DRIVE_RECORDINGS_FOLDER_ID || GOOGLE_DRIVE_FOLDER_ID;
-  const cleanFolderId = cleanDriveId(targetFolderId);
-  if (!cleanFolderId) throw new Error('Nenhuma pasta de destino configurada');
+  // TRAVA DE SEGURANÇA (fail-fast): gravações só sobem para a pasta dedicada configurada no .env
+  const recordingsFolderId = GOOGLE_DRIVE_RECORDINGS_FOLDER_ID || '';
+  if (!recordingsFolderId) {
+    console.warn('[Aviso] Upload cancelado: GOOGLE_DRIVE_RECORDINGS_FOLDER_ID não configurada.');
+    throw new Error('GOOGLE_DRIVE_RECORDINGS_FOLDER_ID não configurada');
+  }
 
-  // Iniciar upload resumable
+  const targetFolderId = cleanDriveId(folderId || recordingsFolderId);
+  if (!targetFolderId) throw new Error('Nenhuma pasta de destino configurada');
+
+  // Iniciar upload resumable — parents ESTRICTAMENTE a pasta de gravações
   const initUrl = `https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true`;
   const initResp = await fetch(initUrl, {
     method: 'POST',
@@ -193,7 +202,7 @@ export async function uploadToDrive(fileBuffer, fileName, mimeType = 'audio/webm
     body: JSON.stringify({
       name: fileName,
       mimeType: mimeType,
-      parents: [cleanFolderId]
+      parents: [targetFolderId]
     }),
     signal: AbortSignal.timeout(15000)
   });

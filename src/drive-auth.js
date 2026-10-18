@@ -47,6 +47,40 @@ export async function driveFetch(url, opts = {}) {
   return fetch(k && !/[?&]key=/.test(url) ? url + (url.includes('?') ? '&' : '?') + 'key=' + k : url, opts);
 }
 
+/* ── Exponential Backoff para chamadas da API do Drive ──
+   Retenta em 2s, 4s, 8s (até 3 tentativas) quando houver 403 rateLimitExceeded / usageLimits ou 429.
+   Outros erros 4xx (exceto 429) não são retry — falham rápido.                        */
+const BACKOFF_MAX = 3;
+const BACKOFF_BASE_MS = 2000;
+function isRateLimitError(status, bodyText) {
+  if (status === 429) return true;
+  if (status !== 403) return false;
+  const blob = String(bodyText || '').toLowerCase();
+  return /ratelimit|usagelimits|quota|rate/i.test(blob);
+}
+export async function driveFetchWithRetry(url, opts = {}) {
+  let lastErr = null;
+  for (let i = 1; i <= BACKOFF_MAX; i++) {
+    try {
+      const r = await driveFetch(url, opts);
+      if (r.ok) return r;
+      const texto = await r.text().catch(() => '');
+      if (!isRateLimitError(r.status, texto)) {
+        const e = new Error(`Drive ${r.status}: ${texto.slice(0, 200)}`);
+        e.status = r.status; e.fatal = true; throw e;
+      }
+      lastErr = new Error(`Drive 403 rateLimitExceeded (tentativa ${i}/${BACKOFF_MAX})`);
+      lastErr.status = 403; lastErr.retryable = true;
+      if (i < BACKOFF_MAX) await new Promise(s => setTimeout(s, BACKOFF_BASE_MS * i));
+    } catch (e) {
+      if (e.fatal) throw e;
+      lastErr = e;
+      if (i < BACKOFF_MAX && e.retryable) await new Promise(s => setTimeout(s, BACKOFF_BASE_MS * i));
+    }
+  }
+  throw lastErr || new Error('Drive request falhou após retry');
+}
+
 /* Helper para sanitizar IDs do Google Drive (remove parâmetros de URL como ?hl=pt-br, prefixos de path, etc.) */
 export function cleanDriveId(raw) {
   if (!raw) return '';
