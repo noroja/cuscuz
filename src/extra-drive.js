@@ -107,7 +107,7 @@ async function get(url, tent = 6) {
         if (r.status === 400) hint = 'chave do Drive inválida (GOOGLE_DRIVE_API_KEY)';
         else if (r.status === 403) hint = /referer|ip address|blocked/i.test(corpo) ? 'a chave tem restrição de site/IP — no Google Cloud deixe "Restrições de aplicativo: Nenhuma"' : /disabled|not been used|accessNotConfigured/i.test(corpo) ? 'a Google Drive API não está ativada para essa chave' : /quota|rate/i.test(corpo) ? 'cota da chave esgotada — aumente EXTRA_SCAN_S' : (temConta() ? 'sem permissão — compartilhe a pasta (Leitor) com ' + emailConta() + ' e ative a Google Drive API no projeto' : 'sem permissão (pasta privada ou chave sem acesso à Drive API)');
         else if (r.status === 404) hint = temConta() ? 'pasta não encontrada — compartilhe a pasta (Leitor) com ' + emailConta() : 'pasta não encontrada ou privada — compartilhe como "qualquer pessoa com o link" ou use uma conta de serviço';
-        const e = new Error('Drive ' + r.status + (hint ? ': ' + hint : '')); e.fatal = r.status < 500 && r.status !== 429 && !(r.status === 403 && /rate|quota|limit/i.test(corpo)); e.status = r.status; throw e;
+        const e = new Error('Drive ' + r.status + (hint ? ': ' + hint : '') + (corpo ? ' [' + String(corpo).replace(/\s+/g, ' ').slice(0, 200) + ']' : '')); e.fatal = r.status < 500 && r.status !== 429 && !(r.status === 403 && /rate|quota|limit/i.test(corpo)); e.status = r.status; throw e;
       }
       return await r.json();
     } catch (e) { if (i === tent || e.fatal) throw e; await new Promise(s => setTimeout(s, 900 * i * i)); }
