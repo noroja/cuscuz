@@ -20,7 +20,7 @@ import { registerAuthRoutes, authMiddleware, getUserFilePath, getUserDataDir, va
 import { varrerExtras, juntar as juntarExtras, lerExtra, STATUS as EXTRA_STATUS, EXTRA_IDS, setCatalogo, CAT } from './src/extra-drive.js';
 import { resetCatalogo } from './src/planner-engine.js';
 import { temConta, emailConta, erroConta, driveFetch, authHeaders, driveFetchWithRetry, cleanDriveId } from './src/drive-auth.js';
-import { uploadToDrive, createFolder, findFolderByName, GOOGLE_DRIVE_RECORDINGS_FOLDER_ID as DRIVE_RECORDINGS_ID } from './src/drive.js';
+
 import { downloadCatalogFromSupabase, supabaseCatalogReady, ensureSupabaseBucket } from './src/supabase-catalog.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -379,7 +379,7 @@ function driveErrorInfo(status, bodyText) {
   else if (/ratelimit|quota|userratelimit/.test(blob)) hint = 'Cota do Google atingida. Tente de novo em alguns minutos.';
   else if (status === 404 || /notfound/.test(blob)) hint = 'Pasta não encontrada. Confira GOOGLE_DRIVE_FOLDER_ID e se a pasta está como "Qualquer pessoa com o link".';
   else if (status === 403) {
-    if (/storageQuotaExceeded|do not have storage quota/.test(blob)) hint = 'Service Account não tem cota de armazenamento própria no Google Drive. Use uma pasta dentro de um Shared Drive (Google Workspace) como GOOGLE_DRIVE_FOLDER_ID / GOOGLE_DRIVE_RECORDINGS_FOLDER_ID, ou configure OAuth delegation (domain-wide delegation) em vez de Service Account.';
+    if (/storageQuotaExceeded|do not have storage quota/.test(blob)) hint = 'Service Account não tem cota de armazenamento própria no Google Drive. Use uma pasta dentro de um Shared Drive (Google Workspace) como GOOGLE_DRIVE_FOLDER_ID, ou configure OAuth delegation (domain-wide delegation) em vez de Service Account.';
     else hint = 'Acesso negado pelo Google. Confira se a pasta está como "Qualquer pessoa com o link" e as permissões da chave.';
   }
   else hint = 'Erro do Google Drive (' + status + '). Veja os logs do Render.';
@@ -3552,47 +3552,8 @@ setTimeout(function cicloExtras() { rodarExtras().finally(() => setTimeout(ciclo
 app.get('/api/acervo/extra-status', (req, res) => res.json({ success: true, ids: EXTRA_IDS(), principal: DRIVE_ROOT_FOLDER_ID, chave: DRIVE_OK, conta: temConta() ? emailConta() : '', erroConta: erroConta(), ...EXTRA_STATUS }));
 app.post('/api/acervo/extra-scan', (req, res) => { rodarExtras(); res.json({ success: true, started: !EXTRA_STATUS.running }); });
 
-/* ═══ UPLOAD DE GRAVAÇÃO DE AULA (MediaRecorder → Drive) ═══ */
-app.post('/api/recordings', async (req, res) => {
-  try {
-    const { fileName, mimeType = 'audio/webm', fileData } = req.body || {};
-    if (!fileData) return res.status(400).json({ success: false, error: 'fileData é obrigatório' });
-    const buffer = Buffer.from(String(fileData), 'base64');
-
-    // Nome no fuso America/Sao_Paulo: aula-AAAA-MM-DD-HHmm.webm + subpasta AAAA-MM-DD
-    const agoraSP = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-    const yyyy = agoraSP.getFullYear();
-    const mm = String(agoraSP.getMonth() + 1).padStart(2, '0');
-    const dd = String(agoraSP.getDate()).padStart(2, '0');
-    const hh = String(agoraSP.getHours()).padStart(2, '0');
-    const mi = String(agoraSP.getMinutes()).padStart(2, '0');
-    const dateFolder = `${yyyy}-${mm}-${dd}`;
-    const finalFileName = fileName || `aula-${yyyy}-${mm}-${dd}-${hh}${mi}.webm`;
-
-    let targetFolderId = cleanDriveId(DRIVE_RECORDINGS_ID || '');
-    if (!targetFolderId) return res.status(503).json({ success: false, error: 'GOOGLE_DRIVE_RECORDINGS_FOLDER_ID não configurada — upload de gravação bloqueado' });
-
-    // Organiza em subpasta AAAA-MM-DD quando há pasta dedicada de gravações
-    if (DRIVE_RECORDINGS_ID) {
-      try {
-        const existing = await findFolderByName(dateFolder, targetFolderId);
-        if (existing) targetFolderId = existing.shortcutDetails?.targetId || existing.id;
-        else {
-          const created = await createFolder(dateFolder, targetFolderId);
-          targetFolderId = created.id;
-        }
-      } catch (e) { console.warn('[Recordings] Subpasta de data:', e.message); }
-    }
-
-    const resultado = await uploadToDrive(buffer, finalFileName, mimeType, targetFolderId);
-    res.json({ success: true, file: resultado, message: 'Gravação salva no Drive com sucesso' });
-  } catch (err) {
-    console.error('[Recordings]', err && err.message);
-    res.status(500).json({ success: false, error: err && err.message });
-  }
-});
-
-/* ═══ IMPORTAÇÃO DE FLASHCARDS ANKI (.apkg) ════════════════════════════════════════
+/* ═══ 
+IMPORTAÇÃO DE FLASHCARDS ANKI (.apkg) ════════════════════════════════════════
    Busca arquivos .apkg estritamente dentro de GOOGLE_DRIVE_ANKI_FOLDER_ID.
    Nunca varre o Drive inteiro. Fail-fast se a variável não estiver configurada. ════════════════════════════════════════════════ */
 app.post('/api/anki/importar', async (req, res) => {
