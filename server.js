@@ -13,7 +13,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import * as cheerio from 'cheerio';
 import { plGerarPlanSinergia as plEngineGerarPlan } from './smart_scheduler.js';
 import { registerPlanner } from './src/planner-routes.js';
-import { registerJarvis } from './src/jarvis.js';
+
 import { registerAula } from './src/aula.js';
 import { registerApostilaReader } from './src/apostila-reader.js';
 import { registerAuthRoutes, authMiddleware, getUserFilePath, getUserDataDir, validateSession, updateUserProfile } from './src/auth-multiuser.js';
@@ -3467,7 +3467,7 @@ app.get('/api/planner/deck', async (req, res) => {
 });
 
 registerPlanner(app, { generateWithGemini, getGeminiClient, getBank: () => readQuestionsBank() });
-registerJarvis(app, { generateWithGemini, getGeminiClient });
+
 registerAula(app, { generateWithGemini, getGeminiClient });
 registerApostilaReader(app);
 
