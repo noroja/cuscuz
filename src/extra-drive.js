@@ -16,7 +16,7 @@ const idDe = x => (String(x || '').match(/[-\w]{25,}/) || [''])[0];
 export const MAIN_ID = () => idDe(process.env.GOOGLE_DRIVE_FOLDER_ID) || ROOT_PADRAO;
 /* Se a pasta principal (GOOGLE_DRIVE_FOLDER_ID) não for a antiga, a lista inteira é gerada ao vivo a partir dela; senão vale o catálogo fixo + extras */
 export const USA_BASE = () => MAIN_ID() === ROOT_PADRAO;
-export const EXTRA_IDS = () => [...new Set(String(process.env.GOOGLE_DRIVE_EXTRA_FOLDERS || '1tIpf5nlW1lspY7BPBsCUqKweULeJHZsP').split(/[,\s]+/).map(idDe).filter(Boolean))].filter(id => id !== MAIN_ID());
+export const EXTRA_IDS = () => [...new Set(String(process.env.GOOGLE_DRIVE_EXTRA_FOLDERS || '').split(/[,\s]+/).map(idDe).filter(Boolean))].filter(id => id !== MAIN_ID());
 export const STATUS = { running: false, at: null, erro: '', pastas: 0, videos: 0, materiais: 0, falhas: 0 };
 
 let MEM = null; // catálogo em memória (arquivo lido uma vez; durante a primeira varredura mostra o que já foi achado)
