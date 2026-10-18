@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
 <meta name="theme-color" content="#080c14">
+<link rel="stylesheet" href="/css/redesign-correcoes.css">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/css/medreader.css">
 <link rel="stylesheet" href="/css/onboarding-tour.css">
@@ -1791,6 +1792,7 @@ mark.exam-highlight {
 </style>
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Pular para o conteúdo principal</a>
 
 <!-- visionOS Ambient Glass Auroras -->
 <div class="glass-aurora aurora-cyan" aria-hidden="true"></div>
@@ -1911,12 +1913,12 @@ mark.exam-highlight {
 </div>
 
 <!-- ═══ APP PRINCIPAL ═══ -->
-<div class="app" id="app-main" style="display:none">
+<div class="app" id="app-main" id="main-content" role="main" style="display:none">
   <div id="mobile-sidebar-backdrop" class="modal-overlay" style="z-index:24" onclick="toggleSidebar()"></div>
 
   <header class="header">
     <div style="display:flex;align-items:center;gap:8px">
-      <button class="btn-icon" id="menu-btn" onclick="toggleSidebar()"><i class="ph ph-list"></i></button>
+      <button class="btn-icon" id="menu-btn" onclick="toggleSidebar()" aria-label="Abrir menu de navegação" aria-expanded="false"><i class="ph ph-list"></i></button>
       <div class="brand">
         <div class="brand-icon">C</div>
         <div class="brand-name">Cuscuz<span>-MED</span></div>
@@ -1935,18 +1937,18 @@ mark.exam-highlight {
     <div class="header-actions">
       <span id="cloud-dot" title="Status da nuvem" style="width:8px;height:8px;border-radius:50%;background:var(--text-disabled);display:inline-block;margin-right:4px;cursor:default;box-shadow:0 0 6px currentColor"></span>
       <div style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-surface);padding:3px 10px;border-radius:20px;border:1px solid var(--border-subtle);box-shadow:var(--shadow-xs)">
-        <button class="btn-icon" style="width:26px;height:26px;padding:0" onclick="toggleLobbyMusic()" title="Música On/Off"><i class="ph ph-speaker-slash" id="main-music-icon"></i></button>
+        <button class="btn-icon" style="width:26px;height:26px;padding:0" onclick="toggleLobbyMusic()" title="Música On/Off" aria-label="Controlar música de fundo"><i class="ph ph-speaker-slash" id="main-music-icon"></i></button>
         <input type="range" id="header-volume-slider" min="0" max="100" value="30" style="width:52px;height:4px;accent-color:var(--teal);cursor:pointer" title="Volume da trilha" oninput="setMusicVolume(this.value)">
       </div>
-      <button class="btn-icon" style="width:26px;height:26px;padding:0" onclick="togglePresentationMode()" title="Modo Apresentação" id="btn-modo-apresentacao"><i class="ph ph-chalkboard-teacher"></i><span class="brand-badge" id="modo-apresentacao-badge">APRESENTAÇÃO</span></button>
-      <button class="btn-icon" style="width:26px;height:26px;padding:0;background:var(--rose);color:#fff" onclick="toggleRecording()" title="Gravar Aula" id="btn-gravar-aula"><i class="ph ph-circle"></i></button>
+      <button class="btn-icon" style="width:26px;height:26px;padding:0" onclick="togglePresentationMode()" title="Modo Apresentação" id="btn-modo-apresentacao" aria-label="Alternar modo apresentação" aria-pressed="false"><i class="ph ph-chalkboard-teacher"></i><span class="brand-badge" id="modo-apresentacao-badge">APRESENTAÇÃO</span></button>
+      <button class="btn-icon" style="width:26px;height:26px;padding:0;background:var(--rose);color:#fff" onclick="toggleRecording()" title="Gravar Aula" id="btn-gravar-aula" aria-label="Gravar aula" aria-pressed="false"><i class="ph ph-circle"></i></button>
       <span id="gravacao-indicador" style="display:none;animation:pulse 1.5s infinite;color:var(--rose);font-weight:700">● GRAVANDO</span>
       <span id="gravacao-timer" style="display:none;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);margin-left:6px">00:00</span>
       <button class="btn-outline btn-sm glass-shimmer" onclick="goToLobby()"><i class="ph ph-game-controller"></i> Lobby</button>
       <button class="theme-toggle" onclick="toggleTheme()" title="Alternar tema"><span class="theme-toggle__track"><span class="theme-toggle__thumb"></span></span></button>
-      <button class="btn-icon" id="dash-header-btn" onclick="toggleDashboardCollapse()" title="Alternar Painel Lateral de Métricas (Recolher / Expandir)"><i class="ph ph-chart-donut"></i></button>
+      <button class="btn-icon" id="dash-header-btn" onclick="toggleDashboardCollapse()" title="Alternar Painel Lateral de Métricas (Recolher / Expandir)" aria-label="Recolher ou expandir painel de métricas" aria-expanded="true"><i class="ph ph-chart-donut"></i></button>
       <button class="btn-primary btn-sm glass-shimmer" onclick="openPlanModal()">&#9889; Planejar</button>
-      <button class="btn-icon" onclick="logout()" title="Sair" style="color:var(--rose)"><i class="ph ph-sign-out"></i></button>
+      <button class="btn-icon" onclick="logout()" title="Sair" style="color:var(--rose)" aria-label="Sair da conta"><i class="ph ph-sign-out"></i></button>
     </div>
   </header>
 
@@ -4855,7 +4857,7 @@ function openDay(dk){
  body+=evs.map((e,i)=>'<div class="week-item"><span class="sdot" style="background:'+EVC[e.c]+'"></span><span class="week-item-topic">'+esc(e.t)+'</span><span class="fc-meta">'+esc(e.c)+'</span><button class="btn-icon" style="width:28px;height:28px" onclick="delEvent(\''+dk+'\','+i+')"><i class="ph ph-x"></i></button></div>').join('');
  body+=items.length?items.map(i=>{const k=dk+'#'+i.ix,done=DB.done[k];
   return '<div class="week-item"><span class="week-item-code">'+fmtBR(dk)+'</span><span class="sdot" style="background:var(--violet)"></span><span class="week-item-topic'+(done?' completed':'')+'">'+esc(i.t)+'</span>'
-  +'<button class="check-btn'+(done?' checked':'')+'" onclick="setItem(\''+dk+'\','+i.ix+',\'done\')"><i class="ph ph-check-bold"></i></button>'
+  +'<button class="check-btn'+(done?' checked':'')+'" onclick="setItem(\''+dk+'\','+i.ix+',\'done\')" aria-pressed="'+(done?'true':'false')+'" aria-label="Marcar tópico como concluído"><i class="ph ph-check-bold"></i></button>'
   +'<button class="skip-btn" title="Pular" onclick="setItem(\''+dk+'\','+i.ix+',\'skip\')"><i class="ph ph-skip-forward"></i></button></div>'}).join('')
  :(evs.length?'':'<div style="color:var(--text-muted);font-size:13px">Nada planejado para este dia.</div>');
  body+='<div class="form-actions" style="justify-content:flex-start;flex-wrap:wrap">'
@@ -4881,7 +4883,7 @@ function toggleHabit(dk,w){const h=DB.habits[dk]||(DB.habits[dk]={});const was=!
 /* ═══ CRONOGRAMA / SEMANA ═══ */
 const itemRow=i=>{const k=i.d+'#'+i.ix,done=DB.done[k],skip=DB.skipped[k];
  return '<div class="week-item"><span class="week-item-code">'+fmtBR(i.d)+'</span><span class="sdot" style="background:'+(skip?'var(--text-muted)':DB.exams[i.d]?'var(--amber)':'var(--violet)')+'"></span><span class="week-item-topic'+(done?' completed':'')+'">'+esc(i.t)+'</span>'
- +'<button class="check-btn'+(done?' checked':'')+'" onclick="setItem(\''+i.d+'\','+i.ix+',\'done\')"><i class="ph ph-check-bold"></i></button>'
+ +'<button class="check-btn'+(done?' checked':'')+'" onclick="setItem(\''+i.d+'\','+i.ix+',\'done\')" aria-pressed="'+(done?'true':'false')+'" aria-label="Marcar tópico como concluído"><i class="ph ph-check-bold"></i></button>'
  +'<button class="skip-btn" onclick="setItem(\''+i.d+'\','+i.ix+',\'skip\')"><i class="ph ph-skip-forward"></i></button></div>'};
 function renderSchedule(){
  const el=$('schedule-view');
@@ -7909,12 +7911,15 @@ function renderSimQ() {
         </div>
         <div class="quiz-question-text" style="font-size:14.5px;line-height:1.6">${esc(q.statement || q.q)}</div>
         <div class="quiz-options" style="margin-top:16px">
-          ${qOpts.map((o, idx) => `
-            <button class="quiz-option ${r.ans[r.i] === idx ? 'correct' : ''}" onclick="simAnswer(${idx})" style="text-align:left;padding:12px 14px;border-radius:10px">
+          ${qOpts.map((o, idx) => {
+  const isSelected = r.ans[r.i] === idx;
+  return `
+            <button class="quiz-option ${isSelected ? 'correct' : ''}" onclick="simAnswer(${idx})" style="text-align:left;padding:12px 14px;border-radius:10px" aria-pressed="${isSelected}" role="radio" aria-label="Alternativa ${String.fromCharCode(65 + idx)}">
               <span class="quiz-option-letter">${String.fromCharCode(65 + idx)}</span>
               <span style="flex:1">${esc(o)}</span>
             </button>
-          `).join('')}
+          `;
+}).join('')}
         </div>
       </div>
 
@@ -11755,5 +11760,28 @@ function enterDriveCourse(id, name) {
 <script defer type="module" src="/js/medreader-export.js"></script>
 <script type="module" src="/js/medreader-integracao.js"></script>
 <script defer src="/js/onboarding-tour.js"></script>
+
+<script>
+// ═══ SCROLL REVEAL — IntersectionObserver (sem window.scroll listener)
+// Aplica motion premium: elementos aparecem com fade-up pesado, stagger escalonado
+(function () {
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    },
+    { threshold: 0.1, rootMargin: '0px 0px -50px 0px' }
+  );
+  document.querySelectorAll('.reveal').forEach((el, i) => {
+    el.classList.add('stagger-' + ((i % 3) + 1));
+    observer.observe(el);
+  });
+})();
+</script>
+<script defer src="/js/aplicar-redesign.js"></script>
 </body>
 </html>
