@@ -1,17 +1,14 @@
 {
   "version": 2,
   "buildCommand": "node scripts/build-public.js",
-  "outputDirectory": "public",
   "functions": {
     "api/index.js": {
       "maxDuration": 60,
-      "includeFiles": "{index.html,acervo-manifest.json,drive-tree-snapshot.json,data/**}"
+      "includeFiles": "{*.html,*.png,*.webmanifest,planner-v2.js,aula-dia.js,acervo-manifest.json,drive-tree-snapshot.json,css/**,js/**,data/**}"
+    },
+    "server.js": {
+      "maxDuration": 60,
+      "includeFiles": "{*.html,*.png,*.webmanifest,planner-v2.js,aula-dia.js,acervo-manifest.json,drive-tree-snapshot.json,css/**,js/**,data/**}"
     }
-  },
-  "rewrites": [
-    {
-      "source": "/((?!.*\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webmanifest|woff2?|ttf|eot|mp4|webm|pdf|txt|xml|html)$).*)",
-      "destination": "/api/index"
-    }
-  ]
+  }
 }
