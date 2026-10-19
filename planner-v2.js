@@ -68,6 +68,51 @@
 .plv2-empty{padding:30px;text-align:center;color:var(--text-secondary);background:var(--bg-surface);border:1px dashed var(--border-muted);border-radius:var(--radius-lg)}
 .plv2-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
 .plv2-chips em{font-style:normal;font-size:10.5px;color:var(--text-secondary);border:1px solid var(--border-muted);border-radius:99px;padding:1px 7px}
+.plv2-overview{max-width:1180px;margin:0 auto 20px}
+.plv2-overview-head{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin:4px 0 14px}
+.plv2-overview-head h1{margin:0 0 6px;font-size:clamp(24px,2.4vw,32px);line-height:1.12;letter-spacing:-.045em;color:var(--text-primary)}
+.plv2-overview-head p{margin:0;color:var(--text-secondary);font-size:13px;line-height:1.5}
+.plv2-mode{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:5px 9px;border:1px solid var(--teal-border);border-radius:8px;background:var(--teal-dim);color:var(--teal);font-size:11px;font-weight:700}
+.plv2-start{min-height:44px;padding:0 16px;border:0;border-radius:10px;background:linear-gradient(105deg,#0ea5e9,#6366f1);color:#fff;font-size:13px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:transform .15s ease,filter .15s ease}
+.plv2-start:hover{transform:translateY(-1px);filter:brightness(1.06)}
+.plv2-today{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,.34fr);background:var(--bg-surface);border:1px solid var(--border-muted);border-radius:16px;overflow:hidden;margin-bottom:12px}
+.plv2-today-main{padding:21px 23px;min-width:0}
+.plv2-eyebrow{display:flex;align-items:center;gap:7px;margin-bottom:9px;color:var(--teal);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.plv2-today-main h2{margin:0 0 5px;font-size:clamp(21px,2.1vw,27px);line-height:1.18;letter-spacing:-.035em;color:var(--text-primary)}
+.plv2-today-date{color:var(--text-secondary);font-size:12.5px;text-transform:capitalize}
+.plv2-today-focus{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-top:19px;padding-top:16px;border-top:1px solid var(--border-subtle)}
+.plv2-today-topic{font-size:17px;font-weight:750;line-height:1.35;color:var(--text-primary)}
+.plv2-today-copy{margin:5px 0 0;color:var(--text-secondary);font-size:12.5px;line-height:1.55;max-width:62ch}
+.plv2-flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:15px;color:var(--text-secondary);font-size:10.5px;font-weight:650}
+.plv2-flow span{display:inline-flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid var(--border-subtle);border-radius:7px;background:var(--bg-elevated)}
+.plv2-flow i{color:var(--teal)}
+.plv2-today-side{padding:20px;background:var(--bg-elevated);border-left:1px solid var(--border-subtle);display:flex;flex-direction:column;justify-content:center}
+.plv2-progress-label{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;color:var(--text-primary);font-size:12px;font-weight:700}
+.plv2-progress-label span:last-child{color:var(--teal);font-variant-numeric:tabular-nums}
+.plv2-progress{height:7px;border-radius:99px;background:var(--bg-hover);overflow:hidden}
+.plv2-progress span{display:block;height:100%;border-radius:inherit;background:var(--teal);transition:width .25s ease}
+.plv2-today-stats{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:15px}
+.plv2-today-stat{padding-top:9px;border-top:1px solid var(--border-subtle)}
+.plv2-today-stat b{display:block;font-size:17px;font-variant-numeric:tabular-nums;color:var(--text-primary)}
+.plv2-today-stat span{font-size:10.5px;color:var(--text-muted)}
+.plv2-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:12px}
+.plv2-kpi{min-width:0;padding:12px 14px;background:var(--bg-surface);border:1px solid var(--border-muted);border-radius:11px}
+.plv2-kpi b{display:block;overflow:hidden;text-overflow:ellipsis;font-size:19px;line-height:1.25;font-variant-numeric:tabular-nums;color:var(--text-primary)}
+.plv2-kpi span{display:block;margin-top:4px;color:var(--text-muted);font-size:10.5px;line-height:1.4}
+.plv2-week{padding:15px 17px;background:var(--bg-surface);border:1px solid var(--border-muted);border-radius:13px}
+.plv2-week h2{display:flex;align-items:center;gap:8px;margin:0 0 9px;font-size:14px;color:var(--text-primary)}
+.plv2-week h2 i{color:var(--teal)}
+.plv2-week-empty{display:flex;gap:10px;padding:12px;border-radius:9px;background:var(--bg-elevated);color:var(--text-secondary);font-size:12px;line-height:1.5}
+.plv2-week-empty>i{flex:none;margin-top:2px;color:var(--teal);font-size:17px}
+.plv2-week-empty b{display:block;margin-bottom:2px;color:var(--text-primary)}
+.plv2-week-list{display:grid;gap:5px}
+.plv2-week-row{width:100%;display:grid;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:9px;text-align:left;padding:8px 10px;border:1px solid var(--border-subtle);border-radius:8px;background:var(--bg-elevated);color:var(--text-primary);font:inherit;cursor:pointer}
+.plv2-week-row:hover{border-color:var(--teal-border);background:var(--teal-dim)}
+.plv2-week-row.done .plv2-week-topic{text-decoration:line-through;opacity:.65}
+.plv2-week-date{color:var(--text-muted);font-size:10.5px;font-variant-numeric:tabular-nums}
+.plv2-week-topic{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:650}
+.plv2-week-row i{color:var(--teal)}
+.plv2-overview+.plv2{scroll-margin-top:18px}
 @media(max-width:820px){
  .plv2-t thead{display:none}
  .plv2-t,.plv2-t tbody,.plv2-t tr,.plv2-t td{display:block;width:100%}
@@ -75,6 +120,12 @@
  .plv2-t td{border-bottom:0;padding:8px 12px}
  .plv2-t td::before{content:attr(data-l);display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px}
  .plv2-m{max-width:94%}
+ .plv2-today{grid-template-columns:1fr}
+ .plv2-today-side{border-left:0;border-top:1px solid var(--border-subtle);padding:15px 18px}
+ .plv2-today-main{padding:18px}
+ .plv2-today-focus{align-items:stretch;flex-direction:column}
+ .plv2-start{width:100%}
+ .plv2-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
 }`;
     document.head.appendChild(s);
   }
@@ -89,15 +140,53 @@
   /* ───────────── Chat ───────────── */
   const chatState = () => get(K_CHAT, { msgs: [], perfil: null, asking: '', jaExtras: false, quick: [], pronto: false, resumo: [] });
 
+  function renderOverview(st, plano) {
+    const h = hoje();
+    const hasPlan = !!(plano && Array.isArray(plano.tarefas));
+    const perfil = (plano && plano.perfil) || st.perfil || {};
+    const tarefas = plano && Array.isArray(plano.tarefas) ? plano.tarefas : [];
+    const doDia = tarefas.filter(t => t.data === h);
+    const feitas = doDia.filter(t => t.status === 'feito').length;
+    const pendentes = doDia.filter(t => t.status !== 'feito' && t.tipo !== 'prova');
+    const proxima = pendentes[0] || doDia.find(t => t.tipo === 'prova');
+    const total = tarefas.filter(t => t.tipo !== 'prova').length;
+    const concluidas = tarefas.filter(t => t.tipo !== 'prova' && t.status === 'feito').length;
+    const percentual = doDia.length ? Math.round(feitas / doDia.length * 100) : 0;
+    const minutos = pendentes.reduce((sum, t) => sum + (Number(t.minutos) || 0), 0);
+    const fimSemana = new Date(h + 'T00:00:00Z'); fimSemana.setUTCDate(fimSemana.getUTCDate() + 7);
+    const semana = tarefas.filter(t => t.data >= h && t.data < fimSemana.toISOString().slice(0, 10) && t.tipo !== 'prova').sort((a, b) => a.data.localeCompare(b.data));
+    const objetivo = ({ graduacao: 'Foco na graduação', residencia: 'Foco na residência', ambos: 'Graduação + residência' })[perfil.objetivo] || 'Objetivo a definir';
+    const dataProva = perfil.dataProva ? perfil.dataProva.split('-').reverse().slice(0, 2).join('/') : '—';
+    const hojeLongo = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(h + 'T12:00:00'));
+    const resumoDia = proxima
+      ? `<div class="plv2-today-focus"><div><div class="plv2-today-topic">${E(proxima.titulo)}</div><p class="plv2-today-copy">${proxima.tipo === 'prova' ? 'Você tem uma avaliação cadastrada para hoje.' : 'Esta é a próxima tarefa prevista. Abra os passos e materiais vinculados no cronograma.'}</p></div><button type="button" class="b pri" ${hasPlan ? 'onclick="plv2.irParaLista(\'hoje\')"' : 'id="plv2-start"'}><i class="ph ${hasPlan ? 'ph-list-checks' : 'ph-chat-circle-dots'}"></i> ${hasPlan ? 'Ver tarefa' : 'Começar com o Mentor'}</button></div>`
+      : `<div class="plv2-today-focus"><div><div class="plv2-today-topic">${hasPlan ? (doDia.length ? 'Seu dia está em dia' : 'Hoje está livre no cronograma') : 'Vamos montar sua semana'}</div><p class="plv2-today-copy">${hasPlan ? (doDia.length ? 'Você concluiu as tarefas previstas para hoje. Confira os próximos dias para planejar o que vem depois.' : 'Seu plano já existe. Confira a semana ou amplie o período do cronograma abaixo.') : 'Conte ao Mentor sobre sua graduação, residência e rotina. O cronograma usa essas informações para organizar o que estudar.'}</p></div><button type="button" class="plv2-start" ${hasPlan ? 'onclick="plv2.irParaLista(\'semana\')"' : 'id="plv2-start"'}><i class="ph ${hasPlan ? 'ph-calendar' : 'ph-chat-circle-dots'}"></i> ${hasPlan ? 'Ver esta semana' : 'Começar com o Mentor'}</button></div>`;
+    const semanaHtml = semana.length
+      ? `<div class="plv2-week-list">${semana.slice(0, 7).map(t => `<button type="button" class="plv2-week-row ${t.status === 'feito' ? 'done' : ''}" onclick="plv2.irParaLista('semana')"><span class="plv2-week-date">${E(t.data.slice(8, 10) + '/' + t.data.slice(5, 7))}</span><span class="plv2-week-topic">${E(t.titulo)}</span><i class="ph ph-arrow-up-right" aria-hidden="true"></i></button>`).join('')}</div>`
+      : `<div class="plv2-week-empty"><i class="ph ph-calendar-plus" aria-hidden="true"></i><div><b>Nenhum bloco programado para esta semana.</b>${hasPlan ? 'Amplie o período ou ajuste seus estudos com o Mentor no cronograma abaixo.' : 'Depois de definir seu foco e sua rotina, o cronograma da semana aparece aqui.'}</div></div>`;
+
+    return `<section class="plv2-overview" aria-labelledby="plv2-overview-title"><header class="plv2-overview-head"><div><h1 id="plv2-overview-title">Plano de estudos</h1><p>${E(hojeLongo)} · Seu cronograma considera graduação, residência e materiais reais.</p><span class="plv2-mode"><i class="ph ph-git-merge" aria-hidden="true"></i> ${E(objetivo)}</span></div><button type="button" class="plv2-start" ${hasPlan ? 'onclick="plv2.aba(\'hoje\')"' : 'id="plv2-start-top"'}><i class="ph ${hasPlan ? 'ph-calendar-check' : 'ph-chat-circle-dots'}" aria-hidden="true"></i> ${hasPlan ? 'Ver tarefas de hoje' : 'Planejar com o Mentor'}</button></header>` +
+      `<section class="plv2-today" aria-label="Resumo de hoje"><div class="plv2-today-main"><div class="plv2-eyebrow"><i class="ph ph-sun" aria-hidden="true"></i> Seu plano de hoje</div><h2>${proxima ? 'Sua próxima tarefa' : plano ? 'O que estudar hoje?' : 'Comece por um plano que cabe na sua rotina'}</h2><div class="plv2-today-date">${E(hojeLongo)}</div>${resumoDia}<div class="plv2-flow" aria-label="Fluxo de estudo"><span><i class="ph ph-video-camera"></i> Aula ou material</span><i class="ph ph-arrow-right" aria-hidden="true"></i><span><i class="ph ph-list-checks"></i> Questões</span><i class="ph ph-arrow-right" aria-hidden="true"></i><span><i class="ph ph-cards"></i> Revisão ativa</span></div></div>` +
+      `<aside class="plv2-today-side" aria-label="Resumo do dia"><div class="plv2-progress-label"><span>Progresso de hoje</span><span>${doDia.length ? percentual + '%' : '—'}</span></div><div class="plv2-progress" role="progressbar" aria-label="Progresso das tarefas de hoje" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percentual}"><span style="width:${percentual}%"></span></div><div class="plv2-today-stats"><div class="plv2-today-stat"><b>${doDia.length ? feitas + ' de ' + doDia.length : '—'}</b><span>tarefas concluídas</span></div><div class="plv2-today-stat"><b>${doDia.length ? fmtMin(minutos) : '—'}</b><span>tempo restante estimado</span></div></div></aside></section>` +
+      `<div class="plv2-kpis"><div class="plv2-kpi"><b>${plano ? total : '—'}</b><span>tarefas no cronograma</span></div><div class="plv2-kpi"><b>${plano ? concluidas : '—'}</b><span>tarefas concluídas</span></div><div class="plv2-kpi"><b>${plano ? tarefas.filter(t => t.tipo === 'revisao').length : '—'}</b><span>revisões programadas</span></div><div class="plv2-kpi"><b>${E(dataProva)}</b><span>próxima prova cadastrada</span></div></div>` +
+      `<section class="plv2-week" aria-labelledby="plv2-week-title"><h2 id="plv2-week-title"><i class="ph ph-calendar-check" aria-hidden="true"></i> Esta semana</h2>${semanaHtml}</section></section>`;
+  }
+
   function renderChat() {
     const st = chatState(); const r = root(); if (!r) return;
     const plano = get(K_PLAN, null);
-    r.innerHTML = `<div class="plv2"><div class="plv2-bar"><div><h2>Planejador inteligente</h2><div class="plv2-sub">Converse comigo: o cronograma nasce das suas respostas e usa suas aulas e PDFs reais.</div></div>
+    r.innerHTML = renderOverview(st, plano) + `<div class="plv2"><div class="plv2-bar"><div><h2> ${plano ? 'Ajustar seu plano com o Mentor' : 'Converse com o Mentor IA'}</h2><div class="plv2-sub">O cronograma nasce das suas respostas e aproveita suas aulas e PDFs reais.</div></div>
       <div class="plv2-btns">${plano ? '<button class="b" onclick="plv2.voltar()"><i class="ph ph-calendar"></i> Ver cronograma</button>' : ''}<button class="b" onclick="plv2.reiniciar()"><i class="ph ph-arrow-counter-clockwise"></i> Recomeçar</button></div></div>
       <div class="plv2-chat"><div class="plv2-msgs" id="plv2-msgs">${st.msgs.map(m => `<div class="plv2-m ${m.role === 'user' ? 'me' : 'bot'}">${E(m.content)}</div>`).join('')}</div>
       ${st.resumo.length > 1 ? `<div class="plv2-sum"><b>O que entendi de você:</b><ul style="margin:6px 0 0 16px;padding:0">${st.resumo.map(x => `<li>${E(x)}</li>`).join('')}</ul></div>` : ''}
       <div class="plv2-q" id="plv2-q">${(st.pronto ? ['Quero ajustar algo'] : []).concat(st.quick.filter(q => !st.pronto || !/gerar/i.test(q))).map(q => `<button onclick="plv2.enviar(${E(JSON.stringify(JSON.stringify(q)))})">${E(q)}</button>`).join('')}${st.pronto ? '<button class="b pri" style="border-radius:99px;background:var(--teal);color:var(--text-inverse);font-weight:700" onclick="plv2.gerar()"><i class="ph ph-magic-wand"></i> Gerar meu cronograma</button>' : ''}</div>
       <div class="plv2-in"><input type="file" id="plv2-file" accept=".pdf,.txt,.md,application/pdf,text/plain" style="display:none" onchange="plv2.anexar(this)"><button class="b" title="Anexar manual do aluno / ementa (PDF)" onclick="document.getElementById('plv2-file').click()"><i class="ph ph-paperclip"></i> 📎</button><textarea id="plv2-txt" rows="1" placeholder="Escreva sua resposta…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();plv2.enviar()}"></textarea><button class="b pri" id="plv2-send" onclick="plv2.enviar()"><i class="ph ph-paper-plane-tilt"></i></button></div></div></div>`;
+    r.querySelectorAll('#plv2-start, #plv2-start-top').forEach(start => start.addEventListener('click', () => {
+      const chat = r.querySelector('.plv2');
+      if (chat) chat.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const input = document.getElementById('plv2-txt');
+      if (input) setTimeout(() => input.focus(), 250);
+    }));
     const box = document.getElementById('plv2-msgs'); if (box) box.scrollTop = box.scrollHeight;
   }
 
@@ -209,7 +298,7 @@
     const dias = Object.keys(porDia).sort();
     const done = plano.tarefas.filter(t => t.status === 'feito' && t.tipo !== 'prova').length, tot = plano.tarefas.filter(t => t.tipo !== 'prova').length;
     const tabs = [['hoje', 'Hoje'], ['semana', 'Próximos 7 dias'], ['tudo', 'Tudo'], ['atrasadas', 'Atrasadas' + (atrasadas.length ? ' (' + atrasadas.length + ')' : '')]];
-    r.innerHTML = `<div class="plv2"><div class="plv2-bar"><div><h2>Seu cronograma</h2><div class="plv2-sub">${done}/${tot} tarefas concluídas · de ${plano.inicio.split('-').reverse().slice(0, 2).join('/')} a ${plano.fim.split('-').reverse().slice(0, 2).join('/')}${plano.perfil && plano.perfil.dataProva ? ' · prova ' + plano.perfil.dataProva.split('-').reverse().join('/') : ''}</div></div>
+    r.innerHTML = renderOverview(chatState(), plano) + `<div class="plv2"><div class="plv2-bar"><div><h2>Seu cronograma</h2><div class="plv2-sub">${done}/${tot} tarefas concluídas · de ${plano.inicio.split('-').reverse().slice(0, 2).join('/')} a ${plano.fim.split('-').reverse().slice(0, 2).join('/')}${plano.perfil && plano.perfil.dataProva ? ' · prova ' + plano.perfil.dataProva.split('-').reverse().slice(0, 2).join('/') : ''}</div></div>
       <div class="plv2-btns"><button class="b pri" onclick="plv2.conversar()"><i class="ph ph-chats-circle"></i> Conversar / ajustar</button><button class="b" onclick="plv2.colar()"><i class="ph ph-clipboard-text"></i> Colar cronograma da faculdade</button><button class="b" onclick="plv2.exportar()"><i class="ph ph-export"></i> Exportar</button><button class="b" onclick="plv2.maisSemanas()"><i class="ph ph-calendar-plus"></i> +4 semanas</button><button class="b" onclick="plv2.ia()"><i class="ph ph-sparkle"></i> Detalhar com IA</button>${atrasadas.length ? '<button class="b" onclick="plv2.reagendar()"><i class="ph ph-arrows-clockwise"></i> Reagendar atrasadas</button>' : ''}${legacyRender ? '<button class="b" onclick="plv2.antigo()"><i class="ph ph-clock-counter-clockwise"></i> Planner antigo</button>' : ''}</div></div>
       <div class="plv2-tabs">${tabs.map(([k, n]) => `<button class="b ${tab === k ? 'on' : ''}" onclick="plv2.aba('${k}')">${n}</button>`).join('')}</div>
       <div id="plv2-lista">${dias.length ? dias.map(d => { const lst = porDia[d]; const m = lst.reduce((a, t) => a + (t.minutos || 0), 0); return `<div class="plv2-day"><div class="plv2-dh ${d === h ? 'hoje' : ''}">${fmtDia(d)}${d === h ? ' · hoje' : ''}<span>${m ? fmtMin(m) + ' planejados' : ''}</span></div><table class="plv2-t"><thead><tr><th style="width:21%">Tarefa</th><th style="width:36%">Passo a passo</th><th style="width:23%">Materiais</th><th>Observações</th></tr></thead><tbody>${lst.map(tarefaRow).join('')}</tbody></table></div>`; }).join('') : `<div class="plv2-empty">${tab === 'hoje' ? 'Nada agendado para hoje — dia livre no seu cronograma. 🎉' : tab === 'atrasadas' ? 'Nenhuma tarefa atrasada.' : 'Nada por aqui.'}</div>`}</div></div>`;
@@ -298,6 +387,7 @@
       if (window.closeModals) closeModals();
     },
     aba(k) { tab = k; renderPlano(); },
+    irParaLista(k) { tab = k; renderPlano(); setTimeout(() => { const lista = document.querySelector('.plv2-tabs'); if (lista) lista.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 0); },
     feito(id) { const p = get(K_PLAN, null); const t = p && p.tarefas.find(x => x.id === id); if (!t) return; t.status = t.status === 'feito' ? 'pendente' : 'feito'; set(K_PLAN, p); sync(); renderPlano(); },
     conversar() {
       const p = get(K_PLAN, null); const st = chatState();
