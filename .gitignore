@@ -32,3 +32,4 @@ data/users/
 # Caches gerados em tempo de execução
 data/apostila-cache.json
 data/drive-info-cache.json
+data/apostilas/

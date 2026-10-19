@@ -10,30 +10,56 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(__dirname, '..', 'data');
 const CACHE_FILE = path.join(CACHE_DIR, 'apostila-cache.json');
 
-let htmlCache = new Map();
-try {
-  if (fs.existsSync(CACHE_FILE)) {
-    const raw = fs.readFileSync(CACHE_FILE, 'utf8');
-    const obj = JSON.parse(raw);
-    for (const [k, v] of Object.entries(obj)) {
-      htmlCache.set(k, v);
-    }
-    console.log(`📂 Cache permanente de apostilas carregado (${htmlCache.size} itens).`);
-  }
+// Cache em disco: um arquivo por apostila, lido sob demanda (apostilas com imagens embutidas
+// passam de dezenas de MB; um JSON único estourava a memória). Na memória fica só um punhado.
+const CACHE_ARQ_DIR = path.join(CACHE_DIR, 'apostilas');
+const MEM_MAX = 2;
+const htmlCache = new Map(); // id -> { timestamp, data }
+
+try { // cache antigo em arquivo único: não é mais usado
+  if (fs.existsSync(CACHE_FILE)) fs.unlinkSync(CACHE_FILE);
 } catch (e) {
-  console.warn('⚠️ Falha ao carregar cache de apostilas:', e.message);
+  console.warn('⚠️ Não consegui apagar o cache antigo de apostilas:', e.message);
 }
 
-function saveHtmlCacheToDisk() {
+function arquivoDoCache(id) {
+  return /^[A-Za-z0-9_-]{5,120}$/.test(id) ? path.join(CACHE_ARQ_DIR, id + '.html') : null;
+}
+
+function lerCache(id) {
+  const mem = htmlCache.get(id);
+  if (mem) return mem;
+  const arq = arquivoDoCache(id);
   try {
-    if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
-    const obj = {};
-    for (const [k, v] of htmlCache.entries()) {
-      obj[k] = v;
+    if (arq && fs.existsSync(arq)) {
+      const st = fs.statSync(arq);
+      const entrada = { timestamp: st.mtimeMs, data: fs.readFileSync(arq, 'utf8') };
+      guardarNaMemoria(id, entrada);
+      return entrada;
     }
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(obj), 'utf8');
   } catch (e) {
-    console.warn('⚠️ Falha ao salvar cache de apostilas no disco:', e.message);
+    console.warn('⚠️ Falha ao ler cache de apostila:', e.message);
+  }
+  return null;
+}
+
+function guardarNaMemoria(id, entrada) {
+  htmlCache.delete(id);
+  htmlCache.set(id, entrada);
+  while (htmlCache.size > MEM_MAX) htmlCache.delete(htmlCache.keys().next().value);
+}
+
+function gravarCache(id, entrada) {
+  guardarNaMemoria(id, entrada);
+  const arq = arquivoDoCache(id);
+  if (!arq) return;
+  try {
+    fs.mkdirSync(CACHE_ARQ_DIR, { recursive: true });
+    const tmp = arq + '.tmp';
+    fs.writeFileSync(tmp, entrada.data, 'utf8');
+    fs.renameSync(tmp, arq); // troca atômica: nunca fica arquivo pela metade
+  } catch (e) {
+    console.warn('⚠️ Falha ao salvar cache de apostila no disco:', e.message);
   }
 }
 
@@ -73,7 +99,23 @@ async function fetchCssMestre() {
   }
 }
 
+/** Tira as imagens base64 do texto (podem somar dezenas de MB), roda fn no esqueleto e devolve as imagens. */
+function comImagensDeFora(html, fn) {
+  const guardadas = [];
+  const esqueleto = html.replace(/data:image\/(?:png|jpe?g|gif|webp|avif|bmp);base64,[A-Za-z0-9+/=\s]{200,}/gi, (m) => {
+    guardadas.push(m);
+    return 'data:image/png;base64,MRIMG' + (guardadas.length - 1) + 'X';
+  });
+  const out = fn(esqueleto);
+  if (!guardadas.length) return out;
+  return out.replace(/data:image\/png;base64,MRIMG(\d+)X/g, (m, n) => guardadas[Number(n)] || '');
+}
+
 function sanitizeHtml(html) {
+  return comImagensDeFora(html, sanitizarEsqueleto);
+}
+
+function sanitizarEsqueleto(html) {
   // Remove tudo que executa código ou puxa recursos externos; as folhas de estilo da própria
   // apostila saem também (o leitor usa o CSS-mestre).
   const $ = cheerio.load(html);
@@ -192,12 +234,16 @@ export async function getApostilaHtml(fileId, { escopo = false } = {}) {
     const base = await getApostilaHtml(fileId);
     const chave = cleanDriveId(fileId) + ':' + base.length;
     if (escopoCache.has(chave)) return escopoCache.get(chave);
-    const $ = cheerio.load(base);
-    const st = $('#medreader-css-mestre');
-    const css = scopeCss(st.text(), '.medreader-content');
-    st.remove();
-    const pronto = '<style id="medreader-css-mestre">' + css + '</style>\n' + $('body').html();
-    if (escopoCache.size > 20) escopoCache.clear();
+    const ini = base.indexOf('<style id="medreader-css-mestre">');
+    const fimCss = ini === -1 ? -1 : base.indexOf('</style>', ini);
+    const css = ini === -1 || fimCss === -1 ? '' : base.slice(ini + '<style id="medreader-css-mestre">'.length, fimCss);
+    const resto = ini === -1 || fimCss === -1 ? base : base.slice(0, ini) + base.slice(fimCss + 8);
+    const mCorpo = resto.match(/<body[^>]*>/i);
+    const iCorpo = mCorpo ? mCorpo.index + mCorpo[0].length : 0;
+    const fCorpo = resto.lastIndexOf('</body>');
+    const corpo = resto.slice(iCorpo, fCorpo > iCorpo ? fCorpo : undefined);
+    const pronto = '<style id="medreader-css-mestre">' + scopeCss(css, '.medreader-content') + '</style>\n' + corpo;
+    escopoCache.clear(); // guarda só a última (podem ser grandes)
     escopoCache.set(chave, pronto);
     return pronto;
   }
@@ -205,7 +251,7 @@ export async function getApostilaHtml(fileId, { escopo = false } = {}) {
   if (!id) throw new Error('ID inválido');
   
   const now = Date.now();
-  const cached = htmlCache.get(id);
+  const cached = lerCache(id);
   if (cached && (now - cached.timestamp < CACHE_TTL)) {
     return cached.data;
   }
@@ -257,8 +303,7 @@ export async function getApostilaHtml(fileId, { escopo = false } = {}) {
   processed = addReaderEnhancements(processed);
   
   // Cache
-  htmlCache.set(id, { timestamp: now, data: processed });
-  saveHtmlCacheToDisk();
+  gravarCache(id, { timestamp: now, data: processed });
   
   return processed;
 }
