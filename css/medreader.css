@@ -45,7 +45,7 @@
   /* Espaçamentos e bordas */
   --medreader-radius: 12px;
   --medreader-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
-  --medreader-transition: all 0.18s ease;
+  --medreader-transition: transform 0.18s ease, opacity 0.18s ease;
 }
 
 /* ── Corpo e container do leitor ── */

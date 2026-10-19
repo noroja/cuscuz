@@ -22,7 +22,7 @@
   var STEP_DEFAULTS = [
     {
       title: 'Bem-vindo ao Cuscuz-MED',
-      text: 'Aqui é a sua área de domínio. Use este tour rápido para conhecer os 4 pontos centrais da plataforma — levanta menos de 1 minuto.',
+      text: 'Aqui é a sua área de domínio. Use este tour rápido para conhecer os 5 passos principais da plataforma. Leva menos de 1 minuto.',
       placement: 'center'
     },
     {

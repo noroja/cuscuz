@@ -3505,6 +3505,21 @@ app.get('/api/planner/deck', async (req, res) => {
   }
 });
 
+// POST /api/planner/deck — solicita a geração autenticada de um deck para um tema
+app.post('/api/planner/deck', (req, res) => {
+  try {
+    const materia = String(req.body?.materia || '').trim().slice(0, 160);
+    const tema = String(req.body?.tema || '').trim().slice(0, 200);
+    if (!tema) return res.status(400).json({ success: false, msg: 'tema é obrigatório' });
+    const pronto = readDecks()[plDeckKey(materia, tema)];
+    if (pronto?.pronto) return res.json({ success: true, pronto: true, deck: pronto });
+    plEnfileirarDeck(materia, tema);
+    return res.status(202).json({ success: true, pronto: false, enfileirado: true });
+  } catch (err) {
+    return res.status(500).json({ success: false, msg: err.message });
+  }
+});
+
 registerPlanner(app, { generateWithGemini, getGeminiClient, getBank: () => readQuestionsBank() });
 
 registerAula(app, { generateWithGemini, getGeminiClient });
