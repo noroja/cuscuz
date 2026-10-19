@@ -47,3 +47,14 @@ alter table public.conversations enable row level security;
 create policy "Permitir acesso total a users" on public.users for all using (true) with check (true);
 create policy "Permitir acesso total a sessions" on public.sessions for all using (true) with check (true);
 create policy "Permitir acesso total a conversations" on public.conversations for all using (true) with check (true);
+
+-- 4. Marcações do MedReader (sublinhados, bookmarks, anotações e dúvidas por apostila)
+create table if not exists public.medreader_marcas (
+  username text not null,
+  apostila_id text not null,
+  marcas jsonb not null default '[]'::jsonb,
+  atualizado bigint not null default 0,
+  primary key (username, apostila_id)
+);
+alter table public.medreader_marcas enable row level security;
+create policy "Permitir acesso total a medreader_marcas" on public.medreader_marcas for all using (true) with check (true);

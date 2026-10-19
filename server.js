@@ -16,6 +16,7 @@ import { registerPlanner } from './src/planner-routes.js';
 
 import { registerAula } from './src/aula.js';
 import { registerApostilaReader } from './src/apostila-reader.js';
+import { registerMedreaderMarcas } from './src/medreader-marcas.js';
 import { registerAuthRoutes, authMiddleware, getUserFilePath, getUserDataDir, validateSession, updateUserProfile } from './src/auth-multiuser.js';
 import { varrerExtras, juntar as juntarExtras, lerExtra, STATUS as EXTRA_STATUS, EXTRA_IDS, setCatalogo, CAT } from './src/extra-drive.js';
 import { resetCatalogo } from './src/planner-engine.js';
@@ -3524,6 +3525,7 @@ registerPlanner(app, { generateWithGemini, getGeminiClient, getBank: () => readQ
 
 registerAula(app, { generateWithGemini, getGeminiClient });
 registerApostilaReader(app);
+registerMedreaderMarcas(app, { getSupabase: () => supabase });
 
 // Arquivos internos nunca saem pelo site (código, dados, catálogo bruto, segredos)
 app.use((req, res, next) => {

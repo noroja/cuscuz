@@ -9,6 +9,7 @@
 import { MedReaderCore } from './medreader-core.js';
 import { FlashcardManager, FlashcardReviewModal, Highlighter } from './medreader-flashcards.js';
 import { FlashcardExport } from './medreader-export.js';
+import { MedReaderMarcas } from './medreader-marcas.js';
 
 // Estado global da integração MedReader
 window.medreader = {
@@ -48,8 +49,12 @@ function medreaderInit() {
     if (document.fullscreenElement) return; // o navegador sai da tela cheia primeiro
     const busca = document.getElementById('medreader-busca');
     const painel = document.getElementById('medreader-painel');
-    if (busca && !busca.hidden) medreaderBuscaFechar();
+    const painelM = document.getElementById('medreader-painel-marcas');
+    const menuM = document.getElementById('medreader-menu');
+    if (menuM && !menuM.hidden) { window.medreader.marcas._esconderMenu(); }
+    else if (busca && !busca.hidden) medreaderBuscaFechar();
     else if (painel && !painel.hidden) medreaderIndiceFechar();
+    else if (painelM && !painelM.hidden) medreaderMarcasFechar();
     else medreaderFechar();
   });
 
@@ -88,8 +93,35 @@ function medreaderInit() {
 
   window.medreader.exportador = new FlashcardExport();
 
+  // Marcações: menu ao selecionar texto + histórico (salvo no navegador e no servidor)
+  const marcas = new MedReaderMarcas({
+    shell,
+    container,
+    antesDeAplicar: medreaderBuscaLimpar,
+    aoBuscar: (texto) => {
+      medreaderBuscaAbrir();
+      const campo = document.getElementById('medreader-busca-input');
+      if (campo) { campo.value = texto.replace(/\s+/g, ' ').trim().slice(0, 80); medreaderBuscar(campo.value); }
+    },
+    aoFlashcard: (m) => {
+      const pergunta = prompt('Pergunta do flashcard:', m.tipo === 'duvida' && m.nota ? m.nota : m.trecho);
+      if (!pergunta) return;
+      const resposta = prompt('Resposta do flashcard:', m.tipo === 'nota' && m.nota ? m.nota : '');
+      if (!resposta) return;
+      try {
+        const card = window.medreader.manager.create({ pergunta, resposta, trecho: m.trecho, apostilaId: window.medreader.atualId || 'aula-atual' });
+        medreaderToast(`Flashcard criado (etapa ${card.etapa}).`);
+      } catch (e) { medreaderToast(e.message, 'error'); }
+    },
+    aviso: medreaderToast,
+    token: () => localStorage.getItem('cuscuz_token') || '',
+  });
+  marcas.ligarPainel(document.getElementById('medreader-marcas-lista'));
+  marcas.onContagem = (n) => { const el = document.getElementById('medreader-marcas-n'); if (el) el.textContent = n ? '(' + n + ')' : ''; };
+  marcas.aoIrNoCelular = medreaderMarcasFechar;
+  window.medreader.marcas = marcas;
+
   window.medreader.inicializado = true;
-  medreaderToast('MedReader inicializado.');
 }
 
 /** Ícones da barra (SVG simples, herdam a cor do botão). */
@@ -124,6 +156,7 @@ function medreaderCriarShell() {
       '<div class="medreader-title" id="medreader-title">Apostila</div>' +
       '<div class="medreader-controls">' +
         '<button type="button" class="medreader-btn" data-mr="indice" id="medreader-btn-indice" title="Índice da apostila" aria-label="Índice da apostila" aria-expanded="false">' + MEDREADER_ICONES.indice + '<span class="medreader-btn-txt">Índice</span></button>' +
+        '<button type="button" class="medreader-btn" data-mr="marcas" id="medreader-btn-marcas" title="Marcações e histórico" aria-label="Marcações e histórico" aria-expanded="false">\u270E<span class="medreader-btn-txt">Marcações <b id="medreader-marcas-n"></b></span></button>' +
         '<button type="button" class="medreader-btn" data-mr="busca" title="Busca de texto (Ctrl+F)" aria-label="Busca de texto">' + MEDREADER_ICONES.busca + '<span class="medreader-btn-txt">Buscar</span></button>' +
         '<button type="button" class="medreader-btn" data-mr="fonte-menos" title="Diminuir fonte" aria-label="Diminuir fonte">A\u2212</button>' +
         '<button type="button" class="medreader-btn" data-mr="fonte-mais" title="Aumentar fonte" aria-label="Aumentar fonte">A+</button>' +
@@ -150,6 +183,11 @@ function medreaderCriarShell() {
           '<button type="button" class="medreader-btn" data-mr="indice-fechar" title="Fechar índice" aria-label="Fechar índice">\u2715</button></div>' +
         '<nav id="medreader-indice"></nav>' +
       '</aside>' +
+      '<aside class="medreader-painel" id="medreader-painel-marcas" aria-label="Marcações" hidden>' +
+        '<div class="medreader-painel-cab"><strong>Marcações</strong>' +
+          '<button type="button" class="medreader-btn" data-mr="marcas-fechar" title="Fechar" aria-label="Fechar marcações">\u2715</button></div>' +
+        '<div id="medreader-marcas-lista"></div>' +
+      '</aside>' +
     '</div>';
   shell.addEventListener('click', (ev) => {
     const btn = ev.target.closest && ev.target.closest('[data-mr]');
@@ -161,6 +199,8 @@ function medreaderCriarShell() {
     else if (acao === 'fonte-menos') medreaderAjustarFonte(-1);
     else if (acao === 'indice') medreaderIndiceAlternar();
     else if (acao === 'indice-fechar') medreaderIndiceFechar();
+    else if (acao === 'marcas') medreaderMarcasAlternar();
+    else if (acao === 'marcas-fechar') medreaderMarcasFechar();
     else if (acao === 'busca') medreaderBuscaAlternar();
     else if (acao === 'busca-ant') medreaderBuscaIr(-1);
     else if (acao === 'busca-prox') medreaderBuscaIr(1);
@@ -200,6 +240,25 @@ function medreaderCriarShell() {
 const $mr = (id) => document.getElementById(id);
 const MEDREADER_PALAVRAS_POR_MIN = 200; // velocidade de leitura usada no "término estimado"
 
+/** Painel de marcações (histórico). */
+function medreaderMarcasAlternar() {
+  const painel = $mr('medreader-painel-marcas');
+  if (!painel) return;
+  if (painel.hidden) {
+    medreaderIndiceFechar();
+    painel.hidden = false;
+    const b = $mr('medreader-btn-marcas'); if (b) b.setAttribute('aria-expanded', 'true');
+  } else {
+    medreaderMarcasFechar();
+  }
+}
+
+function medreaderMarcasFechar() {
+  const painel = $mr('medreader-painel-marcas');
+  if (painel) painel.hidden = true;
+  const b = $mr('medreader-btn-marcas'); if (b) b.setAttribute('aria-expanded', 'false');
+}
+
 /** Índice da apostila: lista os títulos (h1–h4) e rola até o escolhido. */
 function medreaderMontarIndice() {
   const nav = $mr('medreader-indice');
@@ -233,6 +292,7 @@ function medreaderIndiceAlternar() {
   const painel = $mr('medreader-painel');
   if (!painel) return;
   if (painel.hidden) {
+    medreaderMarcasFechar();
     medreaderMontarIndice();
     painel.hidden = false;
     const b = $mr('medreader-btn-indice'); if (b) b.setAttribute('aria-expanded', 'true');
@@ -482,6 +542,8 @@ async function medreaderAbrir(fileId, fileName) {
   window.medreader.palavras = 0;
   medreaderBuscaFechar();
   medreaderIndiceFechar();
+  medreaderMarcasFechar();
+  if (window.medreader.marcas) window.medreader.marcas.fechar();
 
   shell.classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -503,6 +565,7 @@ async function medreaderAbrir(fileId, fileName) {
     const raiz = container.querySelector('.medreader-content');
     window.medreader.palavras = raiz ? medreaderContarPalavras(raiz) : 0;
     window.medreader.pronto = true;
+    if (window.medreader.marcas) window.medreader.marcas.abrir(fileId);
 
     // Retoma de onde parou (só se não estava no começo nem já terminada)
     const salvo = medreaderLerPosicao(fileId);
@@ -535,8 +598,10 @@ function medreaderCloseOverlay() {
     medreaderSalvarPosicao(window.medreader.atualId, medreaderFracaoLida());
   }
   window.medreader.pronto = false;
+  if (window.medreader.marcas) window.medreader.marcas.fechar();
   medreaderBuscaFechar();
   medreaderIndiceFechar();
+  medreaderMarcasFechar();
   if (document.fullscreenElement) {
     const p = document.exitFullscreen && document.exitFullscreen();
     if (p && p.catch) p.catch(() => {});

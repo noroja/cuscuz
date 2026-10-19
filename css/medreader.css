@@ -807,3 +807,52 @@ mark.medreader-busca-hit.atual { background: #fb923c; outline: 2px solid #fb923c
   .medreader-painel { width: 100%; max-width: 100%; }
   .medreader-rodape { gap: 16px; font-size: 11px; }
 }
+
+/* ══════════════ Marcações: menu de seleção e histórico ══════════════ */
+mark.mr-marca { color: inherit; border-radius: 2px; cursor: pointer; padding: 0; transition: box-shadow 0.2s; }
+mark.mr-c-amarelo { background: rgba(250, 204, 21, 0.42); box-shadow: inset 0 -2px 0 #eab308; }
+mark.mr-c-verde   { background: rgba(74, 222, 128, 0.36); box-shadow: inset 0 -2px 0 #22c55e; }
+mark.mr-c-azul    { background: rgba(96, 165, 250, 0.36); box-shadow: inset 0 -2px 0 #3b82f6; }
+mark.mr-c-rosa    { background: rgba(244, 114, 182, 0.36); box-shadow: inset 0 -2px 0 #ec4899; }
+mark.mr-t-bookmark.mr-primeira::before { content: "\1F516"; font-size: 0.85em; margin-right: 2px; }
+mark.mr-t-nota.mr-primeira::before { content: "\270E"; font-size: 0.85em; margin-right: 2px; }
+mark.mr-t-duvida.mr-primeira::before { content: "?"; font-weight: 700; margin-right: 2px; color: #ef4444; }
+mark.mr-pulso { outline: 2px solid #f97316; outline-offset: 2px; }
+
+.medreader-menu {
+  position: fixed; z-index: 70; display: flex; align-items: center; gap: 4px;
+  padding: 6px 8px; border-radius: 10px; background: #1f2937; color: #f9fafb;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4); max-width: calc(100vw - 16px);
+}
+.medreader-menu[hidden] { display: none !important; }
+.medreader-menu .mr-sw { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.5); cursor: pointer; padding: 0; box-shadow: none; }
+.medreader-menu .mr-sw.ativo { border-color: #fff; }
+.medreader-menu .mr-sw.mr-c-amarelo { background: #facc15; }
+.medreader-menu .mr-sw.mr-c-verde { background: #4ade80; }
+.medreader-menu .mr-sw.mr-c-azul { background: #60a5fa; }
+.medreader-menu .mr-sw.mr-c-rosa { background: #f472b6; }
+.medreader-menu .mr-sep { width: 1px; height: 20px; background: rgba(255, 255, 255, 0.25); margin: 0 4px; }
+.medreader-menu .mr-b { background: transparent; border: 0; color: inherit; font-size: 16px; min-width: 32px; height: 32px; border-radius: 6px; cursor: pointer; padding: 0 6px; }
+.medreader-menu .mr-b:hover { background: rgba(255, 255, 255, 0.15); }
+.medreader-menu .mr-b.perigo:hover { background: rgba(239, 68, 68, 0.5); }
+.medreader-menu .mr-b.primario { background: #2563eb; font-size: 13px; }
+.medreader-menu .mr-editor { display: flex; flex-direction: column; gap: 6px; width: min(320px, calc(100vw - 40px)); }
+.medreader-menu .mr-editor label { font-size: 12px; opacity: 0.8; }
+.medreader-menu .mr-editor textarea { width: 100%; box-sizing: border-box; resize: vertical; border-radius: 6px; border: 1px solid #4b5563; background: #111827; color: #f9fafb; padding: 6px 8px; font: inherit; font-size: 14px; }
+.medreader-menu .mr-editor-acoes { display: flex; justify-content: flex-end; gap: 6px; }
+.medreader-menu .mr-editor-acoes .mr-b { font-size: 13px; }
+
+#medreader-marcas-lista { overflow-y: auto; flex: 1; min-height: 0; padding: 6px 8px 16px; }
+.mr-item { border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+.mr-item.orfa { opacity: 0.6; }
+.mr-item-cab { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.mr-item-cab em { margin-left: auto; font-style: normal; color: #ef4444; }
+.mr-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; border-radius: 4px; font-size: 12px; }
+.mr-chip.mr-c-amarelo { background: #facc15; color: #000; }
+.mr-chip.mr-c-verde { background: #4ade80; color: #000; }
+.mr-chip.mr-c-azul { background: #60a5fa; color: #000; }
+.mr-chip.mr-c-rosa { background: #f472b6; color: #000; }
+.mr-item-trecho { display: block; width: 100%; text-align: left; background: none; border: 0; color: inherit; font: inherit; font-size: 13px; padding: 6px 0; cursor: pointer; }
+.mr-item-trecho:hover { text-decoration: underline; }
+.mr-item-nota { margin: 0 0 6px; font-size: 13px; padding: 6px 8px; border-left: 3px solid #f97316; background: rgba(128, 128, 128, 0.12); white-space: pre-wrap; }
+.mr-item-acoes { display: flex; gap: 6px; justify-content: flex-end; }
