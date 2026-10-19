@@ -89,7 +89,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api', authMiddleware);
 
 /* ═══ ARQUIVOS ESTÁTICOS: nunca expor código, dados internos ou segredos ═══ */
-const BLOCKED_STATIC = /^\/(server\.js|api(\/|$)|vercel\.json|package(-lock)?\.json|render\.yaml|DEPLOY\.md|README\.md|supabase-schema\.sql|metadata\.json|drive-tree-snapshot\.json|data(\/|$)|scripts(\/|$)|src(\/|$)|node_modules(\/|$)|\.)/i;
+const BLOCKED_STATIC = /^\/(server\.js|api\/index\.js$|vercel\.json|package(-lock)?\.json|render\.yaml|DEPLOY\.md|README\.md|supabase-schema\.sql|metadata\.json|drive-tree-snapshot\.json|data(\/|$)|scripts(\/|$)|src(\/|$)|node_modules(\/|$)|\.)/i;
 app.use((req, res, next) => {
   let p = '';
   try { p = decodeURIComponent(req.path); } catch (_) { return res.status(400).end(); }
