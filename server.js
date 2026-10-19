@@ -438,6 +438,22 @@ async function inicializarCatalogoNuvem() {
   } catch (e) {
     console.error('❌ [Boot] Full Sync de emergência falhou:', e.message);
   }
+
+  // Fallback de Segurança Máxima: se Supabase e Full Sync falharem, usa o acervo-manifest.json empacotado na raiz
+  if ((CAT.videos || []).length === 0 && (CAT.materials || []).length === 0) {
+    try {
+      const fallbackPath = path.join(__dirname, 'acervo-manifest.json');
+      if (fs.existsSync(fallbackPath)) {
+        const localCat = JSON.parse(fs.readFileSync(fallbackPath, 'utf8'));
+        if ((localCat.videos || []).length > 0 || (localCat.materials || []).length > 0) {
+          setCatalogo(localCat);
+          console.log(`🛡️ [Boot] Fallback ativado: catálogo local carregado com ${localCat.videos?.length || 0} vídeos e ${localCat.materials?.length || 0} materiais.`);
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ [Boot] Falha ao ler catálogo local de fallback:', err.message);
+    }
+  }
 }
 
 // Snapshot offline local do Google Drive (fallback automático caso a chave expire ou falhe)
