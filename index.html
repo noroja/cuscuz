@@ -499,23 +499,37 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-  // Inicializa o Supabase client no navegador buscando as chaves do backend (Railway)
-  // As chaves NÃO ficam hardcoded aqui — vêm das Variables do Railway via /api/config
+  // Inicializa o Supabase client no navegador buscando as chaves do backend.
+  // As chaves NÃO ficam hardcoded aqui — vêm das Variables via /api/config.
   let supabaseReady = Promise.resolve();
-  window.supabase = null;
+
+  // A biblioteca do Supabase é carregada com `defer` e pode ainda não ter
+  // executado quando este script roda. Esperamos por ela em vez de zerar o
+  // global (zerar fazia `typeof supabase` virar "object" e quebrar no createClient).
+  const esperarLibSupabase = async (limiteMs = 8000) => {
+    const inicio = Date.now();
+    while (!(window.supabase && typeof window.supabase.createClient === 'function')) {
+      if (Date.now() - inicio > limiteMs) return null;
+      await new Promise(r => setTimeout(r, 50));
+    }
+    return window.supabase;
+  };
 
   supabaseReady = (async () => {
     try {
       const res = await fetch('/api/config');
       if (!res.ok) throw new Error('Falha ao carregar config');
       const cfg = await res.json();
-      if (cfg.supabaseUrl && cfg.supabaseAnonKey && typeof supabase !== 'undefined') {
-        window.supabase = supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+      const lib = await esperarLibSupabase();
+      if (cfg.supabaseUrl && cfg.supabaseAnonKey && lib) {
+        window.supabase = lib.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
         console.log('✅ [Supabase] Cliente inicializado via /api/config');
       } else {
-        console.warn('⚠️ [Supabase] URL ou chave anônima não disponíveis no /api/config');
+        window.supabase = null;
+        console.warn('⚠️ [Supabase] URL, chave anônima ou biblioteca indisponíveis no /api/config');
       }
     } catch (e) {
+      window.supabase = null;
       console.warn('⚠️ [Supabase] Erro ao inicializar cliente:', e.message);
     }
   })();
