@@ -552,16 +552,22 @@ async function medreaderAbrir(fileId, fileName) {
   medreaderAtualizarProgresso();
 
   const pedido = ++medreaderPedidoAtual;
+  medreaderLimparImagens();
   try {
     const res = await fetch(`/api/apostila/html/${encodeURIComponent(fileId)}?escopo=1`, {
       headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('cuscuz_token') || '') },
     });
     if (res.status === 401) throw new Error('sess\u00e3o expirada, entre de novo');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      let det = '';
+      try { const t = (await res.text()).trim(); try { det = JSON.parse(t).msg || ''; } catch (_) { det = t.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').slice(0, 160); } } catch (_) { /* sem corpo */ }
+      throw new Error(`HTTP ${res.status}` + (det ? ' \u2014 ' + det : ''));
+    }
     const html = await res.text();
     if (pedido !== medreaderPedidoAtual) return; // fechou ou abriu outra enquanto carregava
 
     core.loadContent(html);
+    medreaderCarregarImagens(fileId, pedido);
     const raiz = container.querySelector('.medreader-content');
     window.medreader.palavras = raiz ? medreaderContarPalavras(raiz) : 0;
     window.medreader.pronto = true;
@@ -582,6 +588,46 @@ async function medreaderAbrir(fileId, fileName) {
   }
 }
 
+/** Imagens da apostila vêm separadas do HTML: busca cada uma quando chega perto da tela. */
+let medreaderObsImg = null;
+let medreaderUrlsImg = [];
+
+function medreaderLimparImagens() {
+  if (medreaderObsImg) { medreaderObsImg.disconnect(); medreaderObsImg = null; }
+  medreaderUrlsImg.forEach((u) => URL.revokeObjectURL(u));
+  medreaderUrlsImg = [];
+}
+
+function medreaderCarregarImagens(fileId, pedido) {
+  medreaderLimparImagens();
+  const container = window.medreader.container;
+  const imgs = container ? [...container.querySelectorAll('img[data-mr-img]')] : [];
+  if (!imgs.length) return;
+  const buscar = async (img) => {
+    if (img.dataset.mrBuscando) return;
+    img.dataset.mrBuscando = '1';
+    try {
+      const res = await fetch(`/api/apostila/img/${encodeURIComponent(fileId)}/${img.dataset.mrImg}`, {
+        headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('cuscuz_token') || '') },
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const blob = await res.blob();
+      if (pedido !== medreaderPedidoAtual) return;
+      const url = URL.createObjectURL(blob);
+      medreaderUrlsImg.push(url);
+      img.src = url;
+    } catch (e) {
+      img.dataset.mrBuscando = '';
+      img.title = 'Imagem n\u00e3o carregada (' + e.message + ')';
+    }
+  };
+  if (!('IntersectionObserver' in window)) { imgs.forEach(buscar); return; }
+  medreaderObsImg = new IntersectionObserver((itens) => {
+    itens.forEach((it) => { if (it.isIntersecting) { medreaderObsImg.unobserve(it.target); buscar(it.target); } });
+  }, { root: container, rootMargin: '800px 0px' });
+  imgs.forEach((img) => medreaderObsImg.observe(img));
+}
+
 /** Compatibilidade: nomes antigos chamados pelo index.html. */
 async function medreaderOpenOverlay(fileId, fileName) {
   return medreaderAbrir(fileId, fileName);
@@ -592,6 +638,7 @@ async function medreaderOpenOverlay(fileId, fileName) {
  */
 function medreaderCloseOverlay() {
   medreaderPedidoAtual++; // cancela qualquer carregamento em andamento
+  medreaderLimparImagens();
   // Grava onde parou antes de esconder o leitor (escondido, a altura da área vira 0)
   if (window.medreader.pronto && window.medreader.atualId) {
     clearTimeout(medreaderTimerPos);

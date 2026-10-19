@@ -231,6 +231,55 @@ function addReaderEnhancements(html) {
     .replace(/<html([^>]*)>/i, '<html$1 class="medreader-html">');
 }
 
+
+/* ── Imagens em requisições separadas ──
+   Apostilas trazem imagens base64 dentro do HTML (dezenas de MB). Em hospedagem serverless o corpo
+   de uma resposta tem limite pequeno (~4,5 MB), então no modo escopo cada imagem sai do HTML,
+   é guardada em disco e o leitor busca uma a uma (/api/apostila/img/:id/:n) conforme aparecem. */
+const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+const MIME_IMG = /^image\/(png|jpe?g|gif|webp|avif|bmp)$/i;
+
+function pastaImagens(id) {
+  return /^[A-Za-z0-9_-]{5,120}$/.test(id) ? path.join(CACHE_ARQ_DIR, id + '.img') : null;
+}
+
+function externalizarImagens(id, html) {
+  const pasta = pastaImagens(id);
+  if (!pasta) return html;
+  let n = 0;
+  let pronta = false;
+  return html.replace(/(<img\b[^>]*?\ssrc=)(["'])(data:image\/(?:png|jpe?g|gif|webp|avif|bmp);base64,[A-Za-z0-9+/=\s]{200,})\2/gi, (m, ini, q, dados) => {
+    try {
+      if (!pronta) { fs.rmSync(pasta, { recursive: true, force: true }); fs.mkdirSync(pasta, { recursive: true }); pronta = true; }
+      fs.writeFileSync(path.join(pasta, n + '.txt'), dados, 'utf8');
+    } catch (e) {
+      console.warn('⚠️ Falha ao guardar imagem da apostila:', e.message);
+      return m; // sem disco: deixa a imagem no HTML
+    }
+    return ini + q + PIXEL + q + ' data-mr-img="' + (n++) + '"';
+  });
+}
+
+const emAndamento = new Map();
+
+export async function getApostilaImagem(fileId, n) {
+  const id = cleanDriveId(fileId);
+  const pasta = pastaImagens(id);
+  if (!pasta || !/^\d{1,6}$/.test(String(n))) throw new Error('Imagem inválida');
+  const arq = path.join(pasta, n + '.txt');
+  if (!fs.existsSync(arq)) { // outra instância pode ter montado a apostila: refaz uma vez por id
+    if (!emAndamento.has(id)) {
+      emAndamento.set(id, getApostilaHtml(id, { escopo: true }).finally(() => emAndamento.delete(id)));
+    }
+    await emAndamento.get(id);
+  }
+  if (!fs.existsSync(arq)) throw new Error('Imagem não encontrada');
+  const uri = fs.readFileSync(arq, 'utf8');
+  const m = uri.match(/^data:(image\/[a-z0-9.+-]+);base64,([\s\S]+)$/i);
+  if (!m || !MIME_IMG.test(m[1])) throw new Error('Imagem inválida');
+  return { mime: m[1].toLowerCase(), buffer: Buffer.from(m[2].replace(/\s+/g, ''), 'base64') };
+}
+
 const escopoCache = new Map();
 
 export async function getApostilaHtml(fileId, { escopo = false } = {}) {
@@ -246,7 +295,7 @@ export async function getApostilaHtml(fileId, { escopo = false } = {}) {
     const iCorpo = mCorpo ? mCorpo.index + mCorpo[0].length : 0;
     const fCorpo = resto.lastIndexOf('</body>');
     const corpo = resto.slice(iCorpo, fCorpo > iCorpo ? fCorpo : undefined);
-    const pronto = '<style id="medreader-css-mestre">' + scopeCss(css, '.medreader-content') + '</style>\n' + corpo;
+    const pronto = '<style id="medreader-css-mestre">' + scopeCss(css, '.medreader-content') + '</style>\n' + externalizarImagens(cleanDriveId(fileId), corpo);
     escopoCache.clear(); // guarda só a última (podem ser grandes)
     escopoCache.set(chave, pronto);
     return pronto;
@@ -313,6 +362,18 @@ export async function getApostilaHtml(fileId, { escopo = false } = {}) {
 }
 
 export function registerApostilaReader(app) {
+  app.get('/api/apostila/img/:id/:n', async (req, res) => {
+    try {
+      const { mime, buffer } = await getApostilaImagem(req.params.id, req.params.n);
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Cache-Control', 'private, max-age=86400');
+      res.end(buffer);
+    } catch (err) {
+      console.error('[Apostila Img]', err.message);
+      res.status(404).json({ success: false, msg: err.message });
+    }
+  });
+
   // Endpoint para buscar HTML da apostila processado
   app.get('/api/apostila/html/:id', async (req, res) => {
     try {
