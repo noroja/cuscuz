@@ -5,12 +5,7 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 60,
-      "includeFiles": [
-        "index.html",
-        "acervo-manifest.json",
-        "drive-tree-snapshot.json",
-        "data/**"
-      ]
+      "includeFiles": "{index.html,acervo-manifest.json,drive-tree-snapshot.json,data/**}"
     }
   },
   "rewrites": [
