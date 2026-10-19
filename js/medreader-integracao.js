@@ -259,28 +259,78 @@ function medreaderMarcasFechar() {
   const b = $mr('medreader-btn-marcas'); if (b) b.setAttribute('aria-expanded', 'false');
 }
 
-/** Índice da apostila: lista os títulos (h1–h4) e rola até o escolhido. */
+const MEDREADER_BLOCOS = 'p,div,li,td,th,center,section,article,header,footer,blockquote,dt,dd,font,span,strong,b';
+const MEDREADER_FILHOS_BLOCO = 'p,div,ul,ol,table,tr,li,section,article,h1,h2,h3,h4,h5,h6,blockquote,img';
+
+/**
+ * Acha os títulos do texto. Usa h1\u2013h6 quando a apostila os tem; senão reconhece títulos pelo
+ * estilo (fonte bem maior que o corpo, ou linha curta em negrito) e ignora o que se repete em
+ * todas as páginas (cabeçalhos e rodapés).
+ * @returns {{el: HTMLElement, texto: string, nivel: number}[]}
+ */
+function medreaderTitulosDoConteudo(raiz) {
+  const limpar = (t) => String(t || '').replace(/\s+/g, ' ').trim();
+  const hs = [...raiz.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter((h) => limpar(h.textContent));
+  if (hs.length >= 3) {
+    const base = Math.min(...hs.map((h) => Number(h.tagName[1])));
+    return hs.map((h) => ({ el: h, texto: limpar(h.textContent), nivel: Math.min(4, Number(h.tagName[1]) - base) }));
+  }
+
+  const corpo = parseFloat(getComputedStyle(raiz).fontSize) || 16;
+  const achados = [];
+  let ultimo = null;
+  for (const el of raiz.querySelectorAll(MEDREADER_BLOCOS)) {
+    if (ultimo && ultimo.contains(el)) continue; // j\u00e1 contado pelo elemento de fora
+    if (el.querySelector(MEDREADER_FILHOS_BLOCO)) continue; // s\u00f3 trechos de texto "folha"
+    const texto = limpar(el.textContent);
+    if (texto.length < 3 || texto.length > 110 || !/[A-Za-z\u00c0-\u00ff]/.test(texto)) continue;
+    // trecho em negrito dentro de uma frase n\u00e3o \u00e9 t\u00edtulo: o texto tem de ser a linha toda
+    const pai = el.parentElement;
+    if (/^(SPAN|STRONG|B|FONT)$/.test(el.tagName) && pai && limpar(pai.textContent) !== texto) continue;
+    // o estilo vale o do primeiro filho se ele cobre a linha toda (ex.: <p><strong>T\u00edtulo</strong></p>)
+    let alvo = el;
+    const f = el.firstElementChild;
+    if (f && limpar(f.textContent) === texto) alvo = f;
+    const cs = getComputedStyle(alvo);
+    const tam = parseFloat(cs.fontSize) || corpo;
+    const peso = parseInt(cs.fontWeight, 10) || (cs.fontWeight === 'bold' ? 700 : 400);
+    const grande = tam >= corpo * 1.3;
+    const negrito = peso >= 600 && tam >= corpo * 1.05 && texto.length <= 90 && !/[.;,:]$/.test(texto);
+    if (!grande && !negrito) continue;
+    if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+    achados.push({ el, texto, tam: Math.round(tam) });
+    ultimo = el;
+  }
+
+  // Cabe\u00e7alho/rodap\u00e9 repetido em v\u00e1rias p\u00e1ginas n\u00e3o \u00e9 t\u00edtulo
+  const contagem = new Map();
+  achados.forEach((t) => contagem.set(t.texto.toLowerCase(), (contagem.get(t.texto.toLowerCase()) || 0) + 1));
+  const unicos = achados.filter((t) => contagem.get(t.texto.toLowerCase()) < 4).slice(0, 400);
+  const tamanhos = [...new Set(unicos.map((t) => t.tam))].sort((x, y) => y - x);
+  return unicos.map((t) => ({ el: t.el, texto: t.texto, nivel: Math.min(3, tamanhos.indexOf(t.tam)) }));
+}
+
+/** \u00cdndice da apostila: lista os t\u00edtulos e rola at\u00e9 o escolhido. */
 function medreaderMontarIndice() {
   const nav = $mr('medreader-indice');
   const container = window.medreader.container;
   if (!nav || !container) return;
   nav.innerHTML = '';
-  const titulos = [...container.querySelectorAll('.medreader-content h1, .medreader-content h2, .medreader-content h3, .medreader-content h4')]
-    .filter((h) => (h.textContent || '').trim());
+  const raiz = container.querySelector('.medreader-content');
+  const titulos = raiz ? medreaderTitulosDoConteudo(raiz) : [];
   if (!titulos.length) {
-    nav.innerHTML = '<p class="medreader-painel-vazio">Esta apostila não tem títulos para montar o índice.</p>';
+    nav.innerHTML = '<p class="medreader-painel-vazio">N\u00e3o encontrei t\u00edtulos nesta apostila para montar o \u00edndice.</p>';
     return;
   }
-  const base = Math.min(...titulos.map((h) => Number(h.tagName[1])));
   const frag = document.createDocumentFragment();
-  titulos.forEach((h) => {
+  titulos.forEach((t) => {
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'medreader-indice-item';
-    item.style.paddingLeft = (14 + (Number(h.tagName[1]) - base) * 16) + 'px';
-    item.textContent = h.textContent.trim().replace(/\s+/g, ' ');
+    item.style.paddingLeft = (14 + t.nivel * 16) + 'px';
+    item.textContent = t.texto;
     item.addEventListener('click', () => {
-      h.scrollIntoView({ block: 'start' });
+      t.el.scrollIntoView({ block: 'start' });
       if (window.matchMedia('(max-width: 700px)').matches) medreaderIndiceFechar(); // no celular o painel cobre o texto
     });
     frag.appendChild(item);
