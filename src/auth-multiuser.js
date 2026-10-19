@@ -35,6 +35,40 @@ const TOKEN_TTL_MS = 30 * 24 * 3600 * 1000; // 30 dias
 let usersDb = new Map();
 let sessionsDb = new Map();
 
+// Em serverless (Vercel) cada instância nasce com os mapas vazios; sem o await,
+// login/signup rodavam antes do carregamento e falhavam com "Usuário ou senha incorretos".
+let _loadPromise = null;
+function ensureAuthLoaded() {
+  if (!_loadPromise) _loadPromise = loadUsersDb().catch(e => { _loadPromise = null; throw e; });
+  return _loadPromise;
+}
+
+// Busca pontual no Supabase (fallback p/ instância que subiu antes do dado existir)
+async function buscarUsuarioSupabase(username) {
+  if (!supabase) return null;
+  const { data } = await supabase.from('users').select('*').eq('username', username).maybeSingle();
+  if (!data) return null;
+  const user = {
+    username: data.username,
+    displayName: data.name || data.username,
+    passwordHash: data.password_hash,
+    salt: data.salt,
+    role: data.role || 'user',
+    settings: data.settings || {}
+  };
+  usersDb.set(username, user);
+  return user;
+}
+
+async function buscarSessaoSupabase(token) {
+  if (!supabase) return null;
+  const { data } = await supabase.from('sessions').select('*').eq('token', token).maybeSingle();
+  if (!data || Number(data.expires_at) < Date.now()) return null;
+  const session = { token, username: data.username, createdAt: Number(data.created_at), expiresAt: Number(data.expires_at) };
+  sessionsDb.set(token, session);
+  return session;
+}
+
 export async function loadUsersDb() {
   try {
     if (supabase) {
@@ -93,7 +127,7 @@ export async function loadUsersDb() {
 async function saveUser(user) {
   usersDb.set(user.username, user);
   if (supabase) {
-    await supabase.from('users').upsert({
+    const { error } = await supabase.from('users').upsert({
       username: user.username,
       name: user.displayName,
       password_hash: user.passwordHash,
@@ -101,6 +135,7 @@ async function saveUser(user) {
       role: user.role || 'user',
       settings: user.settings || {}
     }, { onConflict: 'username' });
+    if (error) throw new Error('Falha ao salvar usuário no Supabase: ' + error.message);
     return;
   }
   try {
@@ -113,12 +148,13 @@ async function saveUser(user) {
 async function saveSession(session) {
   sessionsDb.set(session.token, session);
   if (supabase) {
-    await supabase.from('sessions').upsert({
+    const { error } = await supabase.from('sessions').upsert({
       token: session.token,
       username: session.username,
       created_at: session.createdAt,
       expires_at: session.expiresAt
     }, { onConflict: 'token' });
+    if (error) throw new Error('Falha ao salvar sessão no Supabase: ' + error.message);
     return;
   }
   try {
@@ -186,31 +222,44 @@ async function createSession(username) {
 
 export async function validateSession(token) {
   if (!token) return null;
-  const session = sessionsDb.get(token);
-  if (!session) return null;
+  await ensureAuthLoaded();
+  let session = sessionsDb.get(token);
+  if (!session) {
+    // Sessão criada em outra instância do serverless: busca direto no Supabase
+    session = await buscarSessaoSupabase(token);
+    if (!session) return null;
+  }
   if (session.expiresAt < Date.now()) {
     await removeSession(token);
     return null;
   }
-  session.expiresAt = Date.now() + TOKEN_TTL_MS;
-  await saveSession(session);
+  // Renova a sessão no máximo 1x por dia (não 1 write no Supabase por request)
+  const agora = Date.now();
+  if (agora - (session._lastWrite || session.createdAt) > 24 * 3600 * 1000) {
+    session.expiresAt = agora + TOKEN_TTL_MS;
+    session._lastWrite = agora;
+    await saveSession(session);
+  }
   return session.username;
 }
 
 // Rotas de Autenticação Express
 export function setupAuthRoutes(app) {
-  loadUsersDb();
+  loadUsersDb().catch(e => console.warn('⚠️ [Auth] Carga inicial de usuários falhou (vai tentar sob demanda):', e.message));
 
-  app.get('/api/auth/check-username', (req, res) => {
+  app.get('/api/auth/check-username', async (req, res) => {
     const username = String(req.query.username || '').trim().toLowerCase();
     if (!username || username.length < 3) return res.json({ available: false, error: 'Mínimo de 3 caracteres' });
     if (!/^[a-z0-9_-]+$/.test(username)) return res.json({ available: false, error: 'Apenas letras, números, _ e -' });
-    const exists = usersDb.has(username);
+    await ensureAuthLoaded();
+    let exists = usersDb.has(username);
+    if (!exists) exists = !!(await buscarUsuarioSupabase(username));
     res.json({ available: !exists });
   });
 
   app.post('/api/auth/signup', async (req, res) => {
     try {
+      await ensureAuthLoaded();
       const username = String(req.body?.username || '').trim().toLowerCase();
       const password = String(req.body?.password || '');
       const displayName = String(req.body?.displayName || '').trim();
@@ -244,12 +293,15 @@ export function setupAuthRoutes(app) {
 
   app.post('/api/auth/login', async (req, res) => {
     try {
+      await ensureAuthLoaded();
       const username = String(req.body?.username || '').trim().toLowerCase();
       const password = String(req.body?.password || '');
 
       if (!username || !password) return res.status(400).json({ success: false, error: 'Informe usuário e senha' });
 
-      const user = usersDb.get(username);
+      let user = usersDb.get(username);
+      // Conta criada em outra instância do serverless ainda pode não estar no cache
+      if (!user) user = await buscarUsuarioSupabase(username);
       if (!user) return res.status(400).json({ success: false, error: 'Usuário ou senha incorretos' });
 
       const match = await verifyPassword(password, user.passwordHash, user.salt);
@@ -305,7 +357,7 @@ export function setupAuthRoutes(app) {
     const username = await validateSession(token);
     if (!username) return res.status(401).json({ success: false, error: 'Não autenticado' });
 
-    const user = usersDb.get(username);
+    const user = usersDb.get(username) || await buscarUsuarioSupabase(username);
     if (!user) return res.status(401).json({ success: false, error: 'Usuário não encontrado' });
 
     res.json({
@@ -336,9 +388,9 @@ export function authMiddleware(req, res, next) {
     authHeader.startsWith('Bearer ') ? authHeader.slice(7) :
     req.query?.token || req.body?.token;
   validateSession(token)
-    .then(username => {
+    .then(async username => {
       if (!username) return res.status(401).json({ success: false, error: 'Não autenticado' });
-      const user = usersDb.get(username);
+      const user = usersDb.get(username) || await buscarUsuarioSupabase(username);
       if (!user) return res.status(401).json({ success: false, error: 'Usuário não encontrado' });
       req.user = { username: user.username, displayName: user.displayName, role: user.role };
       next();
@@ -348,7 +400,7 @@ export function authMiddleware(req, res, next) {
 
 // Atualiza nome de exibição do usuário
 export async function updateUserProfile(username, displayName) {
-  const user = usersDb.get(username);
+  const user = usersDb.get(username) || await buscarUsuarioSupabase(username);
   if (!user) return null;
   user.displayName = displayName.trim();
   await saveUser(user);

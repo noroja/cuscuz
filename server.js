@@ -3547,10 +3547,10 @@ app.get(['/', '/index.html'], (req, res, next) => {
   } catch (_) { next(); }
 });
 // Catálogo de aulas (traz os IDs do Drive): só com login
-app.get('/acervo-manifest.json', (req, res, next) => {
+app.get('/acervo-manifest.json', async (req, res, next) => {
   const h = req.headers.authorization || '';
   const tk = h.startsWith('Bearer ') ? h.slice(7) : String(req.query.t || '');
-  const session = validateSession(tk);
+  const session = await validateSession(tk);
   if (!session) return res.status(401).json({ error: 'Faça login.' });
   res.setHeader('Cache-Control', 'private, no-cache');
   try {

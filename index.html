@@ -4484,7 +4484,7 @@ async function doLogin(){const u=cleanStr($('login-user').value.trim()),p=$('log
   try{
     const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
     const d=await r.json().catch(()=>({}));
-    if(!r.ok||!d.token){err.textContent=d.msg||'Usuário ou senha incorretos';err.style.display='block';err.focus();return}
+    if(!r.ok||!d.token){err.textContent=d.error||d.msg||'Usuário ou senha incorretos';err.style.display='block';err.focus();return}
     localStorage.setItem('cuscuz_token',d.token);
   }catch(e){err.textContent='Servidor indisponível. Tente de novo em instantes.';err.style.display='block';err.focus();return}
   SYNC_USER=u;localStorage.setItem('medplan_logged','1');localStorage.setItem('medplan_user',u);
@@ -4524,13 +4524,13 @@ async function doSignup(){
   try{
     const r=await fetch('/api/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p,displayName:d||u})});
     const res=await r.json().catch(()=>({}));
-    if(!r.ok||!res.token){err.textContent=res.msg||'Erro ao criar conta';err.style.display='block';err.focus();return}
+    if(!r.ok||!res.token){err.textContent=res.error||res.msg||'Erro ao criar conta';err.style.display='block';err.focus();return}
     localStorage.setItem('cuscuz_token',res.token);
   }catch(e){err.textContent='Servidor indisponível. Tente de novo em instantes.';err.style.display='block';err.focus();return}
   SYNC_USER=u;localStorage.setItem('medplan_logged','1');localStorage.setItem('medplan_user',u);
   // Carrega o nome de exibição do servidor
   try{
-    const r=await fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+d.token}});
+    const r=await fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+res.token}});
     const ud=await r.json();
     if(ud.success&&ud.user&&ud.user.displayName){
       $('sidebar-user-name').textContent = ud.user.displayName;
