@@ -36,9 +36,30 @@ function medreaderInit() {
   window.medreader.shell = shell;
   window.medreader.container = container;
 
-  // Esc fecha o leitor
+  // Teclado: Ctrl/Cmd+F abre a busca do leitor; Esc fecha uma camada por vez (busca, índice, leitor)
   document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && shell.classList.contains('open')) medreaderFechar();
+    if (!shell.classList.contains('open')) return;
+    if ((ev.ctrlKey || ev.metaKey) && String(ev.key).toLowerCase() === 'f') {
+      ev.preventDefault();
+      medreaderBuscaAbrir();
+      return;
+    }
+    if (ev.key !== 'Escape') return;
+    if (document.fullscreenElement) return; // o navegador sai da tela cheia primeiro
+    const busca = document.getElementById('medreader-busca');
+    const painel = document.getElementById('medreader-painel');
+    if (busca && !busca.hidden) medreaderBuscaFechar();
+    else if (painel && !painel.hidden) medreaderIndiceFechar();
+    else medreaderFechar();
+  });
+
+  // Progresso de leitura acompanha a rolagem do texto
+  container.addEventListener('scroll', medreaderAoRolar, { passive: true });
+
+  // Rótulo do botão de tela cheia
+  document.addEventListener('fullscreenchange', () => {
+    const t = document.getElementById('medreader-fs-txt');
+    if (t) t.textContent = document.fullscreenElement ? 'Sair da tela cheia' : 'Tela cheia';
   });
 
   // Instancia classes do MedReader
@@ -71,6 +92,13 @@ function medreaderInit() {
   medreaderToast('MedReader inicializado.');
 }
 
+/** Ícones da barra (SVG simples, herdam a cor do botão). */
+const MEDREADER_ICONES = {
+  indice: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+  busca: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+  tela: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>',
+};
+
 /** Ordem dos temas e tamanhos de fonte usados pelos botões da barra. */
 const MEDREADER_TEMAS = ['default', 'sepia', 'night'];
 const MEDREADER_FONTES = ['small', 'medium', 'large', 'extra-large'];
@@ -95,13 +123,34 @@ function medreaderCriarShell() {
     '<div class="medreader-toolbar" role="toolbar" aria-label="Controles do leitor">' +
       '<div class="medreader-title" id="medreader-title">Apostila</div>' +
       '<div class="medreader-controls">' +
+        '<button type="button" class="medreader-btn" data-mr="indice" id="medreader-btn-indice" title="Índice da apostila" aria-label="Índice da apostila" aria-expanded="false">' + MEDREADER_ICONES.indice + '<span class="medreader-btn-txt">Índice</span></button>' +
+        '<button type="button" class="medreader-btn" data-mr="busca" title="Busca de texto (Ctrl+F)" aria-label="Busca de texto">' + MEDREADER_ICONES.busca + '<span class="medreader-btn-txt">Buscar</span></button>' +
         '<button type="button" class="medreader-btn" data-mr="fonte-menos" title="Diminuir fonte" aria-label="Diminuir fonte">A\u2212</button>' +
         '<button type="button" class="medreader-btn" data-mr="fonte-mais" title="Aumentar fonte" aria-label="Aumentar fonte">A+</button>' +
         '<button type="button" class="medreader-btn" data-mr="tema" title="Alternar tema" aria-label="Alternar tema">Tema</button>' +
+        '<button type="button" class="medreader-btn" data-mr="tela-cheia" id="medreader-btn-tela" title="Tela cheia" aria-label="Tela cheia">' + MEDREADER_ICONES.tela + '<span class="medreader-btn-txt" id="medreader-fs-txt">Tela cheia</span></button>' +
         '<button type="button" class="medreader-btn primary" data-mr="fechar" title="Fechar (Esc)" aria-label="Fechar leitor">\u2715 Fechar</button>' +
       '</div>' +
     '</div>' +
-    '<div id="medreader-container" class="medreader-body" tabindex="-1"></div>';
+    '<div class="medreader-busca" id="medreader-busca" hidden>' +
+      '<input type="search" id="medreader-busca-input" placeholder="Buscar no texto…" aria-label="Buscar no texto" autocomplete="off">' +
+      '<span class="medreader-busca-cont" id="medreader-busca-cont" aria-live="polite"></span>' +
+      '<button type="button" class="medreader-btn" data-mr="busca-ant" title="Anterior (Shift+Enter)" aria-label="Resultado anterior">↑</button>' +
+      '<button type="button" class="medreader-btn" data-mr="busca-prox" title="Próximo (Enter)" aria-label="Próximo resultado">↓</button>' +
+      '<button type="button" class="medreader-btn" data-mr="busca-fechar" title="Fechar busca (Esc)" aria-label="Fechar busca">\u2715</button>' +
+    '</div>' +
+    '<div class="medreader-corpo">' +
+      '<div id="medreader-container" class="medreader-body" tabindex="-1"></div>' +
+      '<div class="medreader-rodape" id="medreader-rodape">' +
+        '<span>Porcentagem lida <b id="medreader-pct">0%</b></span>' +
+        '<span>Término estimado <b id="medreader-eta">—</b></span>' +
+      '</div>' +
+      '<aside class="medreader-painel" id="medreader-painel" aria-label="Índice da apostila" hidden>' +
+        '<div class="medreader-painel-cab"><strong>Índice da apostila</strong>' +
+          '<button type="button" class="medreader-btn" data-mr="indice-fechar" title="Fechar índice" aria-label="Fechar índice">\u2715</button></div>' +
+        '<nav id="medreader-indice"></nav>' +
+      '</aside>' +
+    '</div>';
   shell.addEventListener('click', (ev) => {
     const btn = ev.target.closest && ev.target.closest('[data-mr]');
     if (!btn) return;
@@ -110,9 +159,294 @@ function medreaderCriarShell() {
     else if (acao === 'tema') medreaderAlternarTema();
     else if (acao === 'fonte-mais') medreaderAjustarFonte(1);
     else if (acao === 'fonte-menos') medreaderAjustarFonte(-1);
+    else if (acao === 'indice') medreaderIndiceAlternar();
+    else if (acao === 'indice-fechar') medreaderIndiceFechar();
+    else if (acao === 'busca') medreaderBuscaAlternar();
+    else if (acao === 'busca-ant') medreaderBuscaIr(-1);
+    else if (acao === 'busca-prox') medreaderBuscaIr(1);
+    else if (acao === 'busca-fechar') medreaderBuscaFechar();
+    else if (acao === 'tela-cheia') medreaderTelaCheia();
   });
+
+  // Campo de busca: busca ao digitar (com pequena espera); Enter / Shift+Enter navegam
+  const entrada = shell.querySelector('#medreader-busca-input');
+  entrada.addEventListener('input', () => {
+    clearTimeout(medreaderBuscaEstado.timer);
+    medreaderBuscaEstado.timer = setTimeout(() => { medreaderBuscaEstado.timer = 0; medreaderBuscar(entrada.value); }, 150);
+  });
+  entrada.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter') return;
+    ev.preventDefault();
+    if (medreaderBuscaEstado.timer) { // digitou e apertou Enter antes da espera acabar
+      clearTimeout(medreaderBuscaEstado.timer);
+      medreaderBuscaEstado.timer = 0;
+      medreaderBuscar(entrada.value);
+      return;
+    }
+    medreaderBuscaIr(ev.shiftKey ? -1 : 1);
+  });
+
+  // Tela cheia nem sempre existe (ex.: iPhone): some o botão
+  if (!(document.fullscreenEnabled || document.webkitFullscreenEnabled)) {
+    shell.querySelector('#medreader-btn-tela').hidden = true;
+  }
+
   document.body.appendChild(shell);
   return shell;
+}
+
+/* ══════════════ Barra superior: índice, busca, tela cheia e progresso ══════════════ */
+
+const $mr = (id) => document.getElementById(id);
+const MEDREADER_PALAVRAS_POR_MIN = 200; // velocidade de leitura usada no "término estimado"
+
+/** Índice da apostila: lista os títulos (h1–h4) e rola até o escolhido. */
+function medreaderMontarIndice() {
+  const nav = $mr('medreader-indice');
+  const container = window.medreader.container;
+  if (!nav || !container) return;
+  nav.innerHTML = '';
+  const titulos = [...container.querySelectorAll('.medreader-content h1, .medreader-content h2, .medreader-content h3, .medreader-content h4')]
+    .filter((h) => (h.textContent || '').trim());
+  if (!titulos.length) {
+    nav.innerHTML = '<p class="medreader-painel-vazio">Esta apostila não tem títulos para montar o índice.</p>';
+    return;
+  }
+  const base = Math.min(...titulos.map((h) => Number(h.tagName[1])));
+  const frag = document.createDocumentFragment();
+  titulos.forEach((h) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'medreader-indice-item';
+    item.style.paddingLeft = (14 + (Number(h.tagName[1]) - base) * 16) + 'px';
+    item.textContent = h.textContent.trim().replace(/\s+/g, ' ');
+    item.addEventListener('click', () => {
+      h.scrollIntoView({ block: 'start' });
+      if (window.matchMedia('(max-width: 700px)').matches) medreaderIndiceFechar(); // no celular o painel cobre o texto
+    });
+    frag.appendChild(item);
+  });
+  nav.appendChild(frag);
+}
+
+function medreaderIndiceAlternar() {
+  const painel = $mr('medreader-painel');
+  if (!painel) return;
+  if (painel.hidden) {
+    medreaderMontarIndice();
+    painel.hidden = false;
+    const b = $mr('medreader-btn-indice'); if (b) b.setAttribute('aria-expanded', 'true');
+  } else {
+    medreaderIndiceFechar();
+  }
+}
+
+function medreaderIndiceFechar() {
+  const painel = $mr('medreader-painel');
+  if (painel) painel.hidden = true;
+  const b = $mr('medreader-btn-indice'); if (b) b.setAttribute('aria-expanded', 'false');
+}
+
+/** Busca de texto: ignora maiúsculas e acentos, marca os resultados e navega entre eles. */
+const medreaderBuscaEstado = { hits: [], atual: -1, timer: 0 };
+const MEDREADER_BUSCA_MAX = 500;
+
+// Texto sem acento e em minúsculas, mantendo um mapa 1:1 para a posição original
+function medreaderNormalizar(str) {
+  let out = '';
+  const mapa = [];
+  for (let i = 0; i < str.length; i++) {
+    const n = str[i].normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    for (let k = 0; k < n.length; k++) { out += n[k]; mapa.push(i); }
+  }
+  return { out, mapa };
+}
+
+function medreaderTextosDoConteudo(raiz) {
+  const walker = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => /^(SCRIPT|STYLE|NOSCRIPT)$/.test(n.parentNode.nodeName) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  });
+  const nos = [];
+  while (walker.nextNode()) nos.push(walker.currentNode);
+  return nos;
+}
+
+function medreaderBuscaLimpar() {
+  const container = window.medreader.container;
+  if (container) {
+    container.querySelectorAll('mark.medreader-busca-hit').forEach((m) => {
+      const pai = m.parentNode;
+      while (m.firstChild) pai.insertBefore(m.firstChild, m);
+      pai.removeChild(m);
+      pai.normalize();
+    });
+  }
+  medreaderBuscaEstado.hits = [];
+  medreaderBuscaEstado.atual = -1;
+}
+
+function medreaderBuscar(consulta) {
+  medreaderBuscaLimpar();
+  const cont = $mr('medreader-busca-cont');
+  const container = window.medreader.container;
+  if (!cont || !container) return;
+  cont.classList.remove('sem');
+  const q = medreaderNormalizar(String(consulta || '').trim()).out;
+  if (q.length < 2) { cont.textContent = ''; return; }
+  const raiz = container.querySelector('.medreader-content');
+  if (!raiz) { cont.textContent = ''; return; }
+
+  let total = 0;
+  for (const no of medreaderTextosDoConteudo(raiz)) {
+    if (total >= MEDREADER_BUSCA_MAX) break;
+    const { out, mapa } = medreaderNormalizar(no.nodeValue);
+    const partes = [];
+    for (let i = out.indexOf(q); i !== -1 && total + partes.length < MEDREADER_BUSCA_MAX; i = out.indexOf(q, i + q.length)) {
+      partes.push([mapa[i], mapa[i + q.length - 1] + 1]);
+    }
+    // marca de trás para frente para não invalidar as posições das ocorrências anteriores
+    for (let p = partes.length - 1; p >= 0; p--) {
+      const r = document.createRange();
+      r.setStart(no, partes[p][0]);
+      r.setEnd(no, partes[p][1]);
+      const m = document.createElement('mark');
+      m.className = 'medreader-busca-hit';
+      r.surroundContents(m);
+    }
+    total += partes.length;
+  }
+
+  medreaderBuscaEstado.hits = [...container.querySelectorAll('mark.medreader-busca-hit')];
+  if (!medreaderBuscaEstado.hits.length) {
+    cont.textContent = '0/0';
+    cont.classList.add('sem');
+    return;
+  }
+  medreaderBuscaEstado.atual = -1;
+  medreaderBuscaIr(1);
+}
+
+function medreaderBuscaIr(delta) {
+  const e = medreaderBuscaEstado;
+  const cont = $mr('medreader-busca-cont');
+  if (!e.hits.length) return;
+  if (e.atual >= 0 && e.hits[e.atual]) e.hits[e.atual].classList.remove('atual');
+  e.atual = (e.atual + delta + e.hits.length) % e.hits.length;
+  const el = e.hits[e.atual];
+  el.classList.add('atual');
+  el.scrollIntoView({ block: 'center' });
+  if (cont) cont.textContent = (e.atual + 1) + '/' + e.hits.length + (e.hits.length >= MEDREADER_BUSCA_MAX ? '+' : '');
+}
+
+function medreaderBuscaAbrir() {
+  const barra = $mr('medreader-busca');
+  const entrada = $mr('medreader-busca-input');
+  if (!barra || !entrada) return;
+  barra.hidden = false;
+  entrada.focus();
+  entrada.select();
+}
+
+function medreaderBuscaAlternar() {
+  const barra = $mr('medreader-busca');
+  if (barra && !barra.hidden) medreaderBuscaFechar(); else medreaderBuscaAbrir();
+}
+
+function medreaderBuscaFechar() {
+  clearTimeout(medreaderBuscaEstado.timer);
+  medreaderBuscaEstado.timer = 0;
+  medreaderBuscaLimpar();
+  const barra = $mr('medreader-busca');
+  const entrada = $mr('medreader-busca-input');
+  const cont = $mr('medreader-busca-cont');
+  if (barra) barra.hidden = true;
+  if (entrada) entrada.value = '';
+  if (cont) { cont.textContent = ''; cont.classList.remove('sem'); }
+  const container = window.medreader.container;
+  if (container && $mr('medreader-shell') && $mr('medreader-shell').classList.contains('open')) {
+    try { container.focus({ preventScroll: true }); } catch (_) { /* ok */ }
+  }
+}
+
+/** Tela cheia do leitor (Fullscreen API). */
+function medreaderTelaCheia() {
+  const shell = window.medreader.shell;
+  if (!shell) return;
+  if (document.fullscreenElement) {
+    const p = document.exitFullscreen && document.exitFullscreen();
+    if (p && p.catch) p.catch(() => {});
+    return;
+  }
+  const req = shell.requestFullscreen || shell.webkitRequestFullscreen;
+  if (req) {
+    const p = req.call(shell);
+    if (p && p.catch) p.catch(() => medreaderToast('Não foi possível entrar em tela cheia.', 'error'));
+  }
+}
+
+/** Progresso de leitura: porcentagem pela rolagem e minutos restantes pelo total de palavras. */
+let medreaderRafScroll = 0;
+let medreaderTimerPos = 0;
+
+function medreaderContarPalavras(raiz) {
+  let n = 0;
+  for (const no of medreaderTextosDoConteudo(raiz)) {
+    const t = (no.nodeValue || '').trim();
+    if (t) n += t.split(/\s+/).length;
+  }
+  return n;
+}
+
+function medreaderFormatarMinutos(min) {
+  if (min < 1) return 'menos de 1 min';
+  if (min < 60) return min + ' min';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h + ' h' + (m ? ' ' + m + ' min' : '');
+}
+
+function medreaderFracaoLida() {
+  const c = window.medreader.container;
+  if (!c) return 0;
+  const max = c.scrollHeight - c.clientHeight;
+  return max > 0 ? Math.min(1, Math.max(0, c.scrollTop / max)) : 1;
+}
+
+function medreaderAtualizarProgresso() {
+  const pctEl = $mr('medreader-pct');
+  const etaEl = $mr('medreader-eta');
+  if (!pctEl || !etaEl) return 0;
+  if (!window.medreader.pronto) { pctEl.textContent = '0%'; etaEl.textContent = '—'; return 0; }
+  const frac = medreaderFracaoLida();
+  pctEl.textContent = Math.round(frac * 100) + '%';
+  etaEl.textContent = frac >= 0.995
+    ? 'concluída'
+    : medreaderFormatarMinutos(Math.ceil((window.medreader.palavras || 0) * (1 - frac) / MEDREADER_PALAVRAS_POR_MIN));
+  return frac;
+}
+
+function medreaderSalvarPosicao(id, frac) {
+  try { localStorage.setItem('cuscuz-medreader:pos:' + id, String(Math.round(frac * 1000) / 1000)); } catch (_) { /* sem storage */ }
+}
+
+function medreaderLerPosicao(id) {
+  try {
+    const v = parseFloat(localStorage.getItem('cuscuz-medreader:pos:' + id));
+    return isFinite(v) ? v : 0;
+  } catch (_) { return 0; }
+}
+
+function medreaderAoRolar() {
+  if (medreaderRafScroll) return;
+  medreaderRafScroll = requestAnimationFrame(() => {
+    medreaderRafScroll = 0;
+    const frac = medreaderAtualizarProgresso();
+    const id = window.medreader.atualId;
+    if (window.medreader.pronto && id) {
+      clearTimeout(medreaderTimerPos);
+      medreaderTimerPos = setTimeout(() => medreaderSalvarPosicao(id, frac), 400);
+    }
+  });
 }
 
 function medreaderAlternarTema() {
@@ -143,10 +477,17 @@ async function medreaderAbrir(fileId, fileName) {
   const tituloEl = document.getElementById('medreader-title');
   if (tituloEl) tituloEl.textContent = fileName || 'Apostila';
 
+  window.medreader.pronto = false;
+  window.medreader.atualId = fileId;
+  window.medreader.palavras = 0;
+  medreaderBuscaFechar();
+  medreaderIndiceFechar();
+
   shell.classList.add('open');
   document.body.style.overflow = 'hidden';
-  container.innerHTML = '<div class="medreader-estado">Carregando apostila\u2026</div>';
+  container.innerHTML = '<div class="medreader-estado">Carregando apostila…</div>';
   container.scrollTop = 0;
+  medreaderAtualizarProgresso();
 
   const pedido = ++medreaderPedidoAtual;
   try {
@@ -159,7 +500,15 @@ async function medreaderAbrir(fileId, fileName) {
     if (pedido !== medreaderPedidoAtual) return; // fechou ou abriu outra enquanto carregava
 
     core.loadContent(html);
-    container.scrollTop = 0;
+    const raiz = container.querySelector('.medreader-content');
+    window.medreader.palavras = raiz ? medreaderContarPalavras(raiz) : 0;
+    window.medreader.pronto = true;
+
+    // Retoma de onde parou (só se não estava no começo nem já terminada)
+    const salvo = medreaderLerPosicao(fileId);
+    const max = Math.max(0, container.scrollHeight - container.clientHeight);
+    container.scrollTop = (salvo > 0.02 && salvo < 0.98) ? salvo * max : 0;
+    medreaderAtualizarProgresso();
     try { container.focus({ preventScroll: true }); } catch (_) { /* sem foco, tudo bem */ }
   } catch (err) {
     if (pedido !== medreaderPedidoAtual) return;
@@ -180,6 +529,18 @@ async function medreaderOpenOverlay(fileId, fileName) {
  */
 function medreaderCloseOverlay() {
   medreaderPedidoAtual++; // cancela qualquer carregamento em andamento
+  // Grava onde parou antes de esconder o leitor (escondido, a altura da área vira 0)
+  if (window.medreader.pronto && window.medreader.atualId) {
+    clearTimeout(medreaderTimerPos);
+    medreaderSalvarPosicao(window.medreader.atualId, medreaderFracaoLida());
+  }
+  window.medreader.pronto = false;
+  medreaderBuscaFechar();
+  medreaderIndiceFechar();
+  if (document.fullscreenElement) {
+    const p = document.exitFullscreen && document.exitFullscreen();
+    if (p && p.catch) p.catch(() => {});
+  }
   const shell = window.medreader.shell;
   if (shell) shell.classList.remove('open');
   document.body.style.overflow = '';
