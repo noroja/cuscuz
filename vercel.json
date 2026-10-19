@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "buildCommand": "node scripts/build-public.js",
+  "outputDirectory": "public",
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60,
+      "includeFiles": [
+        "index.html",
+        "acervo-manifest.json",
+        "drive-tree-snapshot.json",
+        "data/**"
+      ]
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/((?!.*\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webmanifest|woff2?|ttf|eot|mp4|webm|pdf|txt|xml|html)$).*)",
+      "destination": "/api/index"
+    }
+  ]
+}

@@ -70,3 +70,39 @@ Seu app estará disponível em um subdomínio da railway.app (como no exemplo: h
 Você pode conectar um domínio personalizado nas settings do serviço no Railway, se desejar.
 
 O GitHub Pages pode continuar servindo como vitrine estática ou ser desativado em Settings → Pages — o endereço do Railway é o app completo com backend e frontend.
+
+---
+
+# Deploy na Vercel (serverless)
+
+A Vercel roda o mesmo `server.js`, mas em modo **função serverless**: o disco do projeto é **somente leitura** e só `/tmp` é gravável (e efêmero). O código já se adapta sozinho a esse ambiente.
+
+## Como funciona
+
+- **`api/index.js`** exporta o app Express (a Vercel chama essa função para tudo que não é arquivo estático).
+- O `server.js` detecta o ambiente (`VERCEL`/`AWS_LAMBDA_FUNCTION_NAME`/`VERCEL_ENV` via `src/fs-safe.js`) e **não** chama `app.listen()`. Fora da Vercel nada muda: `npm start` continua subindo o servidor HTTP normal.
+- **`scripts/build-public.js`** copia os assets (HTML, CSS, JS, ícones, manifest) para `public/` durante o build. A Vercel serve `public/**` pelo CDN e **ignora** o `express.static()`.
+- **`vercel.json`** define `buildCommand`, `maxDuration: 60` na função e os `includeFiles` que precisam chegar ao runtime (`index.html`, `acervo-manifest.json`, `drive-tree-snapshot.json`, `data/**`).
+
+## Persistência de estado
+
+Na Vercel **nada** é gravado no disco do projeto. Todo o estado mutável vai para `DATA_DIR`, que em serverless aponta para `/tmp/cuscuz-med`:
+
+- banco de questões de trabalho (`questions-bank.json`) — o `data/questions-bank.json` do repositório serve apenas de **semente** somente-leitura;
+- cache do radar, token/mirror do Hardworq, decks do planner, catálogo de extras, cache das apostilas.
+
+Como `/tmp` é por invocação, o estado durável continua vindo da nuvem (Supabase) e do repositório. As tarefas de background (auto-sync do Hardworq, espelho, varredura de extras) **não** rodam em serverless — são acionadas por requisição/endpoints.
+
+## Passo a passo
+
+1. Vercel → **Add New… → Project** → importe o repositório do GitHub.
+2. Framework preset: **Other**. Build Command e Output são lidos do `vercel.json` (não precisa mexer).
+3. Em **Settings → Environment Variables**, adicione as mesmas variáveis do Railway (`GEMINI_API_KEY`, `HARDWORQ_*`, `SUPABASE_*`, `GOOGLE_DRIVE_*`, etc.).
+4. **Deploy**. O build roda `node scripts/build-public.js` e a função sobe em `api/index.js`.
+
+## Cuidados
+
+- O diretório `public/` é **gerado no build** e está no `.gitignore` — não versione.
+- Nunca copie `acervo-manifest.json`, `drive-tree-snapshot.json` nem `data/**` para `public/`: isso exporia o banco e burlaria a checagem de login do endpoint `/acervo-manifest.json`.
+- Rotas que terminam em extensões estáticas (`.css`, `.js`, `.png`, `.html`, …) **não** são reescritas para a função — são servidas pelo CDN. Se um asset faltar, o resultado é 404 (e não o `index.html`), o que facilita achar erro de caminho.
+- O Mentor IA responde via **SSE** (`text/event-stream`) com keep-alive, para não estourar o tempo da função em respostas longas da IA.

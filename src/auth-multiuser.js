@@ -4,9 +4,12 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
+import { writableDir, TMP_DIR } from './fs-safe.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, '..', 'data');
+/* Em serverless o projeto é somente leitura: usuários/sessões locais vão para /tmp.
+   O estado durável é o Supabase (quando configurado). */
+const DATA_DIR = writableDir(path.join(__dirname, '..', 'data')) || TMP_DIR;
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 

@@ -3251,6 +3251,9 @@ Sintomas de pneumonia\tFebre, tosse, dispneia\tPneumologia"></textarea>
   <div class="apostila-sidebar-backdrop" id="apostila-sidebar-backdrop" onclick="toggleApostilaSidebar()"></div>
 </div>
 
+<!-- IndexedDB (localforage) para caches pesados: acervo, histórico, simulados, flashcards -->
+<script src="/js/vendor/localforage.min.js"></script>
+
 <script>
 /* ═══ HELPERS ═══ */
 const $=id=>document.getElementById(id),$$=s=>[...document.querySelectorAll(s)];
@@ -3268,8 +3271,83 @@ const fmtBR=dk=>{const p=dk.split('-');return p[2]+'/'+p[1]};
 const pct=(a,b)=>b>0?Math.round(a/b*100):0;
 const debounce=(fn,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}};
 const shuffle=a=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
-function lsGet(k,def){try{const v=JSON.parse(localStorage.getItem(k));return v==null?def:v}catch(e){return def}}
-function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){toast('Não foi possível salvar neste navegador. Exporte um backup, libere espaço e tente novamente.','error')}}
+
+/* ═══ ARMAZENAMENTO PESADO — IndexedDB via localforage ═══════════════════════════
+   O localStorage tem teto de ~5 MB e estourava com o catálogo do acervo e o
+   histórico de simulados. Chaves pesadas vão para o IndexedDB; as leves
+   (token, tema, preferências) continuam no localStorage. */
+const HEAVY_KEYS = new Set([
+  'cuscuz_med_acervo_cache', 'cuscuz_med_drive', 'cuscuz_med_v1',
+  'acv_done', 'acv_fav', 'acv_wrong', 'acv_quiz', 'acv_sims', 'acv_decks',
+  'acv_resumos', 'acv_fc', 'acv_fc_srs', 'acv_days', 'acv_last',
+  'cuscuz_exam_answers', 'cuscuz_questions_cache', 'cuscuz_questions_meta',
+  'planner-ia-plan', 'planner-v2-plan', 'planner-v2-chat'
+]);
+const heavyMem = new Map();
+let heavyStore = null;
+let heavyAvisou = false;
+let heavyHydrated = null;
+try {
+  if (typeof localforage !== 'undefined') {
+    heavyStore = localforage.createInstance({
+      name: 'cuscuz_med_heavy',
+      storeName: 'heavy_state',
+      description: 'Caches pesados do Cuscuz-MED (acervo, histórico, simulados)'
+    });
+  }
+} catch (_) { heavyStore = null; }
+
+function heavyFalhou() {
+  if (heavyAvisou) return;
+  heavyAvisou = true;
+  try { toast('Armazenamento cheio neste navegador. Libere espaço para continuar salvando o progresso.', 'error'); } catch (_) {}
+}
+
+// Idempotente: pode ser aguardado pelo boot e pelo login.
+// Nunca bloqueia o app por mais de 3s (IndexedDB lento/corrompido). Se a
+// hidratação terminar depois, hydrateHeavyState reaplica o estado sozinha.
+function ensureHeavyHydrated() {
+  if (!heavyHydrated) {
+    const full = hydrateHeavyState().catch(() => false);
+    heavyHydrated = Promise.race([
+      full,
+      new Promise(r => setTimeout(() => r('timeout'), 3000))
+    ]);
+    // Quando a leitura real terminar (mesmo após o timeout), chamadas futuras
+    // passam a aguardar a conclusão de verdade.
+    full.then(() => { heavyHydrated = Promise.resolve(true); });
+  }
+  return heavyHydrated;
+}
+
+function heavyPersist(k, v) {
+  if (heavyStore) {
+    heavyStore.setItem(k, v).then(() => {
+      // Migração concluída: libera a cota do localStorage.
+      try { localStorage.removeItem(k); } catch (_) {}
+    }).catch(() => {
+      try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) { heavyFalhou(); }
+    });
+    return;
+  }
+  try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) { heavyFalhou(); }
+}
+
+function lsGet(k,def){
+  if (HEAVY_KEYS.has(k) && heavyMem.has(k)) return heavyMem.get(k);
+  try{const v=JSON.parse(localStorage.getItem(k));return v==null?def:v}catch(e){return def}
+}
+function lsSet(k,v){
+  if (HEAVY_KEYS.has(k)) { heavyMem.set(k, v); heavyPersist(k, v); return; }
+  try{localStorage.setItem(k,JSON.stringify(v))}catch(e){toast('Não foi possível salvar neste navegador. Exporte um backup, libere espaço e tente novamente.','error')}
+}
+function lsRemove(k){
+  if (HEAVY_KEYS.has(k)) {
+    heavyMem.delete(k);
+    if (heavyStore) { try { heavyStore.removeItem(k).catch(()=>{}); } catch (_) {} }
+  }
+  try{localStorage.removeItem(k)}catch(_){}
+}
 function toast(msg,type=''){const t=document.createElement('div');t.className='toast '+type;t.innerHTML=msg;$('toasts').appendChild(t);setTimeout(()=>{t.style.transition='opacity .3s';t.style.opacity='0';setTimeout(()=>t.remove(),300)},2800)}
 function closeModals(){$$('.modal-overlay:not(#mobile-sidebar-backdrop)').forEach(o=>o.remove())}
 function openModal(html){const o=document.createElement('div');o.className='modal-overlay open';o.innerHTML='<div class="modal">'+html+'</div>';o.addEventListener('click',e=>{if(e.target===o||e.target.closest('.modal-close'))o.remove()});$('modal-container').appendChild(o);return o}
@@ -4497,7 +4575,7 @@ async function doLogin(){const u=cleanStr($('login-user').value.trim()),p=$('log
       localStorage.setItem('medplan_display_name', ud.user.displayName);
     }
   }catch(_){}
-  err.style.display='none';startApp();
+  err.style.display='none';await ensureHeavyHydrated();startApp();
   try{loadQuestionsBankFromAPI(true);if(typeof fetchRadarMedico==='function')fetchRadarMedico()}catch(_){}}
 function showSignupForm(){
   $('login-form').style.display='none';
@@ -4537,7 +4615,7 @@ async function doSignup(){
       localStorage.setItem('medplan_display_name', ud.user.displayName);
     }
   }catch(_){}
-  err.style.display='none';startApp();
+  err.style.display='none';await ensureHeavyHydrated();startApp();
   try{loadQuestionsBankFromAPI(true);if(typeof fetchRadarMedico==='function')fetchRadarMedico()}catch(_){}}
 function logout(){if(confirm('Sair? Os dados continuam salvos neste dispositivo.')){localStorage.removeItem('medplan_logged');localStorage.removeItem('cuscuz_token');location.reload()}}
 
@@ -5553,7 +5631,7 @@ function toggleDriveFav(fileId) {
 }
 
 /* ═══ ACERVO ONLINE (acervo-index.php / acervo-manifest.json) + PASTA LOCAL ═══ */
-const ACERVO_ENDPOINTS=['./acervo-index.php','./acervo-manifest.json'];
+const ACERVO_ENDPOINTS=['./acervo-manifest.json','./acervo-index.php'];
 const VIDEO_EXTENSIONS=new Set(['mp4','webm','mov','m4v','mkv','avi']);
 const MATERIAL_EXTENSIONS=new Set(['pdf']);
 const VIDEO_FILE_RE=/\.(mp4|webm|mov|m4v|mkv|avi)(?:\?|#|$)/i;
@@ -6103,8 +6181,9 @@ function persistQuestionsCache(questions) {
     if (questions.length <= 150) {
       lsSet('cuscuz_questions_cache', questions);
     } else {
-      // Para bancos grandes (ex: 5.000 questões), limpa o localStorage para evitar estouro da cota de 5MB
-      localStorage.removeItem('cuscuz_questions_cache');
+      // Para bancos grandes (ex: 5.000 questões), limpa o cache pesado para evitar
+      // duplicar o banco no IndexedDB — o banco já vive em saveQuestionsToIDB().
+      lsRemove('cuscuz_questions_cache');
       lsSet('cuscuz_questions_meta', { count: questions.length, savedAt: Date.now() });
     }
   } catch (e) { /* silencia cota de localStorage */ }
@@ -8210,8 +8289,76 @@ function importData(ev){const f=ev.target.files[0];if(!f)return;const r=new File
   toast('Backup restaurado! Recarregando...','success');setTimeout(()=>location.reload(),700)}catch(e){toast('Arquivo inválido','error')}};
  r.readAsText(f);ev.target.value=''}
 
+/* ═══ HIDRATAÇÃO DO ESTADO PESADO (IndexedDB → memória) ═══
+   Roda uma vez, antes do app abrir. Migra chaves antigas do localStorage
+   para o IndexedDB e reidrata as variáveis globais. */
+async function hydrateHeavyStorage() {
+  if (!heavyStore) return false;
+  for (const k of HEAVY_KEYS) {
+    let v, achou = false;
+    try {
+      v = await heavyStore.getItem(k);
+      if (v !== null && v !== undefined) achou = true;
+    } catch (_) { /* segue para o fallback local */ }
+    if (!achou) {
+      try {
+        const raw = localStorage.getItem(k);
+        if (raw !== null) {
+          v = JSON.parse(raw);
+          achou = true;
+          await heavyStore.setItem(k, v);
+          try { localStorage.removeItem(k); } catch (_) {} // libera a cota antiga
+        }
+      } catch (_) { /* JSON antigo inválido: ignora */ }
+    }
+    if (achou) heavyMem.set(k, v);
+  }
+  return true;
+}
+
+function aplicarEstadoPesado() {
+  const tem = k => heavyMem.has(k);
+  const pega = k => heavyMem.get(k);
+  if (tem('cuscuz_med_v1')) {
+    DB = Object.assign(JSON.parse(JSON.stringify(DEFDB)), pega('cuscuz_med_v1') || {});
+    DB.prep = Object.assign({routine:{},sessions:{},checklist:[],metaHit:{}}, DB.prep||{});
+    DB.events = DB.events||{}; DB.habits = DB.habits||{};
+  }
+  if (tem('acv_done')) DONE = new Set(pega('acv_done')||[]);
+  if (tem('acv_fav')) FAV = new Set(pega('acv_fav')||[]);
+  if (tem('acv_wrong')) WRONG = new Set(pega('acv_wrong')||[]);
+  if (tem('acv_quiz')) QUIZS = pega('acv_quiz')||{};
+  if (tem('acv_sims')) SIMS = pega('acv_sims')||[];
+  if (tem('acv_decks')) DECKS = pega('acv_decks')||[];
+  if (tem('acv_resumos')) RESUMOS = pega('acv_resumos')||{};
+  if (tem('acv_fc')) FCS = pega('acv_fc')||[];
+  if (tem('acv_fc_srs')) FCSRS = pega('acv_fc_srs')||{};
+  if (tem('cuscuz_exam_answers')) BANK_ANSWERS = pega('cuscuz_exam_answers')||{};
+  if (tem('cuscuz_med_drive')) {
+    const v = pega('cuscuz_med_drive');
+    if (v && (Array.isArray(v.videos) || Array.isArray(v.apostilas))) DRIVE = {videos:v.videos||[],apostilas:v.apostilas||[]};
+  }
+  if (tem('cuscuz_med_acervo_cache')) {
+    const v = pega('cuscuz_med_acervo_cache');
+    if (v && (Array.isArray(v.videos) || Array.isArray(v.apostilas))) ACERVO = {videos:v.videos||[],apostilas:v.apostilas||[]};
+  }
+  if (tem('cuscuz_questions_cache')) {
+    const v = pega('cuscuz_questions_cache');
+    if (Array.isArray(v) && v.length && (!Array.isArray(BANK_QUESTIONS) || !BANK_QUESTIONS.length)) {
+      BANK_QUESTIONS = v;
+      if (typeof prepareBankQuestionsSearchIndex === 'function') prepareBankQuestionsSearchIndex(BANK_QUESTIONS);
+    }
+  }
+}
+
+async function hydrateHeavyState() {
+  try { await hydrateHeavyStorage(); } catch (_) {}
+  aplicarEstadoPesado();
+}
+
 /* ═══ INIT ═══ */
-window.addEventListener('DOMContentLoaded',()=>{
+window.addEventListener('DOMContentLoaded', async () => {
+ await ensureHeavyHydrated();
  applyTheme();
  if (typeof initSidebarState === 'function') initSidebarState();
  try{if(firebaseConfig.databaseURL&&typeof firebase!=='undefined'){firebase.initializeApp(firebaseConfig);FBDB=firebase.database();CLOUD_ON=true}}catch(e){console.warn('Firebase off:',e)}
@@ -9623,7 +9770,7 @@ window.plNaoEstudei = async function (data) {
 
 window.plNovoCronograma = function () {
   if (!confirm('Criar um novo cronograma? O cronograma atual será arquivado.')) return;
-  localStorage.removeItem('planner-ia-plan');
+  lsRemove('planner-ia-plan');
   lsSet('planner-ia-mode', 'onboard');
   renderPlannerIA();
 };

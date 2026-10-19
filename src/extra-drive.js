@@ -19,6 +19,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { temConta, emailConta, driveFetch, driveFetchWithRetry } from './drive-auth.js';
 import { uploadCatalogToSupabase, supabaseCatalogReady } from './supabase-catalog.js';
+import { writableDir, TMP_DIR } from './fs-safe.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const API = (process.env.DRIVE_API_BASE || 'https://www.googleapis.com').replace(/\/$/, '');
@@ -37,17 +38,9 @@ export const EXTRA_IDS = () => [...new Set(String(process.env.GOOGLE_DRIVE_EXTRA
 export const STATUS = { running: false, at: null, erro: '', pastas: 0, videos: 0, materiais: 0, falhas: 0, modo: '' };
 
 /* ── PERSISTÊNCIA DE ESTADO (Anti-Zero) ───────────────────────────────────────
-   Volume persistente do Railway montado em /app/data → sobrevive a deploys.   */
-function detectarVolume() {
-  const unix = process.platform !== 'win32';
-  const candidatos = unix ? ['/app/data', '/data'] : [];
-  candidatos.push(path.join(__dirname, '..', 'data'));
-  for (const d of candidatos) {
-    try { fs.mkdirSync(d, { recursive: true }); fs.accessSync(d, fs.constants.W_OK); return d; } catch (e) {}
-  }
-  return path.join(__dirname, '..', 'data');
-}
-export const VOLUME_DIR = detectarVolume();
+   Volume persistente (Railway) quando existe; na Vercel o projeto é read-only
+   e o estado cai para /tmp (efêmero). O durável é o Supabase (catálogo).      */
+export const VOLUME_DIR = writableDir(path.join(__dirname, '..', 'data')) || TMP_DIR;
 export const CATALOG_FILE = path.join(VOLUME_DIR, 'acervo-manifest.json'); // catálogo gerado
 export const TOKEN_FILE = path.join(VOLUME_DIR, 'sync-token.json');        // StartPageToken
 
@@ -97,7 +90,7 @@ function salvarEstado() {
 }
 
 /* Ler manifest antigo (modo legado: catálogo fixo + pastas extras) */
-export const EXTRA_FILE = path.join(__dirname, '..', 'data', 'extra-manifest.json');
+export const EXTRA_FILE = path.join(VOLUME_DIR, 'extra-manifest.json');
 function lerLegado() {
   if (MEMLEGADO) return MEMLEGADO;
   try { MEMLEGADO = JSON.parse(fs.readFileSync(EXTRA_FILE, 'utf8')); } catch (_) { return { videos: [], materials: [], roots: [] }; }

@@ -33,3 +33,6 @@ data/users/
 data/apostila-cache.json
 data/drive-info-cache.json
 data/apostilas/
+
+# Artefato de build da Vercel (assets estáticos copiados de public/ pelo script)
+public/

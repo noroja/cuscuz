@@ -8,6 +8,32 @@ import { execFile } from 'child_process';
 const hojeBR = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Fortaleza' }).format(new Date());
 const okHoje = h => (/^\d{4}-\d{2}-\d{2}$/.test(h || '') ? h : hojeBR());
 
+/* Streaming opcional para rotas de IA (Vercel corta conexões ociosas).
+   O cliente pede SSE com Accept: text/event-stream (ou body.stream = true).
+   Mandamos comentários a cada 10s para manter a conexão viva e, no fim,
+   um evento "result" com o JSON que antes ia direto no res.json. */
+function enableSSE(req, res) {
+  const quer = req.body?.stream === true || /text\/event-stream/i.test(req.headers.accept || '');
+  if (!quer) return false;
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (res.flushHeaders) res.flushHeaders();
+  const ping = setInterval(() => { try { res.write(': keep-alive\n\n'); } catch (_) {} }, 10000);
+  const parar = () => clearInterval(ping);
+  res.on('close', parar);
+  res.json = (obj) => {
+    parar();
+    try {
+      res.write('event: result\ndata: ' + JSON.stringify(obj) + '\n\n');
+      res.end();
+    } catch (_) { /* conexão já encerrada */ }
+    return res;
+  };
+  return true;
+}
+
 const PERFIL_SCHEMA = {
   type: Type.OBJECT,
   properties: {
@@ -30,6 +56,7 @@ export function registerPlanner(app, { generateWithGemini, getGeminiClient, getB
 
   // POST /api/planner/chat — entrevista adaptativa
   app.post('/api/planner/chat', async (req, res) => {
+    enableSSE(req, res);
     const hoje = okHoje(req.body && req.body.hoje);
     try {
       const bruto = Array.isArray(req.body.messages) ? req.body.messages.slice(-14) : [];
@@ -145,6 +172,7 @@ Perfil atual (JSON, sem o material): ${JSON.stringify({ ...perfil, materiais: un
 
   // POST /api/planner/manual — lê o manual do aluno/ementa (PDF ou texto) e extrai provas, conteúdo e aulas com data
   app.post('/api/planner/manual', async (req, res) => {
+    enableSSE(req, res);
     const hoje = okHoje(req.body && req.body.hoje);
     try {
       const { nome = 'manual', mime = '', base64 = '', texto = '' } = req.body || {};
@@ -244,6 +272,7 @@ Para cada disciplina/módulo informe: provas/avaliações (data, tipo como P1/P2
 
   // POST /api/planner/enrich — IA reescreve passos/observações das tarefas com foco específico no tema
   app.post('/api/planner/enrich', async (req, res) => {
+    enableSSE(req, res);
     try {
       if (!getGeminiClient()) return res.json({ success: true, ia: false, itens: {} });
       const tarefas = (Array.isArray(req.body.tarefas) ? req.body.tarefas : []).filter(t => t && t.tipo === 'estudo').slice(0, 8);

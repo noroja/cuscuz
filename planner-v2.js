@@ -5,8 +5,24 @@
   const legacyRender = typeof window.renderPlannerIA === 'function' ? window.renderPlannerIA : null;
   const E = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const root = () => document.getElementById('planner-ia-root');
-  const get = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (_) { return d; } };
-  const set = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) { if (window.toast) toast('Armazenamento cheio — exporte um backup', 'error'); } };
+  const get = (k, d) => {
+    try {
+      if (typeof window !== 'undefined' && typeof window.lsGet === 'function') return window.lsGet(k, d);
+      const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v;
+    } catch (_) { return d; }
+  };
+  const set = (k, v) => {
+    try {
+      if (typeof window !== 'undefined' && typeof window.lsSet === 'function') { window.lsSet(k, v); return; }
+      localStorage.setItem(k, JSON.stringify(v));
+    } catch (_) { if (window.toast) toast('Armazenamento cheio — exporte um backup', 'error'); }
+  };
+  const rem = (k) => {
+    try {
+      if (typeof window !== 'undefined' && typeof window.lsRemove === 'function') { window.lsRemove(k); return; }
+      localStorage.removeItem(k);
+    } catch (_) {}
+  };
   const sync = () => { try { if (typeof pushCloud === 'function') pushCloud(); } catch (_) {} };
   const hoje = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Fortaleza' }).format(new Date());
   const DIAS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
@@ -131,8 +147,40 @@
   }
 
   async function api(path, body) {
-    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const j = await r.json().catch(() => ({}));
+    const r = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream, application/json' },
+      body: JSON.stringify(body)
+    });
+    const ct = String(r.headers.get('content-type') || '');
+    let j = {};
+    if (ct.includes('text/event-stream') && r.body && r.body.getReader) {
+      // A rota manteve a conexão aberta com keep-alives e mandou o JSON final em event: result
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let corte;
+        while ((corte = buf.indexOf('\n\n')) >= 0) {
+          const bloco = buf.slice(0, corte);
+          buf = buf.slice(corte + 2);
+          const dados = bloco.split('\n')
+            .filter(l => l.startsWith('data:'))
+            .map(l => l.slice(5).trim())
+            .join('\n');
+          if (!dados) continue;
+          try {
+            const obj = JSON.parse(dados);
+            if (obj && typeof obj === 'object') j = obj;
+          } catch (_) { /* ignora fragmento incompleto */ }
+        }
+      }
+    } else {
+      j = await r.json().catch(() => ({}));
+    }
     if (!r.ok || j.success === false) throw new Error(j.msg || j.error || ('Erro ' + r.status));
     return j;
   }
@@ -412,7 +460,7 @@
     },
     ajustar(txt) { this.conversar(); setTimeout(() => this.enviar(JSON.stringify(String(txt))), 50); },
     voltar() { renderPlano(); },
-    reiniciar() { if (!confirm('Recomeçar a conversa? (seu cronograma atual é mantido até você gerar outro)')) return; localStorage.removeItem(K_CHAT); init(true); },
+    reiniciar() { if (!confirm('Recomeçar a conversa? (seu cronograma atual é mantido até você gerar outro)')) return; rem(K_CHAT); init(true); },
     maisSemanas() { const p = get(K_PLAN, null); if (!p) return; const dias = Math.round((new Date(p.fim) - new Date(hoje())) / 864e5) + 1 + 28; gerar({ dias: Math.min(120, Math.max(28, dias)) }); },
     reagendar() { gerar({}); },
     ia() { enriquecer(false); },

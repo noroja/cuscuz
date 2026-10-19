@@ -23,9 +23,16 @@ import { resetCatalogo } from './src/planner-engine.js';
 import { temConta, emailConta, erroConta, driveFetch, authHeaders, driveFetchWithRetry, cleanDriveId } from './src/drive-auth.js';
 
 import { downloadCatalogFromSupabase, supabaseCatalogReady, ensureSupabaseBucket } from './src/supabase-catalog.js';
+import { IS_SERVERLESS, TMP_DIR, writableDir, safeReadJson, safeWriteJson } from './src/fs-safe.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+/* ═══ DIRETÓRIO DE ESTADO GRAVÁVEL ═══════════════════════════════════════════════
+   Na Vercel (serverless) o bundle é somente leitura (/var/task). Todo estado
+   efêmero (caches, tokens, bancos de trabalho) vai para /tmp. O estado durável
+   continua no Supabase (catálogo/usuários) e no GitHub (.json.gz do banco). */
+const DATA_DIR = writableDir(path.join(__dirname, 'data')) || TMP_DIR;
 
 // Carrega o .env sem dependência externa — variáveis já definidas no ambiente têm prioridade
 function loadDotEnv() {
@@ -82,7 +89,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api', authMiddleware);
 
 /* ═══ ARQUIVOS ESTÁTICOS: nunca expor código, dados internos ou segredos ═══ */
-const BLOCKED_STATIC = /^\/(server\.js|package(-lock)?\.json|render\.yaml|DEPLOY\.md|README\.md|supabase-schema\.sql|metadata\.json|drive-tree-snapshot\.json|data(\/|$)|scripts(\/|$)|src(\/|$)|node_modules(\/|$)|\.)/i;
+const BLOCKED_STATIC = /^\/(server\.js|api(\/|$)|vercel\.json|package(-lock)?\.json|render\.yaml|DEPLOY\.md|README\.md|supabase-schema\.sql|metadata\.json|drive-tree-snapshot\.json|data(\/|$)|scripts(\/|$)|src(\/|$)|node_modules(\/|$)|\.)/i;
 app.use((req, res, next) => {
   let p = '';
   try { p = decodeURIComponent(req.path); } catch (_) { return res.status(400).end(); }
@@ -332,33 +339,27 @@ const DRIVE_OK = !!DRIVE_API_KEY || temConta();
 if (!DRIVE_OK) console.warn('⚠️ Nem GOOGLE_SERVICE_ACCOUNT_JSON nem GOOGLE_DRIVE_API_KEY definidas: o acervo do Drive não vai carregar.');
 const DRIVE_ROOT_FOLDER_ID = cleanDriveId(process.env.GOOGLE_DRIVE_FOLDER_ID || '');
 
-// Persistent disk cache for Drive folder listings
-const DRIVE_CACHE_DIR = path.join(__dirname, 'data');
+// Cache de pastas do Drive. Na Vercel o projeto é somente leitura: gravamos em /tmp
+// (efêmero, por invocação) e o estado durável vive no Supabase. Nunca quebra se não houver disco.
+const DRIVE_CACHE_DIR = DATA_DIR || TMP_DIR;
 const DRIVE_CACHE_FILE = path.join(DRIVE_CACHE_DIR, 'drive-folder-cache.json');
 let driveCache = new Map();
 try {
-  if (fs.existsSync(DRIVE_CACHE_FILE)) {
-    const raw = fs.readFileSync(DRIVE_CACHE_FILE, 'utf8');
-    const obj = JSON.parse(raw);
-    for (const [k, v] of Object.entries(obj)) {
-      driveCache.set(k, v);
-    }
-    console.log(`📂 Cache permanente de pastas do Drive carregado (${driveCache.size} pastas).`);
+  const obj = safeReadJson(DRIVE_CACHE_FILE, null);
+  if (obj && typeof obj === 'object') {
+    for (const [k, v] of Object.entries(obj)) driveCache.set(k, v);
+    console.log(`📂 Cache de pastas do Drive carregado (${driveCache.size} pastas).`);
   }
 } catch (e) {
   console.warn('⚠️ Falha ao carregar cache de pastas do Drive:', e.message);
 }
 
 function saveDriveCacheToDisk() {
-  try {
-    if (!fs.existsSync(DRIVE_CACHE_DIR)) fs.mkdirSync(DRIVE_CACHE_DIR, { recursive: true });
-    const obj = {};
-    for (const [k, v] of driveCache.entries()) {
-      obj[k] = v;
-    }
-    fs.writeFileSync(DRIVE_CACHE_FILE, JSON.stringify(obj), 'utf8');
-  } catch (e) {
-    console.warn('⚠️ Falha ao salvar cache de pastas do Drive no disco:', e.message);
+  // Cache é best-effort: falha silenciosa quando o FS é somente leitura.
+  const obj = {};
+  for (const [k, v] of driveCache.entries()) obj[k] = v;
+  if (!safeWriteJson(DRIVE_CACHE_FILE, obj) && !IS_SERVERLESS) {
+    console.warn('⚠️ Falha ao salvar cache de pastas do Drive no disco.');
   }
 }
 
@@ -794,15 +795,12 @@ app.post('/api/auth/update-profile', async (req, res) => {
 });
 
 // Metadados de vídeo do Drive (tamanho/duração/resolução) — base do buffer inteligente da página de aula
-const DRIVE_INFO_CACHE_FILE = path.join(__dirname, 'data', 'drive-info-cache.json');
+const DRIVE_INFO_CACHE_FILE = path.join(DRIVE_CACHE_DIR, 'drive-info-cache.json');
 let driveInfoCache = new Map();
 try {
-  if (fs.existsSync(DRIVE_INFO_CACHE_FILE)) {
-    const raw = fs.readFileSync(DRIVE_INFO_CACHE_FILE, 'utf8');
-    const obj = JSON.parse(raw);
-    for (const [k, v] of Object.entries(obj)) {
-      driveInfoCache.set(k, v);
-    }
+  const obj = safeReadJson(DRIVE_INFO_CACHE_FILE, null);
+  if (obj && typeof obj === 'object') {
+    for (const [k, v] of Object.entries(obj)) driveInfoCache.set(k, v);
     console.log(`📹 Cache de info de vídeos carregado (${driveInfoCache.size} itens).`);
   }
 } catch (e) {
@@ -810,14 +808,9 @@ try {
 }
 
 function saveDriveInfoCache() {
-  try {
-    if (!fs.existsSync(path.dirname(DRIVE_INFO_CACHE_FILE))) fs.mkdirSync(path.dirname(DRIVE_INFO_CACHE_FILE), { recursive: true });
-    const obj = {};
-    for (const [k, v] of driveInfoCache.entries()) obj[k] = v;
-    fs.writeFileSync(DRIVE_INFO_CACHE_FILE, JSON.stringify(obj), 'utf8');
-  } catch (e) {
-    console.warn('⚠️ Falha ao salvar cache de info de vídeos:', e.message);
-  }
+  const obj = {};
+  for (const [k, v] of driveInfoCache.entries()) obj[k] = v;
+  safeWriteJson(DRIVE_INFO_CACHE_FILE, obj);
 }
 
 // Metadados de vídeo do Drive (tamanho/duração/resolução) — base do buffer inteligente da página de aula
@@ -1077,7 +1070,7 @@ app.get('/api/config', (req, res) => {
 // ══════════════════════════════════════════════════════════════════
 // RADAR MÉDICO: ATUALIZAÇÕES E EDITAIS (Estratégia MED + Gemini AI)
 // ══════════════════════════════════════════════════════════════════
-const RADAR_CACHE_FILE = path.join(__dirname, 'data', 'radar_medico_cache.json');
+const RADAR_CACHE_FILE = path.join(DATA_DIR, 'radar_medico_cache.json');
 const RADAR_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 horas (atualização 1 a 2x ao dia)
 let radarMemoryCache = null;
 
@@ -1454,18 +1447,27 @@ Se o usuário perguntar sobre o funcionamento da plataforma, funcionalidades, cr
 /* ═══════════════════════════════════════════════════════════════
    SISTEMA DE QUESTÕES (TREINO LIVRE, GERADOR GEMINI & TUTOR)
    ═══════════════════════════════════════════════════════════════ */
-const QUESTIONS_BANK_FILE = path.join(__dirname, 'data', 'questions-bank.json');
+/* O banco empacotado no repositório é a base somente-leitura. O arquivo de
+   trabalho (escrita) vive em DATA_DIR — em serverless, /tmp. */
+const QUESTIONS_BANK_SEED_FILE = path.join(__dirname, 'data', 'questions-bank.json');
+const QUESTIONS_BANK_FILE = path.join(DATA_DIR, 'questions-bank.json');
+const QUESTIONS_BANK_GZ = path.join(__dirname, 'data', 'questions-bank.json.gz');
+const QUESTIONS_BANK_CANDIDATES = [QUESTIONS_BANK_FILE, QUESTIONS_BANK_SEED_FILE];
 
 let _bankCache = null;
 let _bankTimer = null;
 let _bankDirty = false;
 let _bankBase = 0; // quantas questões o repositório já tinha quando o servidor subiu
-const QUESTIONS_BANK_GZ = QUESTIONS_BANK_FILE + '.gz';
 // O banco pré-catalogado vem no repositório compactado (.json.gz, gerado pelo GitHub Actions); o .json é o arquivo de trabalho
 function readQuestionsBank() {
   if (_bankCache) return _bankCache;
   try {
-    const lerPlain = () => (fs.existsSync(QUESTIONS_BANK_FILE) ? JSON.parse(fs.readFileSync(QUESTIONS_BANK_FILE, 'utf8')) : []);
+    const lerPlain = () => {
+      for (const f of QUESTIONS_BANK_CANDIDATES) {
+        if (fs.existsSync(f)) return JSON.parse(fs.readFileSync(f, 'utf8'));
+      }
+      return [];
+    };
     const lerGz = () => (fs.existsSync(QUESTIONS_BANK_GZ) ? JSON.parse(zlib.gunzipSync(fs.readFileSync(QUESTIONS_BANK_GZ)).toString('utf8')) : []);
     let a = [], b = [];
     try { a = lerPlain(); } catch (e) { console.warn('banco .json ilegível:', e.message); }
@@ -1481,7 +1483,12 @@ function readQuestionsBank() {
 // Carregamento assíncrono não-bloqueante do banco (chamado no startup)
 async function preloadQuestionsBank() {
   try {
-    const lerPlain = async () => fs.existsSync(QUESTIONS_BANK_FILE) ? JSON.parse(await fs.promises.readFile(QUESTIONS_BANK_FILE, 'utf8')) : [];
+    const lerPlain = async () => {
+      for (const f of QUESTIONS_BANK_CANDIDATES) {
+        if (fs.existsSync(f)) return JSON.parse(await fs.promises.readFile(f, 'utf8'));
+      }
+      return [];
+    };
     const lerGz = async () => fs.existsSync(QUESTIONS_BANK_GZ) ? JSON.parse(zlib.gunzipSync(await fs.promises.readFile(QUESTIONS_BANK_GZ)).toString('utf8')) : [];
     const [a, b] = await Promise.all([lerPlain().catch(() => []), lerGz().catch(() => [])]);
     const data = b.length > a.length ? b : a;
@@ -1706,7 +1713,7 @@ const HWQ_STATE = { userToken: null, lastLoginAt: null, lastLoginOk: null, lastS
 
 // Login contínuo: o token do aluno é persistido em disco e sobrevive a restarts.
 // Só refaz o login de verdade quando a API recusar o token (auth:false) — relogin automático.
-const HWQ_TOKEN_FILE = path.join(__dirname, 'data', 'hwq-token.json');
+const HWQ_TOKEN_FILE = path.join(DATA_DIR, 'hwq-token.json');
 
 function saveHwqToken(token) {
   try {
@@ -2260,12 +2267,16 @@ async function autoSyncHardworq() {
     console.warn('⚠️ [Hardworq] Auto-sync erro:', err.message);
   }
 }
-setTimeout(autoSyncHardworq, 20000);
-setInterval(autoSyncHardworq, HWQ.syncIntervalHours * 60 * 60 * 1000);
+// Processos de fundo só fazem sentido em servidor persistente (Railway/Render).
+// Em serverless eles seriam congelados ou multiplicariam execuções.
+if (!IS_SERVERLESS) {
+  setTimeout(autoSyncHardworq, 20000);
+  setInterval(autoSyncHardworq, HWQ.syncIntervalHours * 60 * 60 * 1000);
+}
 
 // ── Espelho contínuo: percorre o catálogo de doenças do Hardworq (~358) e traz as questões de cada uma,
 // uma por vez e com pausa entre elas. Ao terminar a volta, descansa e recomeça (pega questões novas). ──
-const MIRROR_FILE = path.join(__dirname, 'data', 'hwq-mirror.json');
+const MIRROR_FILE = path.join(DATA_DIR, 'hwq-mirror.json');
 const MIRROR = { running: false, idx: 0, total: 0, passes: 0, lastAt: null, lastDoenca: '', novas: 0, erro: '' };
 try { Object.assign(MIRROR, JSON.parse(fs.readFileSync(MIRROR_FILE, 'utf8')), { running: false }); } catch (_) {}
 const saveMirror = () => { try { fs.writeFileSync(MIRROR_FILE, JSON.stringify({ idx: MIRROR.idx, passes: MIRROR.passes, lastAt: MIRROR.lastAt })); } catch (_) {} };
@@ -2323,13 +2334,13 @@ async function mirrorTick() {
   MIRROR.running = false;
   setTimeout(mirrorTick, espera);
 }
-setTimeout(mirrorTick, 45000);
+if (!IS_SERVERLESS) setTimeout(mirrorTick, 45000);
 app.get('/api/questions/mirror', (req, res) => {
   res.json({ success: true, ...MIRROR, publicacao: !!(process.env.GITHUB_TOKEN || process.env.GH_TOKEN), baseRepo: _bankBase, ativo: HWQ.mirror && !!(HWQ.email && HWQ.senha), bankCount: readQuestionsBank().length, limite: HWQ.mirrorMax });
 });
 
 // Login no boot apenas se não houver token reutilizável — credenciais certas entram em segundos
-setTimeout(() => { if (!HWQ_STATE.userToken && HWQ.email && HWQ.senha) hwqLogin(); }, 5000);
+if (!IS_SERVERLESS) setTimeout(() => { if (!HWQ_STATE.userToken && HWQ.email && HWQ.senha) hwqLogin(); }, 5000);
 
 // 2. Gerar questões sob demanda com Gemini AI (Aba 2)
 app.post('/api/gemini/generate-questions', async (req, res) => {
@@ -2612,9 +2623,11 @@ async function autoFeedQuestions() {
   }
 }
 
-// Inicia auto-feed após 15 segundos do boot do servidor e a cada 6 horas
-setTimeout(autoFeedQuestions, 15000);
-setInterval(autoFeedQuestions, 6 * 60 * 60 * 1000);
+// Inicia auto-feed após 15 segundos do boot do servidor e a cada 6 horas (só em servidor persistente)
+if (!IS_SERVERLESS) {
+  setTimeout(autoFeedQuestions, 15000);
+  setInterval(autoFeedQuestions, 6 * 60 * 60 * 1000);
+}
 
 app.post('/api/questions/auto-feed', async (req, res) => {
   await autoFeedQuestions();
@@ -2626,7 +2639,7 @@ app.post('/api/questions/auto-feed', async (req, res) => {
    PLANEJADOR DE CRONOGRAMA IA — graduação + residência
    Regra absoluta: toda revisão é ESTUDO ATIVO (flashcards/questões).
    ═══════════════════════════════════════════════════════════════ */
-const DECKS_FILE = path.join(__dirname, 'data', 'planner-decks.json');
+const DECKS_FILE = path.join(DATA_DIR, 'planner-decks.json');
 function readDecks() { try { return JSON.parse(fs.readFileSync(DECKS_FILE, 'utf8')); } catch { return {}; } }
 function writeDecks(d) { try { fs.mkdirSync(path.dirname(DECKS_FILE), { recursive: true }); fs.writeFileSync(DECKS_FILE, JSON.stringify(d, null, 2), 'utf8'); } catch (err) { console.warn('⚠️ [Planner] Falha ao salvar decks:', err.message); } }
 const plDeckKey = (materia, tema) => hwqNorm(materia) + '::' + hwqNorm(tema);
@@ -3546,7 +3559,7 @@ registerMedreaderMarcas(app, { getSupabase: () => supabase });
 // Arquivos internos nunca saem pelo site (código, dados, catálogo bruto, segredos)
 app.use((req, res, next) => {
   const p = decodeURIComponent(req.path || '/').toLowerCase();
-  if (/^\/(server\.js|smart_scheduler\.js|package(-lock)?\.json|bun\.lock|render\.yaml|supabase-schema\.sql|metadata\.json|drive-tree-snapshot\.json|radar-medico\.json|deploy\.md|readme\.md)$/.test(p) || /^\/(src|data|scripts|node_modules|\.github)(\/|$)/.test(p)) return res.status(404).send('Not found');
+  if (/^\/(server\.js|api(\/|$)|vercel\.json|smart_scheduler\.js|package(-lock)?\.json|bun\.lock|render\.yaml|supabase-schema\.sql|metadata\.json|drive-tree-snapshot\.json|radar-medico\.json|deploy\.md|readme\.md)$/.test(p) || /^\/(src|data|scripts|node_modules|\.github)(\/|$)/.test(p)) return res.status(404).send('Not found');
   next();
 });
 let _manifCache = null;
@@ -3586,7 +3599,7 @@ app.get('/acervo-manifest.json', async (req, res, next) => {
 async function rodarExtras() { try { const r = await varrerExtras(); if (r) { resetCatalogo(); console.log(`📂 [Extras] ${r.videos} vídeos e ${r.materials} materiais das pastas extras.`); } } catch (e) { console.warn('⚠️ [Extras]', e.message); } }
 // repete depois de terminar cada varredura (intervalo em segundos; padrão 30min para poupar cota da API)
 const EXTRA_PAUSA = Math.max(60, parseInt(process.env.EXTRA_SCAN_S, 10) || 1800) * 1000;
-setTimeout(function cicloExtras() { rodarExtras().finally(() => setTimeout(cicloExtras, EXTRA_PAUSA)); }, 3000);
+if (!IS_SERVERLESS) setTimeout(function cicloExtras() { rodarExtras().finally(() => setTimeout(cicloExtras, EXTRA_PAUSA)); }, 3000);
 app.get('/api/acervo/extra-status', (req, res) => res.json({ success: true, ids: EXTRA_IDS(), principal: DRIVE_ROOT_FOLDER_ID, chave: DRIVE_OK, conta: temConta() ? emailConta() : '', erroConta: erroConta(), ...EXTRA_STATUS }));
 app.post('/api/acervo/extra-scan', (req, res) => { rodarExtras(); res.json({ success: true, started: !EXTRA_STATUS.running }); });
 
@@ -3684,9 +3697,13 @@ app.all('/api/*', (req, res) => {
   res.status(404).json({ error: 'Endpoint da API não encontrado', path: req.path });
 });
 
-// Fallback to index.html for SPA navigation
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+// Fallback to index.html for SPA navigation.
+// Caminhos que parecem arquivo (têm extensão) NÃO recebem HTML: devolvem 404.
+// Isso evita o clássico "Unexpected token <" quando um asset/endpoint falta.
+app.get('*', (req, res, next) => {
+  if (/\.[a-z0-9]{1,10}$/i.test(req.path)) return res.status(404).send('Not found');
+  if (req.path.startsWith('/api')) return res.status(404).json({ error: 'Endpoint da API não encontrado', path: req.path });
+  res.sendFile(path.join(__dirname, 'index.html'), err => { if (err) next(err); });
 });
 
 // Erros não tratados viram log em vez de derrubar o servidor (no Render isso causaria reinício e quedas de stream)
@@ -3702,13 +3719,23 @@ app.use((err, req, res, next) => {
   res.status(status).send('Erro interno');
 });
 
-const server = app.listen(PORT, HOST, () => {
-  console.log(`Cuscuz-MED running at http://${HOST}:${PORT}`);
-  checkDriveKey();
-});
-
-process.on('SIGTERM', () => {
-  server.close(() => {
-    process.exit(0);
+/* ═══ BOOT ═══════════════════════════════════════════════════════════════════════
+   - Railway/Render/local: sobe o servidor HTTP contínuo.
+   - Vercel/serverless: NÃO chama listen; exporta o app Express para o runtime.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+let server = null;
+if (!IS_SERVERLESS) {
+  server = app.listen(PORT, HOST, () => {
+    console.log(`Cuscuz-MED running at http://${HOST}:${PORT}`);
+    checkDriveKey();
   });
-});
+
+  process.on('SIGTERM', () => {
+    server.close(() => {
+      process.exit(0);
+    });
+  });
+}
+
+export default app;
+export { app, server };

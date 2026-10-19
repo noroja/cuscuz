@@ -2,12 +2,16 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'stream';
 import { fileURLToPath } from 'url';
 import * as cheerio from 'cheerio';
 import { driveFetch, cleanDriveId } from './drive-auth.js';
+import { writableDir, TMP_DIR } from './fs-safe.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CACHE_DIR = path.join(__dirname, '..', 'data');
+/* Cache de apostilas: em serverless vai para /tmp (efêmero); em servidor
+   persistente fica no data/ do projeto. */
+const CACHE_DIR = writableDir(path.join(__dirname, '..', 'data')) || TMP_DIR;
 const CACHE_FILE = path.join(CACHE_DIR, 'apostila-cache.json');
 
 // Cache em disco: um arquivo por apostila, lido sob demanda (apostilas com imagens embutidas
@@ -315,7 +319,8 @@ export function registerApostilaReader(app) {
       const html = await getApostilaHtml(req.params.id, { escopo: req.query.escopo === '1' });
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.setHeader('Cache-Control', 'private, max-age=1800'); // 30 min
-      res.send(html);
+      // Piping: não duplica o HTML grande na memória do Express.
+      Readable.from([html]).pipe(res);
     } catch (err) {
       console.error('[Apostila Reader]', err.message);
       res.status(502).json({ 
