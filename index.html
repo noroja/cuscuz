@@ -4490,7 +4490,7 @@ async function doLogin(){const u=cleanStr($('login-user').value.trim()),p=$('log
   SYNC_USER=u;localStorage.setItem('medplan_logged','1');localStorage.setItem('medplan_user',u);
   // Carrega o nome de exibição do servidor
   try{
-    const r=await fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+d.token}});
+    const r=await fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+localStorage.getItem('cuscuz_token')}});
     const ud=await r.json();
     if(ud.success&&ud.user&&ud.user.displayName){
       $('sidebar-user-name').textContent = ud.user.displayName;
@@ -4530,7 +4530,7 @@ async function doSignup(){
   SYNC_USER=u;localStorage.setItem('medplan_logged','1');localStorage.setItem('medplan_user',u);
   // Carrega o nome de exibição do servidor
   try{
-    const r=await fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+res.token}});
+    const r=await fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+localStorage.getItem('cuscuz_token')}});
     const ud=await r.json();
     if(ud.success&&ud.user&&ud.user.displayName){
       $('sidebar-user-name').textContent = ud.user.displayName;
