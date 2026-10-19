@@ -637,3 +637,69 @@ body:not([class*='--bg-void']) .medreader-toggle-group {
   --text-muted: #94a3b8;
   --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.12);
 }
+
+/* ── Leitor em tela cheia (shell): barra fixa + área com rolagem própria ── */
+.medreader-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  display: none;
+  flex-direction: column;
+  background: var(--medreader-bg-night);
+}
+.medreader-shell.open { display: flex; }
+
+.medreader-shell .medreader-toolbar {
+  flex: 0 0 auto;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  background: #0b1220;
+  color: #e5edf7;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+.medreader-shell .medreader-toolbar > * { width: auto; }
+.medreader-shell .medreader-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.medreader-shell .medreader-controls { display: flex; gap: 8px; flex: 0 0 auto; }
+.medreader-shell .medreader-btn {
+  color: #e5edf7;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
+  padding: 6px 12px;
+}
+.medreader-shell .medreader-btn:hover { background: rgba(255, 255, 255, 0.14); }
+.medreader-shell .medreader-btn.primary {
+  background: var(--medreader-accent);
+  color: #04211d;
+  border-color: transparent;
+}
+
+/* Área do texto: é ela que rola (o shell é fixo e não rola) */
+.medreader-shell #medreader-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  outline: none;
+}
+
+/* Mensagens de carregamento / erro dentro do leitor */
+.medreader-estado {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 48px 24px;
+  text-align: center;
+  font-size: 15px;
+  opacity: 0.85;
+}
+.medreader-estado.erro { color: #e11d48; opacity: 1; }

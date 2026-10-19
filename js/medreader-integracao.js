@@ -17,6 +17,7 @@ window.medreader = {
   modal: null,
   highlighter: null,
   exportador: null,
+  shell: null,
   container: null,
   overlay: null,
   inicializado: false,
@@ -29,20 +30,16 @@ window.medreader = {
 function medreaderInit() {
   if (window.medreader.inicializado) return;
 
-  // Container principal do leitor (usado pelo modo inline dentro da aba Apostilas)
-  let container = document.getElementById('medreader-container');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'medreader-container';
-    container.className = 'medreader-body';
-    container.style.display = 'none';
-    container.style.position = 'fixed';
-    container.style.inset = '0';
-    container.style.zIndex = '59';
-    container.style.background = 'var(--bg-void, #07090e)';
-    document.body.appendChild(container);
-  }
+  // Leitor em tela cheia: barra fixa (título + controles) e, abaixo, a área rolável com o texto
+  const shell = medreaderCriarShell();
+  const container = shell.querySelector('#medreader-container');
+  window.medreader.shell = shell;
   window.medreader.container = container;
+
+  // Esc fecha o leitor
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && shell.classList.contains('open')) medreaderFechar();
+  });
 
   // Instancia classes do MedReader
   window.medreader.core = new MedReaderCore({
@@ -74,52 +71,117 @@ function medreaderInit() {
   medreaderToast('MedReader inicializado.');
 }
 
+/** Ordem dos temas e tamanhos de fonte usados pelos botões da barra. */
+const MEDREADER_TEMAS = ['default', 'sepia', 'night'];
+const MEDREADER_FONTES = ['small', 'medium', 'large', 'extra-large'];
+
+// Número do pedido de abertura atual (descarta respostas antigas se o usuário fechar ou abrir outra apostila)
+let medreaderPedidoAtual = 0;
+
 /**
- * Abre o MedReader em overlay fullscreen (modo tela cheia) para uma apostila.
- * Reutiliza o endpoint existente /api/apostila/html/:id.
+ * Cria (uma vez) a estrutura do leitor: barra de controles + container rolável.
+ * O container fica dentro do shell porque o MedReaderCore limpa o container a cada loadContent().
+ */
+function medreaderCriarShell() {
+  let shell = document.getElementById('medreader-shell');
+  if (shell) return shell;
+  shell = document.createElement('div');
+  shell.id = 'medreader-shell';
+  shell.className = 'medreader-shell';
+  shell.setAttribute('role', 'dialog');
+  shell.setAttribute('aria-modal', 'true');
+  shell.setAttribute('aria-label', 'Leitor de apostilas');
+  shell.innerHTML =
+    '<div class="medreader-toolbar" role="toolbar" aria-label="Controles do leitor">' +
+      '<div class="medreader-title" id="medreader-title">Apostila</div>' +
+      '<div class="medreader-controls">' +
+        '<button type="button" class="medreader-btn" data-mr="fonte-menos" title="Diminuir fonte" aria-label="Diminuir fonte">A\u2212</button>' +
+        '<button type="button" class="medreader-btn" data-mr="fonte-mais" title="Aumentar fonte" aria-label="Aumentar fonte">A+</button>' +
+        '<button type="button" class="medreader-btn" data-mr="tema" title="Alternar tema" aria-label="Alternar tema">Tema</button>' +
+        '<button type="button" class="medreader-btn primary" data-mr="fechar" title="Fechar (Esc)" aria-label="Fechar leitor">\u2715 Fechar</button>' +
+      '</div>' +
+    '</div>' +
+    '<div id="medreader-container" class="medreader-body" tabindex="-1"></div>';
+  shell.addEventListener('click', (ev) => {
+    const btn = ev.target.closest && ev.target.closest('[data-mr]');
+    if (!btn) return;
+    const acao = btn.getAttribute('data-mr');
+    if (acao === 'fechar') medreaderFechar();
+    else if (acao === 'tema') medreaderAlternarTema();
+    else if (acao === 'fonte-mais') medreaderAjustarFonte(1);
+    else if (acao === 'fonte-menos') medreaderAjustarFonte(-1);
+  });
+  document.body.appendChild(shell);
+  return shell;
+}
+
+function medreaderAlternarTema() {
+  const core = window.medreader.core;
+  if (!core) return;
+  const i = MEDREADER_TEMAS.indexOf(core.theme);
+  core.setTheme(MEDREADER_TEMAS[(i + 1) % MEDREADER_TEMAS.length]);
+}
+
+function medreaderAjustarFonte(delta) {
+  const core = window.medreader.core;
+  if (!core) return;
+  const i = MEDREADER_FONTES.indexOf(core.fontSize);
+  const novo = Math.min(MEDREADER_FONTES.length - 1, Math.max(0, (i < 0 ? 1 : i) + delta));
+  core.setFontSize(MEDREADER_FONTES[novo]);
+}
+
+/**
+ * Abre uma apostila (HTML do Drive) no leitor em tela cheia.
+ * Mostra a barra com o botão Fechar já durante o carregamento e também se der erro.
  * @param {string} fileId
  * @param {string} fileName
  */
-async function medreaderOpenOverlay(fileId, fileName) {
+async function medreaderAbrir(fileId, fileName) {
   medreaderInit();
 
-  const core = window.medreader.core;
-  const container = window.medreader.container;
+  const { core, container, shell } = window.medreader;
+  const tituloEl = document.getElementById('medreader-title');
+  if (tituloEl) tituloEl.textContent = fileName || 'Apostila';
 
-  // Busca o HTML processado do backend (reutiliza endpoint existente)
+  shell.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  container.innerHTML = '<div class="medreader-estado">Carregando apostila\u2026</div>';
+  container.scrollTop = 0;
+
+  const pedido = ++medreaderPedidoAtual;
   try {
     const res = await fetch(`/api/apostila/html/${encodeURIComponent(fileId)}`, {
       headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('cuscuz_token') || '') },
     });
+    if (res.status === 401) throw new Error('sess\u00e3o expirada, entre de novo');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const html = await res.text();
+    if (pedido !== medreaderPedidoAtual) return; // fechou ou abriu outra enquanto carregava
 
     core.loadContent(html);
-
-    // Mostra overlay
-    container.style.display = 'flex';
-    container.style.flexDirection = 'column';
-    document.body.style.overflow = 'hidden';
-
-    // Atualiza título se houver elemento no DOM existente
-    const titleEl = document.getElementById('apostila-reader-title');
-    if (titleEl) titleEl.textContent = fileName || 'Apostila';
-
-    medreaderToast(`Apostila "${fileName}" carregada no MedReader.`);
+    container.scrollTop = 0;
+    try { container.focus({ preventScroll: true }); } catch (_) { /* sem foco, tudo bem */ }
   } catch (err) {
-    console.error('[MedReader] Falha ao abrir overlay:', err);
+    if (pedido !== medreaderPedidoAtual) return;
+    console.error('[MedReader] Falha ao abrir apostila:', err);
+    container.innerHTML = '<div class="medreader-estado erro">N\u00e3o foi poss\u00edvel carregar a apostila (' +
+      escapeHtml(err.message) + '). Use \u201cFechar\u201d e tente novamente.</div>';
     medreaderToast(`Erro ao carregar apostila: ${err.message}`, 'error');
   }
+}
+
+/** Compatibilidade: nomes antigos chamados pelo index.html. */
+async function medreaderOpenOverlay(fileId, fileName) {
+  return medreaderAbrir(fileId, fileName);
 }
 
 /**
  * Fecha o overlay do MedReader.
  */
 function medreaderCloseOverlay() {
-  const container = window.medreader.container;
-  if (container) {
-    container.style.display = 'none';
-  }
+  medreaderPedidoAtual++; // cancela qualquer carregamento em andamento
+  const shell = window.medreader.shell;
+  if (shell) shell.classList.remove('open');
   document.body.style.overflow = '';
 }
 
@@ -210,39 +272,12 @@ function medreaderCarregarMateriaisDaAula(aula) {
 }
 
 /**
- * Abre uma apostila no leitor inline do MedReader (dentro da aba Apostilas).
+ * Abre uma apostila no leitor do MedReader (chamada pela aba Apostilas).
  * @param {string} fileId
  * @param {string} fileName
  */
 async function medreaderApostilaInlineOpen(fileId, fileName) {
-  medreaderInit();
-
-  const core = window.medreader.core;
-  const container = window.medreader.container;
-
-  // Mostra container do MedReader (modo inline/fullscreen temporário)
-  container.style.display = 'flex';
-  container.style.flexDirection = 'column';
-  document.body.style.overflow = 'hidden';
-
-  try {
-    const res = await fetch(`/api/apostila/html/${encodeURIComponent(fileId)}`, {
-      headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('cuscuz_token') || '') },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const html = await res.text();
-
-    core.loadContent(html);
-
-    // Atualiza título do leitor inline se existir
-    const titleEl = document.getElementById('apostila-inline-title');
-    if (titleEl) titleEl.textContent = fileName || 'Apostila';
-
-    medreaderToast(`Apostila "${fileName}" aberta no MedReader.`);
-  } catch (err) {
-    console.error('[MedReader] Falha ao abrir apostila inline:', err);
-    medreaderToast(`Erro ao carregar apostila: ${err.message}`, 'error');
-  }
+  return medreaderAbrir(fileId, fileName);
 }
 
 /**
@@ -387,6 +422,7 @@ function escapeHtml(s) {
 }
 
 // Expor funções globalmente para uso no HTML existente (onclick)
+window.medreaderAbrir = medreaderAbrir;
 window.medreaderOpenOverlay = medreaderOpenOverlay;
 window.medreaderCloseOverlay = medreaderCloseOverlay;
 window.medreaderCarregarMateriaisDaAula = medreaderCarregarMateriaisDaAula;
