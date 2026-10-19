@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import * as cheerio from 'cheerio';
 import { driveFetch, cleanDriveId } from './drive-auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -73,14 +74,94 @@ async function fetchCssMestre() {
 }
 
 function sanitizeHtml(html) {
-  // Remove scripts, iframes, event handlers, estilos inline perigosos
-  return html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
-    .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '')
-    .replace(/javascript:/gi, 'blocked:')
-    .replace(/<link[^>]*rel=["']stylesheet["'][^>]*>/gi, '') // remove CSS externos (usamos os nossos)
-    .replace(/<style[^>]*>[^<]*<\/style>/gi, ''); // remove style tags (opcional - podemos manter se quiser)
+  // Remove tudo que executa código ou puxa recursos externos; as folhas de estilo da própria
+  // apostila saem também (o leitor usa o CSS-mestre).
+  const $ = cheerio.load(html);
+  $('script, noscript, iframe, frame, frameset, object, embed, applet, base, form, link, style, meta[http-equiv]').remove();
+  const URL_ATTRS = new Set(['href', 'src', 'xlink:href', 'action', 'formaction', 'srcset', 'poster', 'data']);
+  $('*').each((_, el) => {
+    for (const nome of Object.keys(el.attribs || {})) {
+      const n = nome.toLowerCase();
+      const v = String(el.attribs[nome] || '');
+      if (n.startsWith('on')) { $(el).removeAttr(nome); continue; }
+      if (URL_ATTRS.has(n)) {
+        const limpo = v.replace(/[\u0000-\u0020\u00a0\u1680\u2000-\u200f\u2028\u2029\u202f\u205f\u3000\ufeff]+/g, '').toLowerCase();
+        if (/^(javascript|vbscript):/.test(limpo) || (/^data:/.test(limpo) && !/^data:image\/(png|jpe?g|gif|webp|avif|bmp);/.test(limpo))) {
+          $(el).removeAttr(nome);
+        }
+      }
+      if (n === 'style' && /expression\s*\(|javascript:|url\s*\(\s*['"]?\s*(javascript|data:text)/i.test(v)) $(el).removeAttr(nome);
+    }
+  });
+  return $.html();
+}
+
+/**
+ * Prefixa os seletores de uma folha de estilo para ela valer só dentro do leitor
+ * (html/body/:root viram o próprio prefixo). @import some; @font-face/@keyframes ficam como estão.
+ */
+function scopeCss(css, prefix) {
+  const src = String(css || '').replace(/\/\*[\s\S]*?\*\//g, '');
+  let i = 0;
+  let out = '';
+  const bloco = (ini) => { // devolve o índice do '}' que fecha o '{' em ini
+    let prof = 0;
+    for (let k = ini; k < src.length; k++) {
+      const c = src[k];
+      if (c === '"' || c === "'") { const q = c; k++; while (k < src.length && src[k] !== q) { if (src[k] === '\\') k++; k++; } continue; }
+      if (c === '{') prof++;
+      else if (c === '}') { prof--; if (prof === 0) return k; }
+    }
+    return src.length - 1;
+  };
+  const dividir = (sel) => { // separa por vírgula fora de (), [] e aspas
+    const partes = []; let prof = 0; let q = ''; let ini = 0;
+    for (let k = 0; k < sel.length; k++) {
+      const c = sel[k];
+      if (q) { if (c === '\\') k++; else if (c === q) q = ''; continue; }
+      if (c === '"' || c === "'") q = c;
+      else if (c === '(' || c === '[') prof++;
+      else if (c === ')' || c === ']') prof--;
+      else if (c === ',' && prof === 0) { partes.push(sel.slice(ini, k)); ini = k + 1; }
+    }
+    partes.push(sel.slice(ini));
+    return partes;
+  };
+  const escopar = (sel) => dividir(sel).map((x) => {
+    let t = x.trim();
+    if (!t) return '';
+    for (;;) {
+      const m = t.match(/^(html|body|:root)(?![\w-])\s*/i);
+      if (!m) break;
+      t = t.slice(m[0].length);
+    }
+    if (!t) return prefix;
+    if (/^[>+~]/.test(t)) return prefix + ' ' + t;
+    if (t === '*') return prefix + ', ' + prefix + ' *';
+    return prefix + ' ' + t;
+  }).filter(Boolean).join(', ');
+  const rec = (texto) => scopeCss(texto, prefix);
+  while (i < src.length) {
+    const ab = src.indexOf('{', i);
+    const pv = src.indexOf(';', i);
+    if (ab === -1 && pv === -1) break;
+    if (pv !== -1 && (ab === -1 || pv < ab) && src.slice(i, pv).trim().startsWith('@')) { // @import, @charset...
+      i = pv + 1; continue;
+    }
+    if (ab === -1) break;
+    const cab = src.slice(i, ab).trim();
+    const fim = bloco(ab);
+    const corpo = src.slice(ab + 1, fim);
+    if (cab.startsWith('@')) {
+      if (/^@(media|supports|document|layer|container)\b/i.test(cab)) out += cab + '{' + rec(corpo) + '}\n';
+      else out += cab + '{' + corpo + '}\n';
+    } else {
+      const sel = escopar(cab);
+      if (sel) out += sel + '{' + corpo + '}\n';
+    }
+    i = fim + 1;
+  }
+  return out;
 }
 
 function injectCssMestre(html, cssMestre) {
@@ -104,7 +185,22 @@ function addReaderEnhancements(html) {
     .replace(/<html([^>]*)>/i, '<html$1 class="medreader-html">');
 }
 
-export async function getApostilaHtml(fileId) {
+const escopoCache = new Map();
+
+export async function getApostilaHtml(fileId, { escopo = false } = {}) {
+  if (escopo) {
+    const base = await getApostilaHtml(fileId);
+    const chave = cleanDriveId(fileId) + ':' + base.length;
+    if (escopoCache.has(chave)) return escopoCache.get(chave);
+    const $ = cheerio.load(base);
+    const st = $('#medreader-css-mestre');
+    const css = scopeCss(st.text(), '.medreader-content');
+    st.remove();
+    const pronto = '<style id="medreader-css-mestre">' + css + '</style>\n' + $('body').html();
+    if (escopoCache.size > 20) escopoCache.clear();
+    escopoCache.set(chave, pronto);
+    return pronto;
+  }
   const id = cleanDriveId(fileId);
   if (!id) throw new Error('ID inválido');
   
@@ -171,7 +267,7 @@ export function registerApostilaReader(app) {
   // Endpoint para buscar HTML da apostila processado
   app.get('/api/apostila/html/:id', async (req, res) => {
     try {
-      const html = await getApostilaHtml(req.params.id);
+      const html = await getApostilaHtml(req.params.id, { escopo: req.query.escopo === '1' });
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.setHeader('Cache-Control', 'private, max-age=1800'); // 30 min
       res.send(html);
@@ -225,4 +321,4 @@ export function registerApostilaReader(app) {
   });
 }
 
-export { fetchCssMestre, sanitizeHtml, injectCssMestre };
+export { fetchCssMestre, sanitizeHtml, injectCssMestre, scopeCss };

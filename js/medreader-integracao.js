@@ -553,7 +553,7 @@ async function medreaderAbrir(fileId, fileName) {
 
   const pedido = ++medreaderPedidoAtual;
   try {
-    const res = await fetch(`/api/apostila/html/${encodeURIComponent(fileId)}`, {
+    const res = await fetch(`/api/apostila/html/${encodeURIComponent(fileId)}?escopo=1`, {
       headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('cuscuz_token') || '') },
     });
     if (res.status === 401) throw new Error('sess\u00e3o expirada, entre de novo');
@@ -616,7 +616,7 @@ function medreaderCloseOverlay() {
  * Apostilas são organizadas por macroárea (Pediatria, Cirurgia, etc.), não por aula individual.
  * @param {object} aula - { id, curso, disc, titulo, materiais?: Array }
  */
-function medreaderCarregarMateriaisDaAula(aula) {
+async function medreaderCarregarMateriaisDaAula(aula) {
   if (!aula || !aula.id) {
     medreaderToast('Aula inválida para carregar materiais.', 'error');
     return;
@@ -633,7 +633,7 @@ function medreaderCarregarMateriaisDaAula(aula) {
   boxApo.innerHTML = '';
 
   // Busca materiais da aula (backend deve suportar ?aula=)
-  const materiais = medreaderBuscarMateriaisDaAula(aula.id, aula.curso, aula.disc);
+  const materiais = await medreaderBuscarMateriaisDaAula(aula.id, aula.curso, aula.disc);
 
   // Separa PDFs de Apostilas
   const pdfs = [];

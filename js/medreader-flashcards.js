@@ -530,6 +530,7 @@ class Highlighter {
       span.title = 'Destaque vinculado';
 
       const id = this._novoId();
+      span.setAttribute('data-highlight-id', id);
       const highlight = {
         id,
         texto: textoSelecionado,
