@@ -17,6 +17,7 @@ import { registerPlanner } from './src/planner-routes.js';
 import { registerAula } from './src/aula.js';
 import { registerApostilaReader } from './src/apostila-reader.js';
 import { registerMedreaderMarcas } from './src/medreader-marcas.js';
+import { materiaisDeIrmaos } from './src/materiais-irmaos.js';
 import { registerAuthRoutes, authMiddleware, getUserFilePath, getUserDataDir, validateSession, updateUserProfile } from './src/auth-multiuser.js';
 import { varrerExtras, juntar as juntarExtras, lerExtra, STATUS as EXTRA_STATUS, EXTRA_IDS, setCatalogo, CAT } from './src/extra-drive.js';
 import { resetCatalogo } from './src/planner-engine.js';
@@ -709,8 +710,23 @@ async function materiaisContexto(res, videoId, parentIdQ) {
       if (reg && reg.pid) parent = reg.pid;
     }
     if (!parent) return res.json({ success: false, hint: 'vídeo sem pasta-pai conhecida', videoId, parent: '', total: 0, pdfs: [], apostilas: [] });
-    // 1) catálogo (0 cota) → 2) files.list com cache por pasta
-    const val = materiaisDoCatalogoPorPasta(parent) || await materiaisDoDrivePorPasta(parent).catch(() => ({ pdfs: [], apostilas: [], fonte: 'drive-erro' }));
+    // 1) catálogo (0 cota): pasta do vídeo + pastas irmãs de material (ex.: "Apostila", "Resumo")
+    //    → 2) files.list com cache por pasta
+    const propria = materiaisDoCatalogoPorPasta(parent);
+    const cat0 = lerExtra() || {};
+    const vizinhas = materiaisDeIrmaos(cat0.folders || CAT.folders, cat0.materials, parent);
+    let val = null;
+    if (propria || vizinhas) {
+      const vistos = new Set();
+      const junta = (a, b) => [...a, ...b].filter((m) => { const k = m.nome.toLowerCase(); if (vistos.has(k)) return false; vistos.add(k); return true; });
+      val = {
+        pdfs: junta((propria || {}).pdfs || [], (vizinhas || {}).pdfs || []),
+        apostilas: junta((propria || {}).apostilas || [], (vizinhas || {}).apostilas || []),
+        fonte: propria ? (vizinhas ? 'catalogo+irmas' : 'catalogo') : 'catalogo-irmas',
+      };
+    } else {
+      val = await materiaisDoDrivePorPasta(parent).catch(() => ({ pdfs: [], apostilas: [], fonte: 'drive-erro' }));
+    }
     return res.json({ success: true, videoId, parent, total: val.pdfs.length + val.apostilas.length, pdfs: val.pdfs, apostilas: val.apostilas, source: val.fonte });
   } catch (e) {
     console.warn('⚠️ [Materials ctx]', e.message);
