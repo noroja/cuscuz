@@ -1,5 +1,5 @@
 // Aula do dia — transcrição fiel por trechos, revisão do texto, resumo "Crônicas de Residência" (MD) e flashcards
-import { Type } from '@google/genai';
+import { Type, transcribeAudio } from './ai-provider.js';
 
 const S = Type.STRING;
 const COR_PADRAO = 'dourado';
@@ -49,30 +49,21 @@ const dividir = (texto, max = 9000) => {
   return blocos;
 };
 
-export function registerAula(app, { generateWithGemini, getGeminiClient }) {
-  const exigeGemini = (res) => { if (!getGeminiClient()) { res.status(503).json({ success: false, msg: 'GEMINI_API_KEY não configurada.' }); return false; } return true; };
+export function registerAula(app, { generateAI, aiConfigured }) {
+  const exigeIA = (res) => { if (!aiConfigured()) { res.status(503).json({ success: false, msg: 'GROQ_API_KEY não configurada.' }); return false; } return true; };
 
-  app.get('/api/aula/status', (_req, res) => res.json({ success: true, gemini: !!getGeminiClient() }));
+  app.get('/api/aula/status', (_req, res) => res.json({ success: true, gemini: !!aiConfigured() }));
 
   // 1) Transcreve um trecho de áudio fielmente
   app.post('/api/aula/transcrever', async (req, res) => {
     try {
-      if (!getGeminiClient()) return res.status(503).json({ success: false, msg: 'Transcrição indisponível: GEMINI_API_KEY não configurada.' });
+      if (!aiConfigured()) return res.status(503).json({ success: false, msg: 'Transcrição indisponível: GROQ_API_KEY não configurada.' });
       const { audio = '', mime = 'audio/webm', disciplina = '', tema = '', anterior = '', glossario = [] } = req.body || {};
       if (!audio || audio.length < 200) return res.status(400).json({ success: false, msg: 'Áudio vazio.' });
       if (audio.length > 28 * 1024 * 1024) return res.status(413).json({ success: false, msg: 'Trecho de áudio grande demais.' });
       const mimeBase = String(mime).split(';')[0] || 'audio/webm';
       const termos = (Array.isArray(glossario) ? glossario : []).map(String).filter(Boolean).slice(0, 80);
-      const prompt = `Você é um transcritor profissional de aulas de Medicina. Transcreva este trecho em português do Brasil${disciplina ? ` (área: ${disciplina}${tema ? '; conteúdo: ' + tema : ''})` : ''}, de forma LITERAL e SEM ERROS.
-Regras:
-1. Transcreva tudo o que o professor e os alunos falam, na ordem, sem resumir, sem parafrasear e sem corrigir o conteúdo. Cada frase do áudio deve estar no texto.
-2. Grafia correta e padronizada de termos médicos, doenças, sinais/síndromes, siglas (ex.: IECA, DPOC, PAS), nomes de fármacos e eponímos. Números, doses, unidades, percentuais e valores EXATAMENTE como falados (use algarismos: 70x40 mmHg, 0,5 mg/kg).
-3. Remova apenas hesitações sem sentido ("é...", "né", "hã") e gaguejos/repetições involuntárias. Mantenha as marcas de ênfase importantes ("isso cai muito").
-4. Pontuação correta, parágrafos a cada mudança de ideia. Troca de pessoa falando: nova linha iniciada por "Professor:" ou "Aluno:" apenas quando for claramente perceptível.
-5. Trecho realmente incompreensível: [inaudível]. Nunca invente palavras. Ignore ruídos. Se não houver fala: [sem fala].
-6. Responda SOMENTE com a transcrição, sem comentários.${termos.length ? `\nTermos prováveis desta aula (use esta grafia quando forem falados): ${termos.join(', ')}.` : ''}${anterior ? `\nFinal do trecho anterior (só para continuidade; NÃO repita): «${String(anterior).slice(-300)}»` : ''}`;
-      const r = await generateWithGemini({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: mimeBase, data: audio } }, { text: prompt }] }], config: { temperature: 0 } });
-      let texto = String(r.text || '').trim();
+      let texto = await transcribeAudio({ audioBase64: audio, mime: mimeBase, language: 'pt', prompt: [disciplina && ('Aula de ' + disciplina + (tema ? ': ' + tema : '') + '.'), termos.length && ('Termos: ' + termos.join(', '))].filter(Boolean).join(' ') });
       if (/^\[sem fala\]$/i.test(texto)) texto = '';
       res.json({ success: true, texto });
     } catch (err) {
@@ -85,12 +76,12 @@ Regras:
   // 2) Revisão do texto transcrito (une cortes entre trechos, uniformiza termos, organiza em parágrafos) — por pedaço
   app.post('/api/aula/revisar', async (req, res) => {
     try {
-      if (!exigeGemini(res)) return;
+      if (!exigeIA(res)) return;
       const { texto = '', area = '', conteudo = '', glossario = [] } = req.body || {};
       const t = String(texto).trim();
       if (t.length < 20) return res.json({ success: true, texto: t });
       if (t.length > 14000) return res.status(413).json({ success: false, msg: 'Pedaço grande demais para revisar.' });
-      const r = await generateWithGemini({
+      const r = await generateAI({
         contents: `Você revisa transcrições de aulas de Medicina (área: ${area || 'não informada'}; conteúdo: ${conteudo || 'não informado'}).
 Revise o texto abaixo SEM mudar o significado nem remover informação:
 - corrija erros de reconhecimento de fala e a grafia de termos médicos, siglas e fármacos (use o contexto da aula);
@@ -113,11 +104,11 @@ ${t}`,
   // 3) Mapa prévio: temas/capítulos da aula (inventário de tudo que foi dito)
   app.post('/api/aula/mapa', async (req, res) => {
     try {
-      if (!exigeGemini(res)) return;
+      if (!exigeIA(res)) return;
       const { transcricao = '', area = '', conteudo = '', parte = '' } = req.body || {};
       const t = String(transcricao).trim();
       if (t.length < 200) return res.status(400).json({ success: false, msg: 'Transcrição curta demais para resumir.' });
-      const r = await generateWithGemini({
+      const r = await generateAI({
         contents: `Faça o MAPA PRÉVIO desta aula de Medicina (área: ${area || 'n/i'}; conteúdo: ${conteudo || 'n/i'}${parte ? '; ' + parte : ''}): inventarie TODOS os tópicos abordados na transcrição, na ordem, agrupados em capítulos (um capítulo por tema coerente; entre 1 e 12). Nada que foi dito pode ficar fora de algum capítulo. Para cada capítulo liste os pontos que ele deve cobrir (conceitos, números, casos, classificações, condutas, comentários do professor, questões lidas). Informe também se o professor leu/comentou alguma questão real de prova (temQuestoes).
 TRANSCRIÇÃO:
 ${t.slice(0, 220000)}`,
@@ -141,11 +132,11 @@ ${t.slice(0, 220000)}`,
   // 4) Um capítulo do resumo Crônicas
   app.post('/api/aula/capitulo', async (req, res) => {
     try {
-      if (!exigeGemini(res)) return;
+      if (!exigeIA(res)) return;
       const { transcricao = '', area = '', conteudo = '', capitulo = {}, numero = 1, total = 1, cor = COR_PADRAO } = req.body || {};
       const t = String(transcricao).trim();
       if (t.length < 100 || !capitulo || !capitulo.titulo) return res.status(400).json({ success: false, msg: 'Dados insuficientes.' });
-      const r = await generateWithGemini({
+      const r = await generateAI({
         contents: `${REGRAS_CRONICAS}
 
 TAREFA: escreva SOMENTE o capítulo ${numero} de ${total} do volume (área: ${area || 'n/i'}; conteúdo da aula: ${conteudo || 'n/i'}). Comece direto por:
@@ -169,11 +160,11 @@ ${t.slice(0, 220000)}`,
   // 5) Fechamento do volume: Considerações Finais + Revisão Final (+ Gabarito se houver questões)
   app.post('/api/aula/fechamento', async (req, res) => {
     try {
-      if (!exigeGemini(res)) return;
+      if (!exigeIA(res)) return;
       const { transcricao = '', area = '', conteudo = '', capitulos = [], temQuestoes = false } = req.body || {};
       const t = String(transcricao).trim();
       if (t.length < 100) return res.status(400).json({ success: false, msg: 'Transcrição curta demais.' });
-      const r = await generateWithGemini({
+      const r = await generateAI({
         contents: `${REGRAS_CRONICAS}
 
 TAREFA: escreva o FECHAMENTO do volume desta aula (área: ${area || 'n/i'}; conteúdo: ${conteudo || 'n/i'}; capítulos: ${JSON.stringify((capitulos || []).map(c => c.titulo || c))}), nesta ordem e com estes títulos:
@@ -198,13 +189,13 @@ ${t.slice(0, 220000)}`,
   // 6) Flashcards de revisão da aula (a partir da transcrição revisada)
   app.post('/api/aula/flashcards', async (req, res) => {
     try {
-      if (!exigeGemini(res)) return;
+      if (!exigeIA(res)) return;
       const { transcricao = '', area = '', conteudo = '', capitulos = [] } = req.body || {};
       const t = String(transcricao).trim();
       if (t.length < 100) return res.status(400).json({ success: false, msg: 'Transcrição curta demais.' });
       const palavras = t.split(/\s+/).length;
       const alvo = Math.max(10, Math.min(80, Math.round(palavras / 90)));
-      const r = await generateWithGemini({
+      const r = await generateAI({
         contents: `Crie flashcards de REVISÃO para residência médica a partir EXCLUSIVAMENTE desta aula (área: ${area || 'n/i'}; conteúdo: ${conteudo || 'n/i'}).
 Regras: cerca de ${alvo} cartões cobrindo TODOS os pontos importantes na ordem da aula; um fato por cartão (pergunta direta na frente, resposta curta e completa no verso); inclua números, doses, critérios, classificações, condutas de escolha e pegadinhas ditas pelo professor; use "____" (lacuna) quando for melhor para memorizar; sem duplicar; sem conhecimento externo; português do Brasil. Em "tema" coloque o capítulo/tópico ao qual o cartão pertence${capitulos.length ? ' (preferir um destes: ' + JSON.stringify(capitulos.map(c => c.titulo || c)) + ')' : ''}.
 TRANSCRIÇÃO:
@@ -227,11 +218,11 @@ ${t.slice(0, 220000)}`,
   // 7) Processamento geral (resumo curto, cai na prova, questões, assuntos do plano) — mantido
   app.post('/api/aula/processar', async (req, res) => {
     try {
-      if (!exigeGemini(res)) return;
+      if (!exigeIA(res)) return;
       const { transcricao = '', disciplina = '', tema = '', assuntosPlano = [], marcas = [] } = req.body || {};
       const t = String(transcricao).trim();
       if (t.length < 80) return res.status(400).json({ success: false, msg: 'Transcrição curta demais para processar.' });
-      const r = await generateWithGemini({
+      const r = await generateAI({
         contents: `Você é um monitor de Medicina. Com base SOMENTE na transcrição da aula abaixo (disciplina: ${disciplina || 'não informada'}${tema ? '; tema: ' + tema : ''}), produza material de estudo fiel ao que foi dito. Não acrescente informação que o professor não tenha dito; se algo parecer errado ou impreciso na fala, sinalize em "duvidas". Português do Brasil.
 ${assuntosPlano.length ? 'Assuntos esperados na prova (do manual do aluno): ' + JSON.stringify(assuntosPlano.slice(0, 60)) + '. Em "assuntosCobertos" liste, copiando exatamente, apenas os que foram realmente abordados na aula.\n' : ''}${marcas.length ? 'O aluno marcou estes momentos como importantes (mm:ss): ' + marcas.join(', ') + '.\n' : ''}
 TRANSCRIÇÃO:

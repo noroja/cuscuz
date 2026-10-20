@@ -9,7 +9,7 @@ import zlib from 'zlib';
 import { Readable } from 'stream';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type, generateAI, aiConfigured, aiStatus } from './src/ai-provider.js';
 import * as cheerio from 'cheerio';
 import { plGerarPlanSinergia as plEngineGerarPlan } from './smart_scheduler.js';
 import { registerPlanner } from './src/planner-routes.js';
@@ -80,7 +80,10 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     openaiConfigured: !!openai,
     supabaseConfigured: !!supabase,
-    geminiConfigured: !!process.env.GEMINI_API_KEY,
+    aiConfigured: aiConfigured(),
+    aiProvider: aiStatus().provider,
+    aiModel: aiStatus().model,
+    geminiConfigured: false, // legado: o Gemini foi substituído pela Groq
     authConfigured: true,
     drive: driveStatus
   });
@@ -98,93 +101,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Initialize Google Gemini Client with official @google/genai SDK
-const geminiApiKey = process.env.GEMINI_API_KEY;
-let ai = null;
-// Circuit breaker de quota do Gemini: quando a API retorna 429 (quota esgotada),
-// bloqueia novas chamadas até o tempo de retry expirar (evita poluir logs e gastar tentativas inúteis).
-let geminiQuotaBlockedUntil = 0;
-const GEMINI_QUOTA_DEFAULT_BLOCK_MS = 8 * 60 * 60 * 1000; // 8h padrão se o retryDelay não vier parseável
-
-function parseRetryDelayMs(err) {
-  try {
-    const msg = String(err.message || err || '');
-    const m = msg.match(/"retryDelay"\s*:\s*"(\d+)s"/);
-    if (m) return parseInt(m[1], 10) * 1000;
-  } catch (_) {}
-  return null;
-}
-
-function getGeminiClient() {
-  if (ai) return ai;
-  const key = process.env.GEMINI_API_KEY;
-  if (key) {
-    try {
-      ai = new GoogleGenAI({
-        apiKey: key,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build'
-          }
-        }
-      });
-      console.log('✅ Google Gemini client initialized (@google/genai)');
-    } catch (err) {
-      console.warn('⚠️ Could not initialize Gemini:', err.message);
-    }
-  }
-  return ai;
-}
-getGeminiClient();
-
-// Resilient Gemini model caller with retry and fallback cascade
-async function generateWithGemini(params) {
-  const client = getGeminiClient();
-  if (!client) throw new Error('GEMINI_API_KEY não configurada no servidor.');
-
-  // Circuit breaker: se a quota está esgotada, não bate na API até o tempo de retry expirar
-  const agora = Date.now();
-  if (agora < geminiQuotaBlockedUntil) {
-    const restanteMs = geminiQuotaBlockedUntil - agora;
-    const restanteMin = Math.ceil(restanteMs / 60000);
-    throw new Error(`Gemini quota esgotada — tente novamente em aproximadamente ${restanteMin} min.`);
-  }
-
-  const models = ['gemini-3.8-flash'];
-  let lastErr = null;
-
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    for (const m of models) {
-      try {
-        const res = await client.models.generateContent({
-          model: m,
-          ...params
-        });
-        return res;
-      } catch (err) {
-        lastErr = err;
-        const msg = String(err.message || '');
-        // Detecta erro de quota (429 / RESOURCE_EXHAUSTED) e ativa o circuit breaker
-        if (/429|RESOURCE_EXHAUSTED|quota|exceeded your current quota/i.test(msg)) {
-          const retryMs = parseRetryDelayMs(err) || GEMINI_QUOTA_DEFAULT_BLOCK_MS;
-          geminiQuotaBlockedUntil = Date.now() + retryMs;
-          const bloqueadoEm = new Date(geminiQuotaBlockedUntil).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-          console.warn(`[Gemini] Quota esgotada. Circuit breaker ativado até ~${bloqueadoEm} (${Math.round(retryMs / 60000)} min). Chamadas ao Gemini estarão bloqueadas até então.`);
-          throw err; // repassa para o caller tratar com fallback
-        }
-        if (msg.includes('API key not valid') || msg.includes('API_KEY_INVALID') || msg.includes('UNAUTHENTICATED')) {
-          throw new Error('A chave GEMINI_API_KEY configurada não é válida para este serviço.');
-        }
-        const is503 = err.status === 503 || msg.includes('503');
-        if (attempt === 1) {
-          console.warn(`[Gemini] Modelo ${m} temporariamente ocupado (503/alta demanda), tentando novamente...`);
-        }
-        await new Promise(r => setTimeout(r, 400 * attempt));
-      }
-    }
-  }
-  throw lastErr;
-}
+// IA generativa: provedor único (Groq) em src/ai-provider.js — chave só no servidor, sem fallback silencioso.
 
 // In-memory conversations store (fallback if Supabase credentials are not provided)
 const memoryConversations = new Map();
@@ -1084,7 +1001,7 @@ app.get('/api/config', (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════
-// RADAR MÉDICO: ATUALIZAÇÕES E EDITAIS (Estratégia MED + Gemini AI)
+// RADAR MÉDICO: ATUALIZAÇÕES E EDITAIS (Estratégia MED + IA)
 // ══════════════════════════════════════════════════════════════════
 const RADAR_CACHE_FILE = path.join(DATA_DIR, 'radar_medico_cache.json');
 const RADAR_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 horas (atualização 1 a 2x ao dia)
@@ -1155,7 +1072,7 @@ async function scrapeAndSummarizeRadar() {
     throw new Error('Nenhum artigo encontrado na página do Estratégia MED.');
   }
 
-  // Busca o corpo de cada matéria para envio ao Gemini
+  // Busca o corpo de cada matéria para envio ao IA
   for (const art of rawArticles) {
     try {
       const artRes = await fetch(art.link, {
@@ -1180,8 +1097,8 @@ async function scrapeAndSummarizeRadar() {
     if (!art.bodyText) art.bodyText = art.excerpt || art.title;
   }
 
-  // Resumo inteligente com a API do Gemini focado em Diretrizes e Prática Clínica
-  const gemini = getGeminiClient();
+  // Resumo inteligente com a API do IA focado em Diretrizes e Prática Clínica
+  const gemini = aiConfigured();
   const processedArticles = [];
   let geminiUnavailable = false;
 
@@ -1201,8 +1118,7 @@ Conteúdo da matéria: ${art.bodyText}
 Retorne estritamente o objeto JSON com os 3 campos solicitados. Seja conciso, claro e técnico para médicos e estudantes de medicina.`;
 
       try {
-        const aiRes = await gemini.models.generateContent({
-          model: 'gemini-3.8-flash',
+        const aiRes = await generateAI({
           contents: prompt,
           config: {
             responseMimeType: 'application/json',
@@ -1234,7 +1150,7 @@ Retorne estritamente o objeto JSON com os 3 campos solicitados. Seja conciso, cl
         const msg = String(err.message || '');
         if (msg.includes('API key not valid') || msg.includes('API_KEY_INVALID') || msg.includes('UNAUTHENTICATED') || msg.includes('503') || /429|RESOURCE_EXHAUSTED|quota|exceeded your current quota/i.test(msg)) {
           geminiUnavailable = true;
-          console.log('[Radar Médico] Gemini indisponível no momento, aplicando resumos clínicos pré-estruturados.');
+          console.log('[Radar Médico] IA indisponível no momento, aplicando resumos clínicos pré-estruturados.');
         }
       }
     }
@@ -1553,7 +1469,7 @@ app.get('/api/questions/bank', (req, res) => {
 });
 
 // 1.1 Questões da videoaula: só entram questões que falam do tema/módulo da aula (cobertura mínima de conceitos).
-// Se o banco tiver poucas e houver Gemini, completa com questões inéditas sobre o MESMO tema (marcadas como IA).
+// Se o banco tiver poucas e houver IA, completa com questões inéditas sobre o MESMO tema (marcadas como IA).
 const _qIaCache = new Map();
 const _qVivoCache = new Map();
 app.get('/api/questions/match', async (req, res) => {
@@ -1598,7 +1514,7 @@ app.get('/api/questions/match', async (req, res) => {
     }
     const MIN = 10;
     const assunto = (tema && r.termos.length ? tema : (modulo || tema)).trim();
-    const gemini = getGeminiClient();
+    const gemini = aiConfigured();
     if (questions.length < MIN && gemini && assunto.length > 3 && req.query.ia !== '0') {
       const key = norm(assunto) + '|' + norm(disciplina);
       let novas = _qIaCache.get(key);
@@ -1606,8 +1522,7 @@ app.get('/api/questions/match', async (req, res) => {
         try {
           const falta = Math.min(10, MIN + 2 - questions.length);
           const aiRes = await Promise.race([
-            gemini.models.generateContent({
-              model: 'gemini-3.8-flash',
+            generateAI({
               contents: `Você é preceptor de residência médica (ENARE, USP, UNIFESP, AMRIGS, Revalida).
 Crie ${falta} questões de múltipla escolha inéditas, estritamente sobre o tema desta videoaula: "${assunto}"${disciplina ? ` (área: ${disciplina})` : ''}.
 Regras: caso clínico objetivo, 4 alternativas ("A) ...", "B) ..."), apenas UMA correta, comentário técnico curto que explique por que a correta está certa e as demais erradas. Não saia do tema. Varie o foco (diagnóstico, conduta, fisiopatologia, exames).`,
@@ -2358,7 +2273,7 @@ app.get('/api/questions/mirror', (req, res) => {
 // Login no boot apenas se não houver token reutilizável — credenciais certas entram em segundos
 if (!IS_SERVERLESS) setTimeout(() => { if (!HWQ_STATE.userToken && HWQ.email && HWQ.senha) hwqLogin(); }, 5000);
 
-// 2. Gerar questões sob demanda com Gemini AI (Aba 2)
+// 2. Gerar questões sob demanda com IA (Aba 2)
 app.post('/api/gemini/generate-questions', async (req, res) => {
   try {
     const { prompt, count = 5, specialty, difficulty = 'Médio', institution } = req.body || {};
@@ -2384,7 +2299,7 @@ ${specialty ? `Especialidade prioritária: ${specialty}` : ''}
 ${institution ? `Estilo de banca / Instituição: ${institution}` : ''}
 Nível de dificuldade: ${difficulty}`;
 
-    const geminiRes = await generateWithGemini({
+    const geminiRes = await generateAI({
       contents: userPrompt,
       config: {
         systemInstruction,
@@ -2423,13 +2338,13 @@ Nível de dificuldade: ${difficulty}`;
     try {
       generatedList = JSON.parse(geminiRes.text.trim());
     } catch (parseErr) {
-      console.warn('Erro ao fazer JSON.parse do Gemini, tentando regex fallback:', parseErr.message);
+      console.warn('Erro ao fazer JSON.parse do IA, tentando regex fallback:', parseErr.message);
       const match = geminiRes.text.match(/\[\s*\{[\s\S]*\}\s*\]/);
       if (match) generatedList = JSON.parse(match[0]);
     }
 
     if (!Array.isArray(generatedList) || generatedList.length === 0) {
-      return res.status(500).json({ error: 'Nenhuma questão foi retornada pelo modelo Gemini.' });
+      return res.status(500).json({ error: 'Nenhuma questão foi retornada pelo modelo de IA.' });
     }
 
     // Normalizar questões geradas
@@ -2438,7 +2353,7 @@ Nível de dificuldade: ${difficulty}`;
       id: q.id || `q-gemini-${Date.now()}-${idx + 1}`,
       specialty: q.specialty || specialty || 'Clínica Médica',
       subspecialty: q.subspecialty || 'Geral',
-      institution: institution || 'Gerador Gemini AI',
+      institution: institution || 'Gerador IA',
       year: new Date().getFullYear(),
       statement: q.statement,
       options: q.options,
@@ -2448,7 +2363,7 @@ Nível de dificuldade: ${difficulty}`;
       difficulty: q.difficulty || difficulty,
       tags: Array.isArray(q.tags) ? q.tags : [q.specialty || 'Medicina'],
       createdAt: now,
-      source: 'Gerador Gemini'
+      source: 'Gerador IA'
     }));
 
     // Persistir automaticamente no banco de dados local para manter Aba 1 atualizada
@@ -2462,7 +2377,7 @@ Nível de dificuldade: ${difficulty}`;
 
     res.json({ success: true, count: formatted.length, questions: formatted });
   } catch (err) {
-    console.warn('Erro ao gerar questões com Gemini, utilizando banco de casos clínicos de alta frequência:', err.message);
+    console.warn('Erro ao gerar questões com IA, utilizando banco de casos clínicos de alta frequência:', err.message);
     const bank = readQuestionsBank();
     const n = Math.min(10, Math.max(1, parseInt(req.body?.count, 10) || 5));
     const reqSpec = req.body?.specialty || '';
@@ -2480,7 +2395,7 @@ Nível de dificuldade: ${difficulty}`;
         notice: 'Questões selecionadas da Base Clínica de Alta Frequência (fallback resiliente)'
       });
     }
-    res.status(500).json({ error: err.message || 'Falha ao gerar questões com Gemini' });
+    res.status(500).json({ error: err.message || 'Falha ao gerar questões com IA' });
   }
 });
 
@@ -2524,7 +2439,7 @@ DIRETRIZES DO TUTOR:
       parts: [{ text: userQuestion || 'Olá tutor, pode me orientar sobre este caso clínico?' }]
     });
 
-    const tutorRes = await generateWithGemini({
+    const tutorRes = await generateAI({
       contents,
       config: {
         systemInstruction,
@@ -2534,7 +2449,7 @@ DIRETRIZES DO TUTOR:
 
     res.json({ success: true, reply: tutorRes.text.trim() });
   } catch (err) {
-    console.warn('Erro no Tutor Gemini, acionando síntese de tutoria clínica:', err.message);
+    console.warn('Erro no Tutor IA, acionando síntese de tutoria clínica:', err.message);
     const letter = question.correctLetter || ['A','B','C','D','E'][question.correctIndex] || 'A';
     let fallbackReply = '';
     if (!isAnswered) {
@@ -2577,7 +2492,7 @@ async function autoFeedQuestions() {
     const systemInstruction = `Você é um preceptor médico. Crie exatamente 2 questões inéditas de múltipla escolha com casos clínicos profundos.`;
     const prompt = `Gere 2 questões de alto rendimento sobre: ${topic.prompt}. Retorne em JSON array.`;
 
-    const res = await generateWithGemini({
+    const res = await generateAI({
       contents: prompt,
       config: {
         systemInstruction,
@@ -2767,15 +2682,15 @@ function plGerarPlan(config, extras = {}) {
 }
 function normLower(s) { return hwqNorm(s); }
 
-// Geração de deck de estudo ativo (10 flashcards + 3 questões) — background via Gemini, fallback no banco
+// Geração de deck de estudo ativo (10 flashcards + 3 questões) — background via IA, fallback no banco
 async function plGerarDeck(materia, tema) {
   const key = plDeckKey(materia, tema);
   const decks = readDecks();
   if (decks[key] && decks[key].pronto) return decks[key];
   let deck = null;
-  if (ai) {
+  if (aiConfigured()) {
     try {
-      const res = await generateWithGemini({
+      const res = await generateAI({
         contents: `Crie 10 flashcards curtos e diretos (frente e verso) e 3 questões de múltipla escolha baseados no tema "${tema}" (matéria: ${materia}), focando nos conceitos mais cobrados em provas.`,
         config: {
           responseMimeType: 'application/json',
@@ -2797,7 +2712,7 @@ async function plGerarDeck(materia, tema) {
       });
       const parsed = JSON.parse(res.text.trim());
       deck = {
-        tema, materia, fonte: 'gemini', pronto: true, criadoEm: new Date().toISOString(),
+        tema, materia, fonte: 'ia', pronto: true, criadoEm: new Date().toISOString(),
         flashcards: (parsed.flashcards || []).slice(0, 12),
         questoes: (parsed.questoes || []).map((q, i) => ({
           id: `q-pl-${key}-${i}`, specialty: materia, subspecialty: tema, institution: 'Cronograma IA', year: new Date().getFullYear(),
@@ -2806,9 +2721,9 @@ async function plGerarDeck(materia, tema) {
           explanation: q.explanation || '', difficulty: 'Médio', tags: [materia, tema], source: 'Cronograma IA'
         }))
       };
-      console.log(`🧠 [Planner] Deck Gemini pronto: "${tema}" (${deck.flashcards.length} cards, ${deck.questoes.length} questões)`);
+      console.log(`🧠 [Planner] Deck IA pronto: "${tema}" (${deck.flashcards.length} cards, ${deck.questoes.length} questões)`);
     } catch (err) {
-      console.warn(`⚠️ [Planner] Gemini falhou para "${tema}":`, err.message?.slice(0, 120));
+      console.warn(`⚠️ [Planner] IA falhou para "${tema}":`, err.message?.slice(0, 120));
     }
   }
   if (!deck) {
@@ -2828,7 +2743,7 @@ async function plGerarDeck(materia, tema) {
       };
       console.log(`🧠 [Planner] Deck do banco local: "${tema}" (${hits.length} questões encontradas)`);
     } else {
-      deck = { tema, materia, fonte: 'nenhuma', pronto: false, msg: 'Configure GEMINI_API_KEY ou sincronize questões deste tema no banco.', criadoEm: new Date().toISOString(), flashcards: [], questoes: [] };
+      deck = { tema, materia, fonte: 'nenhuma', pronto: false, msg: 'Configure GROQ_API_KEY ou sincronize questões deste tema no banco.', criadoEm: new Date().toISOString(), flashcards: [], questoes: [] };
     }
   }
   decks[key] = deck;
@@ -2854,7 +2769,7 @@ async function plBombearDeck() {
   plDeckRodando = false;
 }
 
-// POST /api/planner/generate — gera o cronograma (Gemini para temas se houver chave; motor local sempre funciona)
+// POST /api/planner/generate — gera o cronograma (IA para temas se houver chave; motor local sempre funciona)
 app.post('/api/planner/generate', async (req, res) => {
   try {
     const { horasDia = 4, inicio, provas = [], materias = [], pdfTexto = '' } = req.body || {};
@@ -2867,10 +2782,10 @@ app.post('/api/planner/generate', async (req, res) => {
       materias: materias.filter(m => m.nome)
     };
     let temasPorMateria = null, aviso = null;
-    if (ai && pdfTexto && String(pdfTexto).length > 400) {
+    if (aiConfigured() && pdfTexto && String(pdfTexto).length > 400) {
       try {
         const listaMaterias = config.materias.map(m => `${m.nome} (${m.dificuldade || 'Médio'})`).join('; ');
-        const g = await generateWithGemini({
+        const g = await generateAI({
           contents: `Analise o material de estudo abaixo (edital/cronograma/ementa) e extraia os temas mais cobrados para cada matéria desta lista: [${listaMaterias}].\nResponda JSON com temasPorMateria (objeto matéria → array de 4 a 8 temas curtos) e resumos (objeto tema → array de 3 a 5 tópicos de estudo).\n\nMATERIAL:\n${String(pdfTexto).slice(0, 12000)}`,
           config: {
             responseMimeType: 'application/json',
@@ -2890,18 +2805,18 @@ app.post('/api/planner/generate', async (req, res) => {
       } catch (err) {
         aviso = 'IA não conseguiu ler o PDF (' + (err.message || '').slice(0, 80) + ') — usando grade padrão de tópicos.';
       }
-    } else if (!ai && pdfTexto) {
-      aviso = 'GEMINI_API_KEY não configurada — o PDF não pôde ser lido pela IA e a grade padrão de tópicos foi usada.';
+    } else if (!aiConfigured() && pdfTexto) {
+      aviso = 'GROQ_API_KEY não configurada — o PDF não pôde ser lido pela IA e a grade padrão de tópicos foi usada.';
     }
     const plan = plGerarPlan(config, { temasPorMateria });
     if (plan.erro) return res.status(400).json({ success: false, msg: plan.erro });
-    plan.geradoCom = ai ? 'gemini' : 'motor-local';
+    plan.geradoCom = aiConfigured() ? 'ia' : 'motor-local';
     if (aviso) plan.aviso = aviso;
     // Dispara geração silenciosa dos decks de estudo ativo para os temas que terão revisão
     const temasRevisao = new Set();
     plan.dias.forEach(d => d.blocos.forEach(b => { if (b.tipo.startsWith('revisao') && b.tema) temasRevisao.add((b.materia || '') + '||' + b.tema); }));
     temasRevisao.forEach(t => { const [materia, tema] = t.split('||'); plEnfileirarDeck(materia, tema); });
-    res.json({ success: true, plan, decksFila: temasRevisao.size, gemini: !!ai });
+    res.json({ success: true, plan, decksFila: temasRevisao.size, gemini: !!aiConfigured() });
   } catch (err) {
     console.error('Erro no planner:', err);
     res.status(500).json({ success: false, msg: err.message });
@@ -3140,8 +3055,8 @@ app.post('/api/planner/synergy-generate', async (req, res) => {
       secaoTextosAluno += `\n\n═══════════════════════════════════════════════════════════════\n[3. ATUALIZAÇÕES DO CRONOGRAMA, OBSERVAÇÕES E INSTRUÇÕES ESPECIAIS DO ESTUDANTE]:\n${rawAtualizacoes}\n`;
     }
 
-    // Conexão direta com Google Gemini (@google/genai)
-    const gemini = getGeminiClient();
+    // Conexão direta com Groq
+    const gemini = aiConfigured();
     if (gemini) {
       try {
         const instrucaoModo = modoEstudo === 'foco_graduacao'
@@ -3204,8 +3119,8 @@ Responda SOMENTE em JSON puro e válido nesta estrutura:
   "ajustesIdentificados": ["Ajustes acatados a partir do texto 3"]
 }`;
 
-        console.log('🤖 Chamando Gemini (@google/genai) para gerar cronograma completo e sinérgico...');
-        const g = await generateWithGemini({
+        console.log('🤖 Chamando Groq para gerar cronograma completo e sinérgico...');
+        const g = await generateAI({
           contents: prompt,
           config: {
             responseMimeType: 'application/json',
@@ -3243,13 +3158,13 @@ Responda SOMENTE em JSON puro e válido nesta estrutura:
             }
           });
         }
-        console.log(`✅ Gemini gerou ${sinergiaMatches.length} sinergias e extraiu ${conteudosFaculdade.length} tópicos da faculdade.`);
+        console.log(`✅ IA gerou ${sinergiaMatches.length} sinergias e extraiu ${conteudosFaculdade.length} tópicos da faculdade.`);
       } catch (err) {
-        console.warn('⚠️ Erro ao consultar Gemini:', err.message);
+        console.warn('⚠️ Erro ao consultar IA:', err.message);
         aviso = 'O motor determinístico calibrou o cronograma e distribuiu os temas com precisão de acordo com as ementas enviadas.';
       }
     } else {
-      aviso = 'GEMINI_API_KEY não configurada no servidor — usando motor heurístico de alta precisão.';
+      aviso = 'GROQ_API_KEY não configurada no servidor — usando motor heurístico de alta precisão.';
     }
 
     // Unifica com os tópicos extraídos localmente para garantir 100% de cobertura (sem truncamento)
@@ -3287,7 +3202,7 @@ Responda SOMENTE em JSON puro e válido nesta estrutura:
     const plan = plGerarPlanSinergia(config, { sinergiaMatches, temasPorMateria, conteudosFaculdade, conteudosResidencia, atualizacoesNotas: rawAtualizacoes });
     if (plan.erro) return res.status(400).json({ success: false, msg: plan.erro });
 
-    plan.geradoCom = ai ? 'gemini-rag-sinergia' : 'motor-sinergia-local';
+    plan.geradoCom = aiConfigured() ? 'ia-rag-sinergia' : 'motor-sinergia-local';
     plan.atualizacoesNotas = rawAtualizacoes;
     if (aviso) plan.aviso = aviso;
 
@@ -3312,7 +3227,7 @@ Responda SOMENTE em JSON puro e válido nesta estrutura:
       totalTopicosFaculdade: plan.estatisticas.totalTopicosFaculdade,
       topicosFaculdadeTotal: plan.estatisticas.totalTopicosFaculdade,
       topicosFaculdadeAgendados: plan.estatisticas.topicosFaculdadeAgendados,
-      gemini: !!ai
+      gemini: !!aiConfigured()
     });
   } catch (err) {
     console.error('Erro no synergy-generate:', err);
@@ -3566,9 +3481,9 @@ app.post('/api/planner/deck', (req, res) => {
   }
 });
 
-registerPlanner(app, { generateWithGemini, getGeminiClient, getBank: () => readQuestionsBank() });
+registerPlanner(app, { generateAI, aiConfigured, getBank: () => readQuestionsBank() });
 
-registerAula(app, { generateWithGemini, getGeminiClient });
+registerAula(app, { generateAI, aiConfigured });
 registerApostilaReader(app);
 registerMedreaderMarcas(app, { getSupabase: () => supabase });
 

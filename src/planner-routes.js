@@ -1,4 +1,4 @@
-import { Type } from '@google/genai';
+import { Type } from './ai-provider.js';
 import * as PE from './planner-engine.js';
 import fs from 'fs';
 import os from 'os';
@@ -50,7 +50,7 @@ const PERFIL_SCHEMA = {
   }
 };
 
-export function registerPlanner(app, { generateWithGemini, getGeminiClient, getBank }) {
+export function registerPlanner(app, { generateAI, aiConfigured, getBank }) {
   // GET /api/planner/v2/catalogo — o que existe no acervo
   app.get('/api/planner/v2/catalogo', (_req, res) => res.json({ success: true, ...PE.resumoCatalogo() }));
 
@@ -85,7 +85,7 @@ export function registerPlanner(app, { generateWithGemini, getGeminiClient, getB
         perfil = PE.mesclarCronograma(perfil, det);
         const prox = det.provas.filter(x => x.data >= hoje).sort((x, y) => x.data.localeCompare(y.data)).slice(0, 6).map(x => `${x.disciplina} ${x.tipo} ${x.data.slice(8)}/${x.data.slice(5, 7)}`).join('; ');
         const resumoDet = `Li o cronograma da faculdade: ${det.disciplinas ? det.disciplinas.length : 1} disciplina(s) (${det.disciplinas ? det.disciplinas.join(', ') : det.disciplina}), ${det.provas.length} avaliação(ões) e ${det.aulas.length} aula(s) com data. Próximas provas: ${prox || 'nenhuma futura'}. Os assuntos de cada prova ficaram na ordem das aulas.`;
-        if (getGeminiClient()) {
+        if (aiConfigured()) {
           // o mentor segue a conversa já sabendo do cronograma (o texto bruto não vai para a IA, só o resumo)
           msgs[msgs.lastIndexOf(ultima)] = { role: 'user', content: '(Enviei o cronograma da minha faculdade.)' };
           notaDet = resumoDet;
@@ -94,7 +94,7 @@ export function registerPlanner(app, { generateWithGemini, getGeminiClient, getB
           return res.json({ success: true, ia: false, perfil, asking: q ? q.campo : '', jaExtras: extrasPerguntado, reply: resumoDet + (q ? '\n\n' + q.reply : '\n\nTudo certo — confira o resumo e gere o cronograma.'), quickReplies: q ? q.quick : ['Gerar meu cronograma'], pronto: PE.faltando(perfil, hoje).length === 0, resumo: PE.resumoPerfil(perfil) });
         }
       }
-      if (ultima && getGeminiClient()) {
+      if (ultima && aiConfigured()) {
         try {
           const falta = PE.faltando(perfil, hoje);
           const sistema = `Você é o mentor de estudos de um estudante de medicina brasileiro, dentro do app Cuscuz-MED. Hoje é ${hoje}. Conduza uma CONVERSA curta e natural (português do Brasil, tom próximo, sem enrolação) para montar um cronograma 100% personalizado.
@@ -115,7 +115,7 @@ MATERIAL ENVIADO PELO ALUNO (é a fonte de verdade: cronogramas, ementas, conte�
 ${(perfil.materiais || []).map(m => '### ' + m.nome + '\n' + m.texto).join('\n\n').slice(0, 90000) || '(nenhum material enviado ainda)'}
 
 Perfil atual (JSON, sem o material): ${JSON.stringify({ ...perfil, materiais: undefined })}`;
-          const r = await generateWithGemini({
+          const r = await generateAI({
             contents: msgs.map(m => ({ role: m.role, parts: [{ text: m.content }] })),
             config: {
               systemInstruction: sistema, temperature: 0.6, responseMimeType: 'application/json',
@@ -196,10 +196,10 @@ Para cada disciplina/módulo informe: provas/avaliações (data, tipo como P1/P2
         ext = { disciplinas: [{ nome: det.disciplina, provas: det.provas.map(x => ({ data: x.data, tipo: x.tipo, assuntos: x.assuntos })), aulas: det.aulas }] };
         lidoExato = true;
       }
-      if (!ext && getGeminiClient() && (bytes || txt)) {
+      if (!ext && aiConfigured() && (bytes || txt)) {
         try {
           const partes = (bytes && ehPdf) ? [{ inlineData: { mimeType: 'application/pdf', data: base64 } }, { text: prompt }] : [{ text: prompt + '\n\nDOCUMENTO:\n' + txt.slice(0, 180000) }];
-          const r = await generateWithGemini({ contents: [{ role: 'user', parts: partes }], config: { temperature: 0.1, responseMimeType: 'application/json', responseSchema: { type: Type.OBJECT, properties: { disciplinas: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { nome: { type: Type.STRING }, provas: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { data: { type: Type.STRING }, tipo: { type: Type.STRING }, assuntos: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['data'] } }, aulas: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { data: { type: Type.STRING }, tema: { type: Type.STRING } }, required: ['data', 'tema'] } } }, required: ['nome'] } } }, required: ['disciplinas'] } } });
+          const r = await generateAI({ contents: [{ role: 'user', parts: partes }], config: { temperature: 0.1, responseMimeType: 'application/json', responseSchema: { type: Type.OBJECT, properties: { disciplinas: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { nome: { type: Type.STRING }, provas: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { data: { type: Type.STRING }, tipo: { type: Type.STRING }, assuntos: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['data'] } }, aulas: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { data: { type: Type.STRING }, tema: { type: Type.STRING } }, required: ['data', 'tema'] } } }, required: ['nome'] } } }, required: ['disciplinas'] } } });
           ext = JSON.parse(r.text.trim()); usouIA = true;
         } catch (e) { console.warn('[Planner manual] IA falhou:', e.message); }
       }
@@ -274,12 +274,12 @@ Para cada disciplina/módulo informe: provas/avaliações (data, tipo como P1/P2
   app.post('/api/planner/enrich', async (req, res) => {
     enableSSE(req, res);
     try {
-      if (!getGeminiClient()) return res.json({ success: true, ia: false, itens: {} });
+      if (!aiConfigured()) return res.json({ success: true, ia: false, itens: {} });
       const tarefas = (Array.isArray(req.body.tarefas) ? req.body.tarefas : []).filter(t => t && t.tipo === 'estudo').slice(0, 8);
       const p = PE.sanePerfil(null, req.body.perfil || {});
       if (!tarefas.length) return res.json({ success: true, ia: true, itens: {} });
       const entrada = tarefas.map(t => ({ id: t.id, disciplina: t.materia, tema: t.tema, titulo: t.titulo, contexto_da_faculdade: String(t.contexto || '').slice(0, 900), trechos_do_material_do_aluno: PE.trechosDoMaterial(p, String(t.tema || '').replace(/\([^)]*\)/g, ' '), 1800), passos: (t.passos || []).map(s => ({ acao: s.acao, minutos: s.minutos })) }));
-      const r = await generateWithGemini({
+      const r = await generateAI({
         contents: `Você é o mentor de estudos de um aluno de medicina (${p.objetivo === 'graduacao' ? 'prova da faculdade' : 'residência'}). Preferências/anseios do aluno: ${JSON.stringify({ metodo: p.metodo, dificuldades: p.dificuldades, fortes: p.fortes, anseios: p.anseios })}. Pedidos recentes dele no chat (respeite-os): ${JSON.stringify((Array.isArray(req.body.pedidos) ? req.body.pedidos : []).slice(-6).map(x => String(x).slice(0, 400)))}.
 Reescreva o texto de cada passo (mesma ordem e mesmo "acao") de forma ESPECÍFICA e ACIONÁVEL para o tema, usando o "contexto_da_faculdade" (roteiro real da aula e assuntos da prova) e os "trechos_do_material_do_aluno" (o que ele mesmo enviou — cite os itens que aparecem lá, com as palavras dele):
 - aula/resumo: liste os 3–5 pontos CONCRETOS do tema que precisam sair dominados (nomes de doenças, classificações, critérios, condutas de 1ª linha, sinais de alarme — só o que você tem certeza que é padrão), em ordem de cobrança provável; diga o que comparar com o quê.

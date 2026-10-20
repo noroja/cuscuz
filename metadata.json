@@ -2,6 +2,6 @@
   "name": "Cuscuz-MED",
   "description": "Planejador de estudos médicos, cronograma inteligente, acervo completo de videoaulas, flashcards SRS e simulados.",
   "capabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+    "MAJOR_CAPABILITY_SERVER_SIDE_AI_API"
   ]
 }

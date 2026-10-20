@@ -1,6 +1,6 @@
 # Deploy do Cuscuz-MED (backend + app) no Railway.app — grátis
 
-O GitHub Pages só hospeda arquivos estáticos — o `server.js` (sync do Hardworq, gerador Gemini, tutor, chat) precisa de um servidor Node de verdade. O **Railway.app** conecta direto neste repositório e sobe tudo: app + API no mesmo endereço.
+O GitHub Pages só hospeda arquivos estáticos — o `server.js` (sync do Hardworq, gerador de questões com IA, tutor, chat) precisa de um servidor Node de verdade. O **Railway.app** conecta direto neste repositório e sobe tudo: app + API no mesmo endereço.
 
 ## Passo a passo (5 minutos, uma vez só)
 
@@ -11,7 +11,7 @@ O GitHub Pages só hospeda arquivos estáticos — o `server.js` (sync do Hardwo
 5. Após o deploy inicial, o Railway vai pedir o valor das variáveis de ambiente necessárias. Vá em **Variables** e adicione:
     - `HARDWORQ_EMAIL` / `HARDWORQ_SENHA` → as credenciais da sua conta Hardworq
       (não ficam no GitHub; ficam só no serviço)
-    - `GEMINI_API_KEY` → se tiver, cola a sua (ativa o gerador de questões e o tutor IA)
+    - `GROQ_API_KEY` → se tiver, cola a sua (ativa o gerador de questões, o tutor IA, o Mentor e a transcrição de aulas)
     - `OPENAI_API_KEY` / `SUPABASE_URL` / `SUPABASE_ANON_KEY` → opcionais
     - `APP_PASSWORD` → (opcional) senha para proteção de acesso ao app
     - Variáveis do Hardworq adicionais (se necessário):
@@ -42,7 +42,10 @@ Variáveis que podem ser configuradas no Railway (aba Variables):
 |----------|-----------|--------------|
 | `HARDWORQ_EMAIL` | Login do Hardworq | Sim (para banco de questões) |
 | `HARDWORQ_SENHA` | Senha do Hardworq | Sim (para banco de questões) |
-| `GEMINI_API_KEY` | Chave da API do Google Gemini | Não (ativa recursos de IA) |
+| `GROQ_API_KEY` | Chave da API da Groq (console.groq.com) | Não (ativa recursos de IA) |
+| `GROQ_MODEL` | Modelo de texto (padrão `openai/gpt-oss-120b`) | Não |
+| `GROQ_STT_MODEL` | Transcrição de aulas (padrão `whisper-large-v3-turbo`) | Não |
+| `GROQ_TIMEOUT_MS` / `GROQ_MAX_RETRIES` | Timeout por tentativa (45000) e tentativas extras em 429/5xx (2) | Não |
 | `OPENAI_API_KEY` | Chave da API da OpenAI | Não (opcional) |
 | `SUPABASE_URL` | URL do Supabase | Não (opcional) |
 | `SUPABASE_ANON_KEY` | Chave anonima do Supabase | Não (opcional) |
@@ -97,7 +100,7 @@ Como `/tmp` é por invocação, o estado durável continua vindo da nuvem (Supab
 
 1. Vercel → **Add New… → Project** → importe o repositório do GitHub.
 2. Framework preset: **Other**. Build Command e Output são lidos do `vercel.json` (não precisa mexer).
-3. Em **Settings → Environment Variables**, adicione as mesmas variáveis do Railway (`GEMINI_API_KEY`, `HARDWORQ_*`, `SUPABASE_*`, `GOOGLE_DRIVE_*`, etc.).
+3. Em **Settings → Environment Variables**, adicione as mesmas variáveis do Railway (`GROQ_API_KEY`, `HARDWORQ_*`, `SUPABASE_*`, `GOOGLE_DRIVE_*`, etc.).
 4. **Deploy**. O build roda `node scripts/build-public.js` e a função sobe em `api/index.js`.
 
 ## Cuidados

@@ -39,8 +39,10 @@ services:
       - key: GOOGLE_DRIVE_FOLDER_ID
         sync: false
       # Opcionais (deixe em branco se não usar; o app funciona sem elas, com recursos reduzidos)
-      - key: GEMINI_API_KEY
+      - key: GROQ_API_KEY
         sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
       - key: OPENAI_API_KEY
         sync: false
       - key: SUPABASE_URL

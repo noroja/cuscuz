@@ -1677,7 +1677,7 @@ window.carregarFlashcardsAula = async function(aula) {
     AULA_FC.list = cards;
     AULA_FC.fonte = deck.fonte || 'banco local';
     badge.textContent = String(cards.length);
-    origemEl.textContent = cards.length + ' cards · ' + (AULA_FC.fonte === 'gemini' ? 'deck IA' : 'banco local');
+    origemEl.textContent = cards.length + ' cards · ' + (/^(ia|gemini)$/.test(AULA_FC.fonte) ? 'deck IA' : 'banco local');
     renderFlashcardsAula();
   } catch (err) {
     if (requestId !== aulaFcRequest) return;
@@ -1709,7 +1709,7 @@ window.gerarFlashcardsAula = async function() {
         AULA_FC.aulaId = aula.id; AULA_FC.list = cards; AULA_FC.index = 0; AULA_FC.virada = false;
         AULA_FC.errei = AULA_FC.bom = AULA_FC.facil = 0; AULA_FC.fonte = data.deck.fonte || 'banco local';
         AULA_FC.gerando = false; badge.textContent = String(cards.length);
-        $('aula-fc-origem').textContent = cards.length + ' cards · ' + (AULA_FC.fonte === 'gemini' ? 'deck IA' : 'banco local');
+        $('aula-fc-origem').textContent = cards.length + ' cards · ' + (/^(ia|gemini)$/.test(AULA_FC.fonte) ? 'deck IA' : 'banco local');
         renderFlashcardsAula(); return;
       }
       if (data.deck && data.deck.fonte === 'nenhuma') {
@@ -1739,7 +1739,7 @@ function renderFlashcardsAula() {
   const frente = card.frente || card.pergunta || card.front || 'Card';
   const verso = card.verso || card.resposta || card.back || 'Sem resposta disponível.';
   const progresso = Math.round(r.index / r.list.length * 100);
-  area.innerHTML = '<div class="aula-fc-summary"><span>Card ' + (r.index + 1) + ' de ' + r.list.length + '</span><span>' + esc(r.fonte === 'gemini' ? 'Deck IA' : 'Banco local') + '</span></div>' +
+  area.innerHTML = '<div class="aula-fc-summary"><span>Card ' + (r.index + 1) + ' de ' + r.list.length + '</span><span>' + esc(/^(ia|gemini)$/.test(r.fonte) ? 'Deck IA' : 'Banco local') + '</span></div>' +
     '<div class="aula-fc-progress" role="progressbar" aria-label="Progresso dos flashcards" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + progresso + '"><span style="width:' + progresso + '%"></span></div>' +
     '<button type="button" class="aula-fc-card" aria-expanded="' + r.virada + '" aria-label="' + (r.virada ? 'Resposta do flashcard. Avançar para avaliação.' : 'Mostrar resposta do flashcard') + '" onclick="virarFlashcardAula()"><span class="rotulo">' + (r.virada ? 'Resposta' : 'Pergunta') + '</span><span class="texto">' + esc(r.virada ? verso : frente) + '</span><span class="dica">' + (r.virada ? 'Avalie como foi lembrar' : 'Toque para revelar a resposta') + '</span></button>' +
     (r.virada ? '<div class="aula-fc-notas" aria-label="Avaliar lembrança"><button type="button" onclick="avaliarFlashcardAula(\'errei\')">↻ Repetir em 1 dia</button><button type="button" onclick="avaliarFlashcardAula(\'bom\')">✓ Bom · 5 dias</button><button type="button" onclick="avaliarFlashcardAula(\'facil\')">⚡ Fácil · 10 dias</button></div>' : '<p style="margin-top:12px;text-align:center;color:var(--muted);font-size:12px">Pense na resposta antes de revelar.</p>');

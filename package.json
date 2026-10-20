@@ -10,10 +10,10 @@
     "lint": "echo 'Lint passed'"
   },
   "dependencies": {
-    "@google/genai": "^2.24.0",
     "@supabase/supabase-js": "^2.117.2",
     "cheerio": "^1.2.0",
     "express": "^4.21.2",
-    "openai": "^7.23.0"
+    "openai": "^7.23.0",
+    "pdf-parse": "^1.1.1"
   }
 }
