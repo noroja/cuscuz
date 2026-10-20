@@ -61,6 +61,8 @@ services:
         sync: false
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
+      - key: GROQ_TPM
+        value: "8000"
       - key: OPENAI_API_KEY
         sync: false
       - key: SUPABASE_URL

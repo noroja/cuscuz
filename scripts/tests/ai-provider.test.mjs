@@ -8,6 +8,8 @@ const srv = http.createServer((req, res) => {
     const j = (st, o, h = {}) => { res.writeHead(st, { 'content-type': 'application/json', ...h }); res.end(JSON.stringify(o)); };
     if (req.url.endsWith('/audio/transcriptions')) return j(200, { text: 'transcrito' });
     if (modo === '429') return j(429, { error: { message: 'rate limit' } }, { 'retry-after': '120' });
+    if (modo === 'tpm' && calls.length % 2 === 1) return j(429, { error: { message: 'Rate limit reached on tokens per minute (TPM): Limit 8000, Requested 12425, please reduce your message size and try again' } }, { 'retry-after': '1' });
+    if (modo === 'tpmlongo') return j(429, { error: { message: 'Request too large on tokens per minute (TPM): Limit 8000, Requested 12425' } }, { 'retry-after': '80' });
     if (modo === '429curto' && calls.length < 2) return j(429, { error: { message: 'rate' } }, { 'retry-after': '0' });
     if (modo === '401') return j(401, { error: { message: 'bad' } });
     if (modo === '500') return j(500, {});
@@ -48,6 +50,14 @@ await teste('429 com retry-after longo: não espera, devolve 429 e liga o disjun
   assert.equal(calls.length, 1, 'disjuntor evita nova chamada');
 });
 await teste('429 curto: retenta e conclui', async () => { reset('429curto'); const r = await P.generateAI({ contents: 'x' }); assert.ok(r.text); assert.equal(calls.length, 2); });
+await teste('429/413 de TPM curto: espera o retry-after e conclui', async () => { reset('tpm'); const t0 = Date.now(); const r = await P.generateAI({ contents: 'x' }); assert.ok(r.text); assert.equal(calls.length, 2); assert.ok(Date.now() - t0 >= 900, 'deve esperar a janela de TPM'); });
+await teste('TPM sem janela viável (retry-after 80s): disjuntor, sem segunda chamada', async () => {
+  reset('tpmlongo'); const t0 = Date.now();
+  try { await P.generateAI({ contents: 'x' }); assert.fail(); } catch (e) { assert.equal(e.status, 429); assert.ok(Date.now() - t0 < 3000); }
+  assert.equal(calls.length, 1);
+  try { await P.generateAI({ contents: 'x' }); assert.fail(); } catch (_) { /* bloqueado sem rede */ }
+  assert.equal(calls.length, 1, 'disjuntor evita nova chamada');
+});
 await teste('401: erro de chave, sem retry', async () => { reset('401'); try { await P.generateAI({ contents: 'x' }); assert.fail(); } catch (e) { assert.equal(e.code, 'auth'); assert.equal(calls.length, 1); } });
 await teste('5xx: retenta e falha com 503', async () => { reset('500'); try { await P.generateAI({ contents: 'x' }); assert.fail(); } catch (e) { assert.equal(e.status, 503); assert.equal(calls.length, 3); } });
 await teste('timeout: aborta e devolve 504', async () => {

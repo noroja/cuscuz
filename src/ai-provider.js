@@ -11,6 +11,8 @@
 //   GROQ_TIMEOUT_MS    timeout por tentativa (padrão 45000)
 //   GROQ_MAX_RETRIES   tentativas extras em 429/5xx/timeout (padrão 2)
 //   GROQ_MAX_OUTPUT_TOKENS  teto de saída (padrão 8192)
+//   GROQ_TPM           teto de tokens por minuto do plano (padrão 8000 — free tier do gpt-oss-120b;
+//                      usado para dimensionar requisições que não vássem o limite)
 
 export const Type = { OBJECT: 'object', ARRAY: 'array', STRING: 'string', NUMBER: 'number', INTEGER: 'integer', BOOLEAN: 'boolean' };
 
@@ -22,19 +24,23 @@ const cfg = () => ({
   base: (process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/+$/, ''),
   timeout: Math.max(5000, parseInt(process.env.GROQ_TIMEOUT_MS, 10) || 45000),
   retries: Math.min(4, Math.max(0, process.env.GROQ_MAX_RETRIES == null || process.env.GROQ_MAX_RETRIES === '' ? 2 : parseInt(process.env.GROQ_MAX_RETRIES, 10) || 0)),
-  maxOut: Math.max(256, parseInt(process.env.GROQ_MAX_OUTPUT_TOKENS, 10) || 8192)
+  maxOut: Math.max(256, parseInt(process.env.GROQ_MAX_OUTPUT_TOKENS, 10) || 8192),
+  tpm: Math.max(2000, parseInt(process.env.GROQ_TPM, 10) || 8000)
 });
 
 export function aiProviderName() { return cfg().provider; }
 export function aiConfigured() { const c = cfg(); return c.provider === 'groq' && !!c.key; }
-export function aiStatus() { const c = cfg(); return { provider: c.provider, configured: c.provider === 'groq' && !!c.key, model: c.model, sttModel: c.stt }; }
+export function aiStatus() { const c = cfg(); return { provider: c.provider, configured: c.provider === 'groq' && !!c.key, model: c.model, sttModel: c.stt, tpm: c.tpm }; }
+// Teto de tokens por minuto (TPM) — usado pelos roteadores para faturar prompts em janelas que cabem no plano.
+export function aiTpm() { return cfg().tpm; }
 
 export class AIError extends Error {
   constructor(msg, { status = 500, code = 'ai_error', retryAfterMs = null } = {}) { super(msg); this.name = 'AIError'; this.status = status; this.code = code; this.retryAfterMs = retryAfterMs; }
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const MAX_INLINE_WAIT_MS = 8000;      // espera máxima dentro da requisição para um 429
+const MAX_INLINE_WAIT_MS = 8000;      // espera máxima dentro da requisição para um 429 comum
+const MAX_INLINE_WAIT_TPM_MS = 70000; // 429 de TPM (tokens por minuto): vale esperar a janela virar, o retry-after diz quando
 let blockedUntil = 0;                 // disjuntor: só para limites diários / esperas longas
 
 function parseRetryAfter(h) {
@@ -117,13 +123,23 @@ async function chamar(url, init, c, rotulo) {
       const retryMs = parseRetryAfter(r.headers.get('retry-after'));
       if (r.status === 401 || r.status === 403) throw new AIError('A GROQ_API_KEY configurada não é válida ou não tem permissão.', { status: 502, code: 'auth' });
       if (r.status === 429) {
-        const espera = retryMs != null ? retryMs : 2000 * (tent + 1);
-        if (/per day|TPD|RPD/i.test(detalhe) || espera > 60000) blockedUntil = Date.now() + Math.min(espera, 6 * 3600e3);
+        const tpmJanela = /tokens per minute|\bTPM\b/i.test(detalhe) && !/per day|TPD|RPD/i.test(detalhe);
+        const limiteEspera = tpmJanela ? MAX_INLINE_WAIT_TPM_MS : MAX_INLINE_WAIT_MS;
+        const espera = retryMs != null ? Math.max(retryMs, 1000) : 2000 * (tent + 1);
+        if (/per day|TPD|RPD/i.test(detalhe) || espera > limiteEspera) blockedUntil = Date.now() + Math.min(espera, 6 * 3600e3);
         ultimo = new AIError(`Limite de uso da Groq atingido${retryMs ? ` — tente em ~${Math.ceil(retryMs / 1000)}s` : ''}.`, { status: 429, code: 'rate_limit', retryAfterMs: retryMs });
-        if (tent < c.retries && espera <= MAX_INLINE_WAIT_MS) { await sleep(espera + Math.floor(Math.random() * 250)); continue; }
+        if (tent < c.retries && espera <= limiteEspera) { await sleep(espera + Math.floor(Math.random() * 250)); continue; }
         throw ultimo;
       }
       if (r.status >= 500) { ultimo = new AIError(`Groq indisponível (${r.status}).`, { status: 503, code: 'upstream' }); if (tent < c.retries) { await sleep(500 * 2 ** tent); continue; } throw ultimo; }
+      if (r.status === 413 && /tokens per minute|\bTPM\b/i.test(detalhe) && tent < c.retries) {
+        // A Groq devolve 413 (com mensagem de TPM) quando a requisição inteira excede o teto de tokens por minuto.
+        // Espera a janela rolar e tenta novamente — só vale a pena se o prompt for pequeno (o teto dos prompts é do chamador).
+        const espera = Math.min(retryMs != null ? Math.max(retryMs, 1000) : 2000 * 2 ** tent, 15000);
+        ultimo = new AIError(`A requisição excedeu o limite de tokens por minuto da Groq.`, { status: 429, code: 'rate_limit', retryAfterMs: espera });
+        if (espera <= MAX_INLINE_WAIT_TPM_MS) { await sleep(espera + Math.floor(Math.random() * 250)); continue; }
+        throw ultimo;
+      }
       const e = new AIError(`Groq recusou a requisição (${r.status}): ${detalhe}`.slice(0, 400), { status: 502, code: r.status === 400 ? 'bad_request' : 'upstream' });
       e.httpStatus = r.status; e.detalhe = detalhe; throw e;
     } catch (err) {

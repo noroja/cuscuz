@@ -46,6 +46,7 @@ Variáveis que podem ser configuradas no Railway (aba Variables):
 | `GROQ_MODEL` | Modelo de texto (padrão `openai/gpt-oss-120b`) | Não |
 | `GROQ_STT_MODEL` | Transcrição de aulas (padrão `whisper-large-v3-turbo`) | Não |
 | `GROQ_TIMEOUT_MS` / `GROQ_MAX_RETRIES` | Timeout por tentativa (45000) e tentativas extras em 429/5xx (2) | Não |
+| `GROQ_TPM` | Teto de tokens por minuto do plano Groq (padrão 8000, free tier do `gpt-oss-120b`). Dimensiona as janelas dos prompts de Aula do Dia para não estourar o limite | Não |
 | `OPENAI_API_KEY` | Chave da API da OpenAI | Não (opcional) |
 | `SUPABASE_URL` | URL do Supabase | Não (opcional) |
 | `SUPABASE_ANON_KEY` | Chave anonima do Supabase | Não (opcional) |
