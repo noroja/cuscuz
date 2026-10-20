@@ -1,5 +1,5 @@
 // Aula do dia — transcrição fiel por trechos, revisão do texto, resumo "Crônicas de Residência" (MD) e flashcards
-import { Type, transcribeAudio, aiTpm } from './ai-provider.js';
+import { Type, transcribeAudio, aiJanelaChars, aiStatus } from './ai-provider.js';
 
 const S = Type.STRING;
 const COR_PADRAO = 'dourado';
@@ -49,12 +49,11 @@ const dividir = (texto, max = 9000) => {
   return blocos;
 };
 
-// ── Orçamento por requisição ──
-// A Groq cobra por "tokens por minuto" (TPM: 8000 no free tier do gpt-oss-120b). Nenhum prompt sai acima
-// do teto: cada pedido reserva do orçamento o que gasta com instruções/schema + a saída esperada, e o
-// que sobra vira characters de transcrição. Se a janela do minuto fechar, o provider espera o retry-after.
-const CARACTERES_POR_TOKEN = 3.4; // PT-BR falado rende ~3,6 caracteres por token — margem apertada de propósito
-const janelaChars = (reservaTokens) => Math.max(1600, Math.round(Math.max((aiTpm() || 8000) * 0.85 - Math.max(reservaTokens, 600), 1000) * CARACTERES_POR_TOKEN));
+// ── Orçamento por requisição (consciente do roteamento) ──
+// Com o Gemini no fluxo (AI_PROVIDER=auto com as 2 chaves, ou gemini fixado), a janela é ampla:
+// a transcrição INTEIRA da aula vai em 1 chamada (contexto de ~1M tokens do Gemini). Sem Gemini,
+// a janela respeita o teto de TPM da Groq (8000 no free tier) e o provider espera o retry-after.
+const janelaChars = (reservaTokens) => aiJanelaChars(reservaTokens);
 
 // Divide por parágrafos em janelas ≤ maxChars, guardando o offset ABSOLUTO de início/fim de cada janela
 // e de cada parágrafo dentro dela (ps/lens) — é isso que permite recortar a transcrição por capítulo.
@@ -105,7 +104,7 @@ const recortePorPalavras = (t, capitulo, maxChars) => {
 export function registerAula(app, { generateAI, aiConfigured }) {
   const exigeIA = (res) => { if (!aiConfigured()) { res.status(503).json({ success: false, msg: 'GROQ_API_KEY não configurada.' }); return false; } return true; };
 
-  app.get('/api/aula/status', (_req, res) => res.json({ success: true, gemini: !!aiConfigured() }));
+  app.get('/api/aula/status', (_req, res) => { const st = aiStatus(); res.json({ success: true, gemini: !!aiConfigured(), ia: st }); });
 
   // 1) Transcreve um trecho de áudio fielmente
   app.post('/api/aula/transcrever', async (req, res) => {
@@ -196,8 +195,9 @@ Diga também se no trecho o professor leu/comentou alguma questão real de prova
       }
       if (!frgs.length) return res.json({ success: true, mapa: { capitulos: [], temQuestoes } });
       let mapa = { capitulos: frgs.slice(0, 14), temQuestoes };
-      // B) consolidação — entrada pequena (só fragmentos), cabe em qualquer teto
-      if (frgs.length > 1) {
+      // B) consolidação — entrada pequena (só fragmentos), cabe em qualquer teto.
+      //    Com janela única (Gemini no fluxo), o modelo já entregou os capítulos finais — nada a fundir.
+      if (partes.length > 1 && frgs.length > 1) {
         try {
           const r = await generateAI({
             contents: `Abaixo está o inventário, em ordem de aparição na transcrição de uma aula de Medicina, de fragmentos de capítulos. Cada fragmento tem "de" e "ate" (limites em CARACTERES da transcrição).

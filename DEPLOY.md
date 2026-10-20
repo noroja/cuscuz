@@ -43,10 +43,14 @@ Variáveis que podem ser configuradas no Railway (aba Variables):
 | `HARDWORQ_EMAIL` | Login do Hardworq | Sim (para banco de questões) |
 | `HARDWORQ_SENHA` | Senha do Hardworq | Sim (para banco de questões) |
 | `GROQ_API_KEY` | Chave da API da Groq (console.groq.com) | Não (ativa recursos de IA) |
+| `GEMINI_API_KEY` | Chave do Google AI Studio (aistudio.google.com). Com as duas chaves, `AI_PROVIDER=auto` por padrão: prompts pequenos vão à Groq e os grandes (aula inteira, PDFs) ao Gemini, com fallback mútuo | Não |
 | `GROQ_MODEL` | Modelo de texto (padrão `openai/gpt-oss-120b`) | Não |
 | `GROQ_STT_MODEL` | Transcrição de aulas (padrão `whisper-large-v3-turbo`) | Não |
 | `GROQ_TIMEOUT_MS` / `GROQ_MAX_RETRIES` | Timeout por tentativa (45000) e tentativas extras em 429/5xx (2) | Não |
 | `GROQ_TPM` | Teto de tokens por minuto do plano Groq (padrão 8000, free tier do `gpt-oss-120b`). Dimensiona as janelas dos prompts de Aula do Dia para não estourar o limite | Não |
+| `AI_PROVIDER` | `auto` (híbrido Groq+Gemini, padrão com as duas chaves), `groq` ou `gemini` (fixa um provedor só) | Não |
+| `GEMINI_MODEL` | Modelo do Gemini (padrão `gemini-2.5-flash`) | Não |
+| `GEMINI_MAX_PROMPT_CHARS` | Teto de caracteres de prompt por chamada ao Gemini (padrão 300000) | Não |
 | `OPENAI_API_KEY` | Chave da API da OpenAI | Não (opcional) |
 | `SUPABASE_URL` | URL do Supabase | Não (opcional) |
 | `SUPABASE_ANON_KEY` | Chave anonima do Supabase | Não (opcional) |

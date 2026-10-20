@@ -164,7 +164,7 @@
     <div class="row3"><div><label>Parte</label><select id="ad-parte" onchange="this.dataset.manual=1">${partes.map(p => `<option${p === sugerirParte(d0, t0) ? ' selected' : ''}>${p}</option>`).join('')}</select></div>
     <div><label>Cor de magia do resumo</label><select id="ad-cor">${['dourado', 'turquesa', 'âmbar', 'violeta', 'esmeralda', 'coral'].map(c => `<option>${c}</option>`).join('')}</select></div><div></div></div>
     <div class="ad-big"><button class="b rec" id="ad-start" onclick="auladia.iniciar()"><i class="ph ph-record"></i> Iniciar gravação</button>
-    <span class="sub" style="margin:0">${geminiOk ? 'Transcrição por IA (a cada ~1,5 min), revisão e resumo automáticos no fim.' : 'Sem chave do Gemini: usarei a legenda ao vivo do navegador (Chrome/Safari), sem revisão nem resumo por IA.'}</span></div>
+    <span class="sub" style="margin:0">${geminiOk ? 'Transcrição por IA (a cada ~1,5 min), revisão e resumo automáticos no fim.' : 'Sem chave de IA (Gemini/Groq) no servidor: usarei a legenda ao vivo do navegador (Chrome/Safari), sem revisão nem resumo por IA.'}</span></div>
     <div class="aviso">Deixe a tela ligada e o navegador aberto durante a aula — no iPhone, bloquear a tela ou trocar de app pausa a gravação. Posicione o aparelho perto de quem fala e use o botão ⭐ quando o professor disser "isso cai na prova". Grave apenas se a faculdade/professor permitirem.</div></div>
     <div class="card"><b>Aulas gravadas</b> <small class="sub">(por Área › Conteúdo › Parte)</small>${historicoAgrupado()}</div></div>`;
   }
@@ -431,7 +431,7 @@
 
   async function pipeline(s) {
     if (pipelineRodando) return toast('Já estou processando esta aula.', 'info');
-    if (!geminiOk) return toast('Para revisar e resumir é preciso a chave do Gemini no servidor.', 'warning');
+    if (!geminiOk) return toast('Para revisar e resumir é preciso uma chave de IA (Gemini ou Groq) no servidor.', 'warning');
     pipelineRodando = true;
     const est = { rev: s.textoRevisado ? 'ok' : '', res: s.resumoMd ? 'ok' : '', fc: s.flashcards ? 'ok' : '', mat: s.resultado ? 'ok' : '' };
     passos(s, est);

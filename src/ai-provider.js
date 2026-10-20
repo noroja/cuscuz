@@ -1,10 +1,13 @@
-// Camada única de IA generativa. Hoje o único provedor suportado é a Groq (API compatível com OpenAI).
-// Nenhum outro provedor é usado como reserva silenciosa: se a Groq falhar, o erro volta ao chamador.
+// Camada única de IA generativa com DUAL PROVIDER: Groq (compatível com OpenAI) + Google Gemini.
+// Uma só API (formato Gemini: contents/config) e o roteador decide quem executa, com fallback mútuo.
 // A chave NUNCA sai do servidor e nunca é registrada em log.
 //
 // Variáveis de ambiente:
-//   AI_PROVIDER        (padrão "groq")
-//   GROQ_API_KEY       chave da Groq (obrigatória para IA)
+//   AI_PROVIDER        "auto" (padrão quando as 2 chaves existem), "groq" ou "gemini".
+//                      No modo auto: prompt PEQUENO vai à Groq (rápida, TPM renova a cada minuto) e
+//                      prompt GRANDE ao Gemini (janela de contexto ~1M tokens); quem falhar/estourar
+//                      limite passa a bola para o outro.
+//   GROQ_API_KEY       chave da Groq
 //   GROQ_MODEL         modelo de texto (padrão openai/gpt-oss-120b — suporta json_schema)
 //   GROQ_STT_MODEL     modelo de transcrição (padrão whisper-large-v3-turbo)
 //   GROQ_BASE_URL      padrão https://api.groq.com/openai/v1
@@ -12,36 +15,93 @@
 //   GROQ_MAX_RETRIES   tentativas extras em 429/5xx/timeout (padrão 2)
 //   GROQ_MAX_OUTPUT_TOKENS  teto de saída (padrão 8192)
 //   GROQ_TPM           teto de tokens por minuto do plano (padrão 8000 — free tier do gpt-oss-120b;
-//                      usado para dimensionar requisições que não vássem o limite)
+//                      usado para dimensionar janelas de requisição que não estouram o limite)
+//   GEMINI_API_KEY     chave do Google AI Studio (activa o provedor Gemini)
+//   GEMINI_MODEL       padrão gemini-2.5-flash
+//   GEMINI_BASE_URL    padrão https://generativelanguage.googleapis.com/v1beta
+//   GEMINI_TIMEOUT_MS  timeout por tentativa (padrão 60000)
+//   GEMINI_MAX_RETRIES tentativas extras (padrão 2)
+//   GEMINI_MAX_OUTPUT_TOKENS  teto de saída (padrão 8192)
+//   GEMINI_MAX_PROMPT_CHARS  teto de caracteres de prompt enviado ao Gemini (padrão 300000)
 
 export const Type = { OBJECT: 'object', ARRAY: 'array', STRING: 'string', NUMBER: 'number', INTEGER: 'integer', BOOLEAN: 'boolean' };
 
 const cfg = () => ({
-  provider: String(process.env.AI_PROVIDER || 'groq').toLowerCase(),
-  key: process.env.GROQ_API_KEY || '',
-  model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
-  stt: process.env.GROQ_STT_MODEL || 'whisper-large-v3-turbo',
-  base: (process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/+$/, ''),
-  timeout: Math.max(5000, parseInt(process.env.GROQ_TIMEOUT_MS, 10) || 45000),
-  retries: Math.min(4, Math.max(0, process.env.GROQ_MAX_RETRIES == null || process.env.GROQ_MAX_RETRIES === '' ? 2 : parseInt(process.env.GROQ_MAX_RETRIES, 10) || 0)),
-  maxOut: Math.max(256, parseInt(process.env.GROQ_MAX_OUTPUT_TOKENS, 10) || 8192),
-  tpm: Math.max(2000, parseInt(process.env.GROQ_TPM, 10) || 8000)
+  provider: String(process.env.AI_PROVIDER || '').toLowerCase(), // '' → resolve pelas chaves
+  groq: {
+    key: process.env.GROQ_API_KEY || '',
+    model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+    stt: process.env.GROQ_STT_MODEL || 'whisper-large-v3-turbo',
+    base: (process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/+$/, ''),
+    timeout: Math.max(5000, parseInt(process.env.GROQ_TIMEOUT_MS, 10) || 45000),
+    retries: Math.min(4, Math.max(0, process.env.GROQ_MAX_RETRIES == null || process.env.GROQ_MAX_RETRIES === '' ? 2 : parseInt(process.env.GROQ_MAX_RETRIES, 10) || 0)),
+    maxOut: Math.max(256, parseInt(process.env.GROQ_MAX_OUTPUT_TOKENS, 10) || 8192),
+    tpm: Math.max(2000, parseInt(process.env.GROQ_TPM, 10) || 8000)
+  },
+  gemini: {
+    key: process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '',
+    model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    base: (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, ''),
+    timeout: Math.max(5000, parseInt(process.env.GEMINI_TIMEOUT_MS, 10) || 60000),
+    retries: Math.min(4, Math.max(0, process.env.GEMINI_MAX_RETRIES == null || process.env.GEMINI_MAX_RETRIES === '' ? 2 : parseInt(process.env.GEMINI_MAX_RETRIES, 10) || 0)),
+    maxOut: Math.max(256, parseInt(process.env.GEMINI_MAX_OUTPUT_TOKENS, 10) || 8192),
+    janelaMax: Math.max(16000, parseInt(process.env.GEMINI_MAX_PROMPT_CHARS, 10) || 300000)
+  }
 });
 
-export function aiProviderName() { return cfg().provider; }
-export function aiConfigured() { const c = cfg(); return c.provider === 'groq' && !!c.key; }
-export function aiStatus() { const c = cfg(); return { provider: c.provider, configured: c.provider === 'groq' && !!c.key, model: c.model, sttModel: c.stt, tpm: c.tpm }; }
-// Teto de tokens por minuto (TPM) — usado pelos roteadores para faturar prompts em janelas que cabem no plano.
-export function aiTpm() { return cfg().tpm; }
+// ── estado por provedor (disjuntores independentes) ──
+const bloqueadoAte = { groq: 0, gemini: 0 };
+const bloquear = (nome, ms, maxMs = 6 * 3600e3) => { bloqueadoAte[nome] = Date.now() + Math.min(Math.max(ms, 0), maxMs); };
+const disponivel = (nome) => Date.now() >= bloqueadoAte[nome];
+
+const ROTEADO = { GROQ: 'groq', GEMINI: 'gemini' };
+// Resolve o modo efetivo e as chaves presentes.
+function roteador() {
+  const c = cfg();
+  const temGroq = !!c.groq.key, temGem = !!c.gemini.key;
+  const modo = c.provider === 'auto' || c.provider === 'groq' || c.provider === 'gemini'
+    ? c.provider
+    : (temGroq && temGem ? 'auto' : temGroq ? 'groq' : temGem ? 'gemini' : '');
+  return { c, modo, temGroq, temGem };
+}
+
+export function aiProviderName() { return roteador().modo || 'desligado'; }
+export function aiConfigured() { const r = roteador(); return !!r.modo && ((r.modo === 'groq' && r.temGroq) || (r.modo === 'gemini' && r.temGem) || (r.modo === 'auto' && (r.temGroq || r.temGem))); }
+export function aiStatus() {
+  const r = roteador();
+  return {
+    provider: r.modo || 'desligado',
+    configured: aiConfigured(),
+    model: r.modo === 'gemini' ? r.c.gemini.model : r.c.groq.model,
+    sttModel: r.c.groq.stt,
+    tpm: r.c.groq.tpm,
+    gemini: !!r.c.gemini.key, groq: !!r.c.groq.key,
+    geminiModel: r.c.gemini.model,
+    bloqueado: r.modo === 'auto'
+      ? (disponivel('groq') || disponivel('gemini') ? null : (Math.min(bloqueadoAte.groq, bloqueadoAte.gemini)))
+      : (disponivel(r.modo) ? null : bloqueadoAte[r.modo])
+  };
+}
+// Teto de tokens por minuto (TPM) da Groq — usado para dimensionar janelas de prompt.
+export function aiTpm() { return cfg().groq.tpm; }
+
+// Orçamento de CARACTERES de prompt por requisição, consciente do roteamento: com o Gemini no fluxo
+// (auto com as 2 chaves, ou gemini fixado), a janela é ampla (aula inteira em 1 chamada); sem Gemini,
+// a janela raramente exceda o teto de TPM da Groq (evita o 413 "Request too large").
+export function aiJanelaChars(reservaTokens = 0) {
+  const r = roteador();
+  if (r.modo === 'gemini' || (r.modo === 'auto' && r.c.gemini.key && r.c.gemini.janelaMax > 0)) return r.c.gemini.janelaMax;
+  const CARACTERES_POR_TOKEN = 3.4; // PT-BR falado rende ~3,6 caracteres por token — margem apertada de propósito
+  return Math.max(1600, Math.round(Math.max((r.c.groq.tpm || 8000) * 0.85 - Math.max(reservaTokens, 600), 1000) * CARACTERES_POR_TOKEN));
+}
 
 export class AIError extends Error {
-  constructor(msg, { status = 500, code = 'ai_error', retryAfterMs = null } = {}) { super(msg); this.name = 'AIError'; this.status = status; this.code = code; this.retryAfterMs = retryAfterMs; }
+  constructor(msg, { status = 500, code = 'ai_error', retryAfterMs = null, provider = null } = {}) { super(msg); this.name = 'AIError'; this.status = status; this.code = code; this.retryAfterMs = retryAfterMs; this.provider = provider; }
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const MAX_INLINE_WAIT_MS = 8000;      // espera máxima dentro da requisição para um 429 comum
-const MAX_INLINE_WAIT_TPM_MS = 70000; // 429 de TPM (tokens por minuto): vale esperar a janela virar, o retry-after diz quando
-let blockedUntil = 0;                 // disjuntor: só para limites diários / esperas longas
+const MAX_INLINE_WAIT_TPM_MS = 70000; // 429 de TPM/janela curta: vale esperar virar (o retry-after diz quando)
 
 function parseRetryAfter(h) {
   if (!h) return null;
@@ -49,6 +109,11 @@ function parseRetryAfter(h) {
   if (Number.isFinite(n)) return Math.round(n * 1000);
   const d = Date.parse(h); return Number.isFinite(d) ? Math.max(0, d - Date.now()) : null;
 }
+// retryDelay ISO-8601 do Gemini ("30s" / "1.5s").
+const parseRetryDelay = (texto) => {
+  const m = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(texto) || /retry in (\d+(?:\.\d+)?)s/i.exec(texto);
+  return m ? Math.round(parseFloat(m[1]) * 1000) : null;
+};
 
 // Converte o schema (estilo Gemini ou JSON Schema) para JSON Schema padrão.
 export function toJsonSchema(s) {
@@ -64,6 +129,21 @@ export function toJsonSchema(s) {
   }
   if (s.nullable && out.type && !Array.isArray(out.type)) out.type = [out.type, 'null'];
   if (out.type === 'object' && out.properties && out.additionalProperties === undefined) out.additionalProperties = false;
+  return out;
+}
+
+// Ajusta o JSON Schema ao dialeto do Gemini: tipos em MAIÚSCULAS, sem additionalProperties, uniões de tipos colapsadas.
+function schemaGemini(s) {
+  if (Array.isArray(s)) return s.map(schemaGemini);
+  if (!s || typeof s !== 'object') return s;
+  const out = {};
+  for (const [k, v] of Object.entries(s)) {
+    if (k === 'additionalProperties') continue;
+    if (k === 'type') { out.type = String(Array.isArray(v) ? v[0] : v).toUpperCase(); continue; }
+    if (k === 'properties') { out.properties = {}; for (const [pk, pv] of Object.entries(v)) out.properties[pk] = schemaGemini(pv); continue; }
+    if (k === 'items') { out.items = schemaGemini(v); continue; }
+    out[k] = v;
+  }
   return out;
 }
 
@@ -109,49 +189,57 @@ export async function pdfParaTexto(b64) {
   return t.length > 60000 ? t.slice(0, 60000) + '\n[…texto truncado…]' : t;
 }
 
-async function chamar(url, init, c, rotulo) {
+function rotuloVoz(nome) { return nome === 'gemini' ? 'Gemini' : 'Groq'; }
+function chaveNome(nome) { return nome === 'gemini' ? 'GEMINI_API_KEY' : 'GROQ_API_KEY'; }
+
+// Camada de HTTP compartilhada com tratamento de 429/413/5xx e disjuntor POR provedor.
+async function chamar(url, init, opts, rotulo) {
+  const nome = opts.nome || 'groq';
+  const voz = rotuloVoz(nome);
   let ultimo = null;
-  for (let tent = 0; tent <= c.retries; tent++) {
+  for (let tent = 0; tent <= opts.retries; tent++) {
     const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), c.timeout);
+    const timer = setTimeout(() => ctl.abort(), opts.timeout);
     try {
       const r = await fetch(url, { ...init, signal: ctl.signal });
       clearTimeout(timer);
       if (r.ok) return r;
       const corpo = await r.text().catch(() => '');
       let detalhe = ''; try { detalhe = JSON.parse(corpo).error?.message || ''; } catch (_) { detalhe = corpo.slice(0, 200); }
-      const retryMs = parseRetryAfter(r.headers.get('retry-after'));
-      if (r.status === 401 || r.status === 403) throw new AIError('A GROQ_API_KEY configurada não é válida ou não tem permissão.', { status: 502, code: 'auth' });
+      const retryMs = parseRetryAfter(r.headers.get('retry-after')) ?? parseRetryDelay(corpo);
+      if (r.status === 401 || r.status === 403) throw new AIError(`A ${chaveNome(nome)} configurada não é válida ou não tem permissão.`, { status: 502, code: 'auth', provider: nome });
       if (r.status === 429) {
-        const tpmJanela = /tokens per minute|\bTPM\b/i.test(detalhe) && !/per day|TPD|RPD/i.test(detalhe);
-        const limiteEspera = tpmJanela ? MAX_INLINE_WAIT_TPM_MS : MAX_INLINE_WAIT_MS;
+        const janelaCurta = nome === 'groq'
+          ? (/tokens per minute|\bTPM\b/i.test(detalhe) && !/per day|TPD|RPD/i.test(detalhe))
+          : /per minute|PerMinute/i.test(corpo); // Gemini: cota por minuto (ex.: RPM de free tier)
+        const diario = /per day|PerDay/i.test(corpo) || /RESOURCE_EXHAUSTED/i.test(detalhe) && !/per minute|PerMinute|per-min/i.test(corpo);
+        const limiteEspera = janelaCurta ? MAX_INLINE_WAIT_TPM_MS : MAX_INLINE_WAIT_MS;
         const espera = retryMs != null ? Math.max(retryMs, 1000) : 2000 * (tent + 1);
-        if (/per day|TPD|RPD/i.test(detalhe) || espera > limiteEspera) blockedUntil = Date.now() + Math.min(espera, 6 * 3600e3);
-        ultimo = new AIError(`Limite de uso da Groq atingido${retryMs ? ` — tente em ~${Math.ceil(retryMs / 1000)}s` : ''}.`, { status: 429, code: 'rate_limit', retryAfterMs: retryMs });
-        if (tent < c.retries && espera <= limiteEspera) { await sleep(espera + Math.floor(Math.random() * 250)); continue; }
+        if (diario || espera > limiteEspera) bloquear(nome, espera);
+        ultimo = new AIError(`Limite de uso do ${voz} atingido${retryMs ? ` — tenta em ~${Math.ceil(espera / 1000)}s` : ''}.`, { status: 429, code: 'rate_limit', retryAfterMs: retryMs, provider: nome });
+        if (tent < opts.retries && espera <= limiteEspera) { await sleep(espera + Math.floor(Math.random() * 250)); continue; }
         throw ultimo;
       }
-      if (r.status >= 500) { ultimo = new AIError(`Groq indisponível (${r.status}).`, { status: 503, code: 'upstream' }); if (tent < c.retries) { await sleep(500 * 2 ** tent); continue; } throw ultimo; }
-      if (r.status === 413 && /tokens per minute|\bTPM\b/i.test(detalhe) && tent < c.retries) {
+      if (r.status >= 500) { ultimo = new AIError(`${voz} indisponível (${r.status}).`, { status: 503, code: 'upstream', provider: nome }); if (tent < opts.retries) { await sleep(500 * 2 ** tent); continue; } throw ultimo; }
+      if (nome === 'groq' && r.status === 413 && /tokens per minute|\bTPM\b/i.test(detalhe) && tent < opts.retries) {
         // A Groq devolve 413 (com mensagem de TPM) quando a requisição inteira excede o teto de tokens por minuto.
-        // Espera a janela rolar e tenta novamente — só vale a pena se o prompt for pequeno (o teto dos prompts é do chamador).
         const espera = Math.min(retryMs != null ? Math.max(retryMs, 1000) : 2000 * 2 ** tent, 15000);
-        ultimo = new AIError(`A requisição excedeu o limite de tokens por minuto da Groq.`, { status: 429, code: 'rate_limit', retryAfterMs: espera });
+        ultimo = new AIError(`A requisição excedeu o limite de tokens por minuto do ${voz}.`, { status: 429, code: 'rate_limit', retryAfterMs: espera, provider: nome });
         if (espera <= MAX_INLINE_WAIT_TPM_MS) { await sleep(espera + Math.floor(Math.random() * 250)); continue; }
         throw ultimo;
       }
-      const e = new AIError(`Groq recusou a requisição (${r.status}): ${detalhe}`.slice(0, 400), { status: 502, code: r.status === 400 ? 'bad_request' : 'upstream' });
+      const e = new AIError(`${voz} recusou a requisição (${r.status}): ${detalhe}`.slice(0, 400), { status: 502, code: r.status === 400 ? 'bad_request' : 'upstream', provider: nome });
       e.httpStatus = r.status; e.detalhe = detalhe; throw e;
     } catch (err) {
       clearTimeout(timer);
       if (err instanceof AIError) throw err;
       const abort = err && (err.name === 'AbortError' || /aborted/i.test(String(err.message)));
-      ultimo = new AIError(abort ? `A IA demorou mais de ${Math.round(c.timeout / 1000)}s para responder (${rotulo}).` : `Falha de rede ao chamar a Groq: ${String(err.message || err).slice(0, 120)}`, { status: abort ? 504 : 502, code: abort ? 'timeout' : 'network' });
-      if (tent < c.retries) { await sleep(500 * 2 ** tent); continue; }
+      ultimo = new AIError(abort ? `A IA demorou mais de ${Math.round(opts.timeout / 1000)}s para responder (${rotulo}).` : `Falha de rede ao chamar o ${voz}: ${String(err.message || err).slice(0, 120)}`, { status: abort ? 504 : 502, code: abort ? 'timeout' : 'network', provider: nome });
+      if (tent < opts.retries) { await sleep(500 * 2 ** tent); continue; }
       throw ultimo;
     }
   }
-  throw ultimo || new AIError('Falha desconhecida ao chamar a Groq.');
+  throw ultimo || new AIError(`Falha desconhecida ao chamar o ${voz}.`, { provider: nome });
 }
 
 function validarJson(texto, schema) {
@@ -169,17 +257,8 @@ function validarJson(texto, schema) {
   return j;
 }
 
-// API principal. Retorna { text, usage, model, provider }.
-export async function generateAI(params) {
-  const c = cfg();
-  if (c.provider !== 'groq') throw new AIError(`AI_PROVIDER "${c.provider}" não suportado. Use "groq".`, { status: 500, code: 'provider' });
-  if (!c.key) throw new AIError('GROQ_API_KEY não configurada no servidor.', { status: 503, code: 'no_key' });
-  if (Date.now() < blockedUntil) throw new AIError(`Limite da Groq atingido — tente novamente em ~${Math.ceil((blockedUntil - Date.now()) / 60000)} min.`, { status: 429, code: 'rate_limit', retryAfterMs: blockedUntil - Date.now() });
-
-  const conf = params.config || {};
-  const messages = await montarMensagens(params, c);
-  const schema = conf.responseSchema ? toJsonSchema(conf.responseSchema) : null;
-  const querJson = !!schema || /json/i.test(conf.responseMimeType || '');
+// ── PROVEDOR GROQ (OpenAI-compatível) ──
+async function rodarGroq(messages, conf, schema, querJson, c, params) {
   const model = params.model || c.model;
   const base = { model, messages, temperature: conf.temperature ?? 0.4, max_completion_tokens: Math.min(conf.maxOutputTokens || c.maxOut, c.maxOut) };
   if (nomeDoModelo(model)) base.reasoning_effort = 'low';
@@ -187,11 +266,11 @@ export async function generateAI(params) {
   const url = c.base + '/chat/completions';
 
   const rodar = async (body, rotulo) => {
-    const r = await chamar(url, { method: 'POST', headers, body: JSON.stringify(body) }, c, rotulo);
+    const r = await chamar(url, { method: 'POST', headers, body: JSON.stringify(body) }, { ...c, nome: 'groq' }, rotulo);
     const j = await r.json();
     const choice = j.choices && j.choices[0];
     const text = (choice && choice.message && choice.message.content) || '';
-    if (choice && choice.finish_reason === 'length' && querJson) throw new AIError('A resposta da IA foi cortada por limite de tamanho.', { status: 502, code: 'truncated' });
+    if (choice && choice.finish_reason === 'length' && querJson) throw new AIError('A resposta da IA foi cortada por limite de tamanho.', { status: 502, code: 'truncated', provider: 'groq' });
     return { text, usage: j.usage || null, model: j.model || model, provider: 'groq' };
   };
 
@@ -216,17 +295,94 @@ export async function generateAI(params) {
       return out;
     } catch (err) {
       ultimoErro = err;
-      if (err instanceof AIError && !['bad_request', 'truncated'].includes(err.code)) throw err; // rede/limite/chave: não mascarar
+      if (err instanceof AIError && !['bad_request', 'truncated'].includes(err.code)) throw err; // rede/limite/chave: não mascarar (o roteador pode cair para o Gemini)
     }
   }
-  throw (ultimoErro instanceof AIError ? ultimoErro : new AIError('A IA não devolveu uma resposta JSON válida: ' + (ultimoErro && ultimoErro.message), { status: 502, code: 'invalid_json' }));
+  throw (ultimoErro instanceof AIError ? ultimoErro : new AIError('A IA não devolveu uma resposta JSON válida: ' + (ultimoErro && ultimoErro.message), { status: 502, code: 'invalid_json', provider: 'groq' }));
+}
+
+// ── PROVEDOR GEMINI (generateContent) ──
+async function rodarGemini(messages, conf, schema, querJson, c, params) {
+  const contents = messages.filter(m => m.role !== 'system').map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
+  const sys = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n');
+  const body = {
+    contents,
+    ...(sys ? { systemInstruction: { parts: [{ text: sys }] } } : {}),
+    generationConfig: {
+      temperature: conf.temperature ?? 0.4,
+      maxOutputTokens: Math.min(conf.maxOutputTokens || c.maxOut, c.maxOut),
+      ...(querJson ? { responseMimeType: 'application/json' } : {}),
+      ...(schema ? { responseSchema: schemaGemini(schema) } : {})
+    }
+  };
+  const url = `${c.base}/models/${c.model}:generateContent`;
+  const r = await chamar(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': c.key }, body: JSON.stringify(body) }, { ...c, nome: 'gemini' }, 'texto/json');
+  const j = await r.json();
+  const cand = (j.candidates || [])[0];
+  const text = ((cand && cand.content && cand.content.parts) || []).map(p => p.text || '').join('');
+  if (j.promptFeedback && j.promptFeedback.blockReason) throw new AIError(`O Gemini recusou o conteúdo por política de segurança (${j.promptFeedback.blockReason}).`, { status: 502, code: 'bad_request', provider: 'gemini' });
+  if (cand && cand.finishReason === 'MAX_TOKENS' && querJson) throw new AIError('A resposta da IA foi cortada por limite de tamanho.', { status: 502, code: 'truncated', provider: 'gemini' });
+  if (!text && !schema && !querJson) { /* permitido (resposta vazia) — comportamento idêntico ao da Groq */ }
+  const usage = j.usageMetadata ? { prompt_tokens: j.usageMetadata.promptTokenCount, completion_tokens: j.usageMetadata.candidatesTokenCount, total_tokens: j.usageMetadata.totalTokenCount } : null;
+  return { text, usage, model: c.model, provider: 'gemini' };
+}
+
+// Erros que VALEM a troca de provedor (fallback no roteador).
+const TROCA_DE_PROVEDOR = new Set(['rate_limit', 'upstream', 'timeout', 'network', 'auth', 'truncated', 'invalid_json', 'bad_request']);
+
+// Estimativa de tokens (heurística: ~4 caracteres por token) para decidir Groq × Gemini no modo auto.
+const tokensEst = (obj) => Math.max(1, Math.round(JSON.stringify(obj).length / 4));
+
+// API principal. Retorna { text, usage, model, provider }.
+export async function generateAI(params) {
+  const r = roteador();
+  if (!r.modo || (!r.temGroq && !r.temGem)) throw new AIError('Configure GROQ_API_KEY e/ou GEMINI_API_KEY no servidor.', { status: 503, code: 'no_key' });
+  if (!aiConfigured()) throw new AIError(`AI_PROVIDER "${r.modo}" exige a chave correspondente no servidor.`, { status: 503, code: 'no_key' });
+
+  const conf = params.config || {};
+  const schema = conf.responseSchema ? toJsonSchema(conf.responseSchema) : null;
+  const querJson = !!schema || /json/i.test(conf.responseMimeType || '');
+  const messages = await montarMensagens(params, r.c);
+
+  // Fila de provedores na ordem de tentativa.
+  const fila = [];
+  if (r.modo === 'auto' && r.temGroq && r.temGem) {
+    const cabeNaGroq = tokensEst(params) <= r.c.groq.tpm * 0.72; // prompt + saída entram no teto do minuto
+    const primeiro = cabeNaGroq ? 'groq' : 'gemini';
+    fila.push(primeiro, primeiro === 'groq' ? 'gemini' : 'groq');
+  } else if (r.modo === 'auto') {
+    fila.push(r.temGem ? 'gemini' : 'groq');
+  } else {
+    fila.push(r.modo);
+  }
+
+  let ultimo = null; let todosBloqueados = true;
+  for (const nome of fila) {
+    if (!disponivel(nome)) { ultimo = ultimo || new AIError(`Limite do ${rotuloVoz(nome)} atingido — tente de novo em ~${Math.ceil((bloqueadoAte[nome] - Date.now()) / 60000)} min.`, { status: 429, code: 'rate_limit', retryAfterMs: bloqueadoAte[nome] - Date.now(), provider: nome }); continue; }
+    todosBloqueados = false;
+    const cc = nome === 'gemini' ? r.c.gemini : r.c.groq;
+    try {
+      return nome === 'gemini'
+        ? await rodarGemini(messages, conf, schema, querJson, cc, params)
+        : await rodarGroq(messages, conf, schema, querJson, cc, params);
+    } catch (err) {
+      ultimo = err;
+      if (err.code === 'unsupported_media' || err.code === 'pdf_unavailable' || err.code === 'pdf_sem_texto') throw err; // independe do provedor
+      if (!(err instanceof AIError) || !TROCA_DE_PROVEDOR.has(err.code)) throw err;
+    }
+  }
+  if (todosBloqueados && fila.length > 1) {
+    const ms = Math.max(Math.min(bloqueadoAte[fila[0]] - Date.now(), bloqueadoAte[fila[1]] - Date.now()), 1000);
+    throw new AIError(`Nenhum provedor de IA livre agora (Groq/Gemini em limite) — tente de novo em ~${Math.ceil(ms / 60000)} min.`, { status: 429, code: 'rate_limit', retryAfterMs: ms });
+  }
+  throw (ultimo || new AIError('Nenhum provedor de IA disponível.', { status: 503, code: 'no_key' }));
 }
 
 // Transcrição de áudio (Groq Whisper). audioBase64 sem prefixo data:.
 export async function transcribeAudio({ audioBase64, mime = 'audio/webm', prompt = '', language = 'pt' }) {
-  const c = cfg();
-  if (!c.key) throw new AIError('GROQ_API_KEY não configurada no servidor.', { status: 503, code: 'no_key' });
-  if (Date.now() < blockedUntil) throw new AIError('Limite da Groq atingido — tente novamente em instantes.', { status: 429, code: 'rate_limit' });
+  const c = cfg().groq;
+  if (!c.key) throw new AIError('GROQ_API_KEY não configurada no servidor (transcrição usa o Whisper da Groq).', { status: 503, code: 'no_key' });
+  if (!disponivel('groq')) throw new AIError('Limite da Groq atingido — tente novamente em instantes.', { status: 429, code: 'rate_limit', provider: 'groq' });
   const ext = ({ 'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/flac': 'flac' })[mime] || 'webm';
   const buf = Buffer.from(audioBase64, 'base64');
   const form = new FormData();
@@ -236,9 +392,9 @@ export async function transcribeAudio({ audioBase64, mime = 'audio/webm', prompt
   form.append('temperature', '0');
   form.append('response_format', 'json');
   if (prompt) form.append('prompt', String(prompt).slice(0, 800)); // Whisper aceita um prompt curto (glossário / contexto)
-  const r = await chamar(c.base + '/audio/transcriptions', { method: 'POST', headers: { Authorization: 'Bearer ' + c.key }, body: form }, { ...c, timeout: Math.max(c.timeout, 60000) }, 'transcrição');
+  const r = await chamar(c.base + '/audio/transcriptions', { method: 'POST', headers: { Authorization: 'Bearer ' + c.key }, body: form }, { ...c, nome: 'groq', timeout: Math.max(c.timeout, 60000) }, 'transcrição');
   const j = await r.json();
   return String(j.text || '').trim();
 }
 
-export function _resetForTests() { blockedUntil = 0; }
+export function _resetForTests() { bloqueadoAte.groq = 0; bloqueadoAte.gemini = 0; }
