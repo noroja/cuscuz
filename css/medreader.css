@@ -893,7 +893,8 @@ mark.mr-pulso { outline: 2px solid #f97316; outline-offset: 2px; }
   background: #f5f7f9; color: #27394a; border-radius: 2px;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
 }
-.medreader-shell #medreader-container.medreader-theme-sepia .medreader-content { background: #f3ead6; color: #3d3022; }
+/* Sépia como filtro: pinta também os fundos brancos que a própria apostila define dentro da folha */
+.medreader-shell #medreader-container.medreader-theme-sepia .medreader-content { background: #fbf8f1; color: #27394a; filter: sepia(0.95) saturate(0.9) brightness(0.93) contrast(1.02); }
 .medreader-shell #medreader-container.medreader-theme-night .medreader-content { background: #f5f7f9; filter: invert(1) hue-rotate(180deg); box-shadow: none; }
 .medreader-shell #medreader-container.medreader-theme-night .medreader-content :is(img, video, canvas, picture, iframe) { filter: invert(1) hue-rotate(180deg); }
 .medreader-shell .medreader-estado { color: #e5edf7; }
