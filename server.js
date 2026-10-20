@@ -2375,7 +2375,10 @@ app.post('/api/questions/hardworq/sync', async (req, res) => {
       }
       if (IS_SERVERLESS) {
         const result = await runHardworqSync({ areas, anos, grupos_prova, qtd_maxima, ids_doencas, idTurma, budgetMs: 90000 });
-        return res.status(result.ok ? 200 : (result.authFailed ? 401 : 502)).json({ ...result, background: false });
+        // O cliente já baixa o banco por /api/questions/bank; não devolve milhares
+        // de questões no corpo desta resposta de sincronização.
+        const { questions: _questions, ...summary } = result;
+        return res.status(result.ok ? 200 : (result.authFailed ? 401 : 502)).json({ ...summary, background: false });
       }
       // Render/local: mantém a resposta imediata e o trabalho em segundo plano.
       if (!HWQ_BG.running) {
