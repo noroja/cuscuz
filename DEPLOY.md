@@ -85,23 +85,33 @@ A Vercel roda o mesmo `server.js`, mas em modo **função serverless**: o disco 
 - **`api/index.js`** exporta o app Express (a Vercel chama essa função para tudo que não é arquivo estático).
 - O `server.js` detecta o ambiente (`VERCEL`/`AWS_LAMBDA_FUNCTION_NAME`/`VERCEL_ENV` via `src/fs-safe.js`) e **não** chama `app.listen()`. Fora da Vercel nada muda: `npm start` continua subindo o servidor HTTP normal.
 - **`scripts/build-public.js`** copia os assets (HTML, CSS, JS, ícones, manifest) para `public/` durante o build. A Vercel serve `public/**` pelo CDN e **ignora** o `express.static()`.
-- **`vercel.json`** define `buildCommand`, `maxDuration: 60` na função e os `includeFiles` que precisam chegar ao runtime (`index.html`, `acervo-manifest.json`, `drive-tree-snapshot.json`, `data/**`).
+- **`vercel.json`** define `buildCommand`, `maxDuration: 300` na função e os `includeFiles` que precisam chegar ao runtime (`index.html`, `acervo-manifest.json`, `drive-tree-snapshot.json`, `data/**`).
 
 ## Persistência de estado
 
 Na Vercel **nada** é gravado no disco do projeto. Todo o estado mutável vai para `DATA_DIR`, que em serverless aponta para `/tmp/cuscuz-med`:
 
-- banco de questões de trabalho (`questions-bank.json`) — o `data/questions-bank.json` do repositório serve apenas de **semente** somente-leitura;
-- cache do radar, token/mirror do Hardworq, decks do planner, catálogo de extras, cache das apostilas.
+- banco de questões de trabalho (`questions-bank.json`) — o `data/questions-bank.json` do repositório serve apenas de **semente** somente-leitura; no cold start, se o `/tmp` estiver vazio, o app usa a semente e tenta a cópia mais completa do Supabase Storage;
+- cache do radar, mirror do Hardworq, decks do planner, catálogo de extras, cache das apostilas.
 
-Como `/tmp` é por invocação, o estado durável continua vindo da nuvem (Supabase) e do repositório. As tarefas de background (auto-sync do Hardworq, espelho, varredura de extras) **não** rodam em serverless — são acionadas por requisição/endpoints.
+O **token do Hardworq não fica em arquivo**: ele é gravado com UPSERT na tabela `system_configs` (chave `hwq_token`) e lido do Supabase a cada cold start. O `/tmp` guarda apenas um cache best-effort. Para habilitar, rode uma vez o `supabase-schema.sql` no SQL Editor do Supabase.
+
+Como `/tmp` é por invocação, o estado durável continua vindo da nuvem (Supabase) e do repositório. As tarefas de background (auto-sync do Hardworq, espelho, varredura de extras) **não** rodam em serverless — são acionadas por requisição/endpoints. O webhook do Drive processa a notificação dentro da própria chamada serverless; o cron diário recupera deltas perdidos e renova o canal.
 
 ## Passo a passo
 
 1. Vercel → **Add New… → Project** → importe o repositório do GitHub.
 2. Framework preset: **Other**. Build Command e Output são lidos do `vercel.json` (não precisa mexer).
-3. Em **Settings → Environment Variables**, adicione as mesmas variáveis do Railway (`GROQ_API_KEY`, `HARDWORQ_*`, `SUPABASE_*`, `GOOGLE_DRIVE_*`, etc.).
-4. **Deploy**. O build roda `node scripts/build-public.js` e a função sobe em `api/index.js`.
+3. Em **Settings → Environment Variables**, adicione as variáveis usadas pelo app. Para flashcards e atualizações do Drive:
+   - `GOOGLE_DRIVE_FLASHCARDS_ROOTS` → `ID_DA_PASTA|Caminho opcional` (várias raízes separadas por `;`).
+   - `GOOGLE_SERVICE_ACCOUNT_JSON` → credencial de leitura da conta de serviço com acesso à pasta privada. `GOOGLE_DRIVE_API_KEY` só funciona quando os arquivos são acessíveis por API key.
+   - `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` → gravam o índice e os cartões no Storage privado.
+   - `DRIVE_PUSH_WEBHOOK_URL` → URL pública do deploy terminada em `/webhooks/google-drive`.
+   - `DRIVE_PUSH_WEBHOOK_TOKEN` e `CRON_SECRET` → segredos aleatórios distintos; não os coloque no GitHub.
+   - Mantenha as outras variáveis exigidas pelo app (`APP_PASSWORD`, `GROQ_API_KEY`, `HARDWORQ_*`, etc.).
+4. No **Supabase → SQL Editor**, rode `supabase-schema.sql`. A tabela `system_configs` é o que torna o token do Hardworq durável entre cold starts; sem ela o token cai para o cache efêmero de `/tmp`.
+5. **Deploy**. O build roda `node scripts/build-public.js` e a função sobe em `api/index.js`.
+6. Depois do deploy, chame uma vez `GET /webhooks/google-drive/maintenance` com `Authorization: Bearer <CRON_SECRET>` para iniciar a reconciliação e registrar o canal. O cron diário do `vercel.json` renova o canal e recupera deltas sem polling do Supabase.
 
 ## Cuidados
 
@@ -109,3 +119,4 @@ Como `/tmp` é por invocação, o estado durável continua vindo da nuvem (Supab
 - Nunca copie `acervo-manifest.json`, `drive-tree-snapshot.json` nem `data/**` para `public/`: isso exporia o banco e burlaria a checagem de login do endpoint `/acervo-manifest.json`.
 - Rotas que terminam em extensões estáticas (`.css`, `.js`, `.png`, `.html`, …) **não** são reescritas para a função — são servidas pelo CDN. Se um asset faltar, o resultado é 404 (e não o `index.html`), o que facilita achar erro de caminho.
 - O Mentor IA responde via **SSE** (`text/event-stream`) com keep-alive, para não estourar o tempo da função em respostas longas da IA.
+- A duração máxima da função está configurada em 300 segundos. A importação inicial de pacotes Anki muito grandes pode ultrapassar esse limite; limites efetivos também dependem do plano e das configurações Vercel.

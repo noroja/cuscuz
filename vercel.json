@@ -3,12 +3,15 @@
   "buildCommand": "node scripts/build-public.js",
   "functions": {
     "api/index.js": {
-      "maxDuration": 60,
-      "includeFiles": "{*.html,*.png,*.webmanifest,planner-v2.js,aula-dia.js,acervo-manifest.json,drive-tree-snapshot.json,css/**,js/**,data/**}"
+      "maxDuration": 300,
+      "includeFiles": "{*.html,*.png,*.webmanifest,planner-v2.js,aula-dia.js,acervo-manifest.json,drive-tree-snapshot.json,css/**,js/**,assets/**,data/**}"
     },
     "server.js": {
-      "maxDuration": 60,
-      "includeFiles": "{*.html,*.png,*.webmanifest,planner-v2.js,aula-dia.js,acervo-manifest.json,drive-tree-snapshot.json,css/**,js/**,data/**}"
+      "maxDuration": 300,
+      "includeFiles": "{*.html,*.png,*.webmanifest,planner-v2.js,aula-dia.js,acervo-manifest.json,drive-tree-snapshot.json,css/**,js/**,assets/**,data/**}"
     }
-  }
+  },
+  "crons": [
+    { "path": "/webhooks/google-drive/maintenance", "schedule": "17 6 * * *" }
+  ]
 }

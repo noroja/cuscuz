@@ -1,3 +1,4 @@
+import './src/load-env.js';
 import { selecionar as selecionarQuestoes, norm, acharDoencas } from './src/questoes-aula.js';
 import express from 'express';
 import path from 'path';
@@ -24,8 +25,11 @@ import { varrerExtras, juntar as juntarExtras, lerExtra, STATUS as EXTRA_STATUS,
 import { resetCatalogo } from './src/planner-engine.js';
 import { temConta, emailConta, erroConta, driveFetch, authHeaders, driveFetchWithRetry, cleanDriveId } from './src/drive-auth.js';
 
-import { downloadCatalogFromSupabase, supabaseCatalogReady, ensureSupabaseBucket } from './src/supabase-catalog.js';
+import { downloadCatalogFromSupabase, downloadQuestionsBankFromSupabase, uploadQuestionsBankToSupabase, supabaseCatalogReady, ensureSupabaseBucket } from './src/supabase-catalog.js';
 import { IS_SERVERLESS, TMP_DIR, writableDir, safeReadJson, safeWriteJson } from './src/fs-safe.js';
+import { getSystemConfig, setSystemConfig } from './src/system-config.js';
+import { getFlashcardSyncStatus, readFlashcardManifest, readFlashcardPage, startFlashcardSyncScheduler, syncDriveFlashcards } from './src/drive-flashcards.js';
+import { acceptDriveNotification, queueDriveChange, renewDrivePushChannel, startDrivePushRenewal } from './src/drive-push.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,34 +40,30 @@ const __dirname = path.dirname(__filename);
    continua no Supabase (catálogo/usuários) e no GitHub (.json.gz do banco). */
 const DATA_DIR = writableDir(path.join(__dirname, 'data')) || TMP_DIR;
 
-// Carrega o .env sem dependência externa — variáveis já definidas no ambiente têm prioridade
-function loadDotEnv() {
-  try {
-    const envPath = path.join(__dirname, '.env');
-    if (!fs.existsSync(envPath)) return;
-    const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
-    for (const line of lines) {
-      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
-      if (!m) continue;
-      let value = m[2].trim();
-      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-      }
-      if (!(m[1] in process.env)) process.env[m[1]] = value;
-    }
-  } catch (err) {
-    console.warn('⚠️ Não foi possível carregar o .env:', err.message);
-  }
-}
-loadDotEnv();
-
 const app = express();
+const catalogEventClients = new Set();
 // Em hospedagens (Render, Railway...) a porta vem do ambiente; 3000 é o padrão local
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const HOST = '0.0.0.0';
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Google Drive chama este webhook sem sessão do Cuscuz. O segredo do canal e
+// o ID persistido do canal autenticam a notificação; seu conteúdo só dispara o delta.
+app.post('/webhooks/google-drive', async (req, res) => {
+  if (!acceptDriveNotification(req.headers)) return res.status(403).end();
+  const state = String(req.headers['x-goog-resource-state'] || '');
+  if (state === 'change' || state === 'update' || state === 'trash') {
+    if (IS_SERVERLESS) {
+      try { await processDriveUpdate(); }
+      catch (error) { console.error('[Drive Push] Falha processando notificação:', error.message); return res.status(500).end(); }
+    } else {
+      queueDriveChange(processDriveUpdate);
+    }
+  }
+  res.status(204).end();
+});
 
 // Secret for media ticket encryption (links /m/...)
 const AUTH_SECRET = crypto.createHash('sha256').update('cuscuz-media-ticket|' + (process.env.APP_PASSWORD || 'default-secret-change-me')).digest();
@@ -1391,6 +1391,7 @@ let _bankCache = null;
 let _bankTimer = null;
 let _bankDirty = false;
 let _bankBase = 0; // quantas questões o repositório já tinha quando o servidor subiu
+let _lastBankUpload = 0;
 // O banco pré-catalogado vem no repositório compactado (.json.gz, gerado pelo GitHub Actions); o .json é o arquivo de trabalho
 function readQuestionsBank() {
   if (_bankCache) return _bankCache;
@@ -1430,6 +1431,18 @@ async function preloadQuestionsBank() {
       _bankBase = data.length;
       console.log(`📚 Banco de questões pré-carregado: ${data.length} questões`);
     }
+
+    // Cold start sem seed local (ou seed mais antigo): tenta a cópia durável do
+    // Supabase Storage. Falha é silenciosa — o app segue com o que já tem.
+    if (supabaseCatalogReady()) {
+      const nuvem = await downloadQuestionsBankFromSupabase();
+      if (Array.isArray(nuvem) && nuvem.length > (_bankCache?.length || 0)) {
+        _bankCache = nuvem;
+        _bankBase = nuvem.length;
+        safeWriteJson(QUESTIONS_BANK_FILE, nuvem);
+        console.log(`📚 Banco de questões atualizado pela nuvem: ${nuvem.length} questões`);
+      }
+    }
   } catch (err) {
     console.warn('Pré-carregamento do banco falhou (carregará sob demanda):', err.message);
   }
@@ -1438,25 +1451,37 @@ async function preloadQuestionsBank() {
 // Inicia pré-carregamento em background (não bloqueia o servidor)
 preloadQuestionsBank();
 
-// Escrita: atualiza a memória na hora e grava o arquivo (compacto) em segundo plano, sem bloquear o servidor
+// Escrita: atualiza a memória na hora e grava o arquivo (compacto) em segundo plano, sem bloquear o servidor.
+// Em serverless o caminho é /tmp (efêmero); a cópia durável vai para o Supabase Storage,
+// em background e com throttle — nunca bloqueia nem derruba a requisição.
+function uploadBankSoon() {
+  if (!supabaseCatalogReady() || !Array.isArray(_bankCache) || !_bankCache.length) return;
+  if (Date.now() - _lastBankUpload < 60 * 1000) return;
+  _lastBankUpload = Date.now();
+  uploadQuestionsBankToSupabase(_bankCache).catch(() => {});
+}
+
 function flushQuestionsBank() {
-  try {
-    const dir = path.dirname(QUESTIONS_BANK_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const tmp = QUESTIONS_BANK_FILE + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(_bankCache || []), 'utf8');
-    fs.renameSync(tmp, QUESTIONS_BANK_FILE);
+  if (!Array.isArray(_bankCache)) _bankCache = [];
+  // safeWriteJson é atômico (tmp + rename) e NUNCA lança: EROFS/ENOENT viram false.
+  const ok = safeWriteJson(QUESTIONS_BANK_FILE, _bankCache);
+  if (ok) {
     _bankDirty = false;
-    return true;
-  } catch (err) {
-    console.error('Erro ao escrever questions-bank.json:', err.message);
-    return false;
+    uploadBankSoon();
+  } else if (!IS_SERVERLESS) {
+    console.error('Erro ao escrever questions-bank.json: sistema de arquivos não gravável.');
   }
+  return ok;
 }
 function writeQuestionsBank(questions) {
   _bankCache = questions; _bankDirty = true;
   clearTimeout(_bankTimer);
-  _bankTimer = setTimeout(flushQuestionsBank, 3000);
+  if (IS_SERVERLESS) {
+    // Não há garantia de que o timer rode depois da resposta: grava já no /tmp.
+    flushQuestionsBank();
+  } else {
+    _bankTimer = setTimeout(flushQuestionsBank, 3000);
+  }
   return true;
 }
 const _sairLimpo = () => { clearTimeout(_bankTimer); if (_bankDirty) flushQuestionsBank(); process.exit(0); };
@@ -1641,35 +1666,70 @@ const HWQ = {
   mirror: !/^(0|false|off)$/i.test(process.env.HARDWORQ_MIRROR || ''),
   mirrorMax: Math.max(500, parseInt(process.env.HARDWORQ_MIRROR_MAX, 10) || 2000000) // sem limite prático
 };
-const HWQ_STATE = { userToken: null, lastLoginAt: null, lastLoginOk: null, lastSyncAt: null, lastSyncOk: null, lastSyncResult: null, doencas: null, doencasAt: 0 };
+const HWQ_STATE = { userToken: null, tokenStore: null, lastLoginAt: null, lastLoginOk: null, lastSyncAt: null, lastSyncOk: null, lastSyncResult: null, doencas: null, doencasAt: 0 };
 
-// Login contínuo: o token do aluno é persistido em disco e sobrevive a restarts.
+// Login contínuo: o token do aluno é estado DURÁVEL e vive no Supabase
+// (system_configs → chave `hwq_token`). Na Vercel /tmp é apagado a cada cold
+// start, então arquivo local só serve como cache efêmero de fallback.
 // Só refaz o login de verdade quando a API recusar o token (auth:false) — relogin automático.
-const HWQ_TOKEN_FILE = path.join(DATA_DIR, 'hwq-token.json');
+const HWQ_TOKEN_KEY = 'hwq_token';
+const HWQ_TOKEN_FILE = path.join(TMP_DIR, 'hwq-token.json'); // legado/dev: NUNCA fonte da verdade
+const HWQ_TOKEN_LEGACY = path.join(DATA_DIR, 'hwq-token.json'); // migração: Render/local
 
-function saveHwqToken(token) {
-  try {
-    const dir = path.dirname(HWQ_TOKEN_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(HWQ_TOKEN_FILE, JSON.stringify({ token, savedAt: new Date().toISOString() }, null, 2), 'utf8');
-  } catch (err) {
-    console.warn('⚠️ [Hardworq] Não foi possível salvar o token em disco:', err.message);
+async function saveHwqToken(token) {
+  if (!token) return false;
+  const record = { token: String(token), savedAt: new Date().toISOString() };
+
+  // UPSERT no Supabase. O helper também grava um cache best-effort em /tmp,
+  // que nunca é considerado persistente.
+  const durable = await setSystemConfig(HWQ_TOKEN_KEY, record);
+  try { safeWriteJson(HWQ_TOKEN_FILE, record); } catch (_) { /* cache opcional */ }
+
+  HWQ_STATE.tokenStore = durable ? 'supabase' : 'tmp';
+  if (durable) {
+    console.log('🔑 [Hardworq] Token persistido no Supabase (system_configs).');
+  } else {
+    console.warn('⚠️ [Hardworq] Token salvo apenas no cache efêmero (/tmp). Configure o Supabase e rode supabase-schema.sql para torná-lo durável.');
   }
+  return durable;
 }
 
-function loadHwqToken() {
+async function loadHwqToken() {
+  // 1) Fonte da verdade: Supabase.
   try {
-    if (!fs.existsSync(HWQ_TOKEN_FILE)) return;
-    const j = JSON.parse(fs.readFileSync(HWQ_TOKEN_FILE, 'utf8'));
+    const j = await getSystemConfig(HWQ_TOKEN_KEY, null);
     if (j && j.token) {
       HWQ_STATE.userToken = String(j.token);
       HWQ_STATE.lastLoginOk = true; // otimista: se estiver vencido, o relogin automático cuida
       HWQ_STATE.lastLoginAt = j.savedAt || null;
-      console.log('🔑 [Hardworq] Token reutilizado do disco — sessão contínua.');
+      HWQ_STATE.tokenStore = 'supabase';
+      console.log('🔑 [Hardworq] Token carregado do Supabase — sessão contínua.');
+      return true;
     }
-  } catch (_) { /* token corrompido: segue sem token, relogin cuida */ }
+  } catch (err) {
+    console.warn('⚠️ [Hardworq] Falha ao carregar token do Supabase:', err.message);
+  }
+
+  // 2) Fallback: cache local de uma execução anterior (dev, Render ou Supabase fora do ar).
+  //    Se veio do arquivo antigo, tenta migrá-lo para o Supabase em background.
+  for (const arquivo of [HWQ_TOKEN_FILE, HWQ_TOKEN_LEGACY]) {
+    try {
+      const j = safeReadJson(arquivo, null);
+      if (j && j.token) {
+        HWQ_STATE.userToken = String(j.token);
+        HWQ_STATE.lastLoginOk = true;
+        HWQ_STATE.lastLoginAt = j.savedAt || null;
+        HWQ_STATE.tokenStore = 'tmp';
+        console.warn(`⚠️ [Hardworq] Token recuperado de cache local (${arquivo}) — tentando migrar para o Supabase.`);
+        saveHwqToken(j.token).catch(() => {});
+        return true;
+      }
+    } catch (_) { /* tenta o próximo */ }
+  }
+  return false;
 }
-loadHwqToken();
+// Promise aguardada por toda chamada ao Hardworq: garante o token antes do request.
+const hwqTokenReady = loadHwqToken();
 
 const HWQ_AREAS_DEFAULT = ['Clínica Médica', 'Cirurgia Geral', 'Pediatria', 'Ginecologia e Obstetrícia', 'Medicina Preventiva'];
 const HWQ_ANOS_DEFAULT = [2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018];
@@ -1696,6 +1756,8 @@ function hwqHeaders(url, { withUserToken = true } = {}) {
 
 // Chamada HTTP crua (sem relogin); normaliza erro de sessão (auth:false / "Invalid User")
 async function hwqFetch(url, { method = 'GET', body = null, timeoutMs = 20000, withUserToken = true } = {}) {
+  // Cold start: carrega o token do Supabase antes de montar os headers.
+  try { await hwqTokenReady; } catch (_) { /* relogin abaixo resolve */ }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -1721,6 +1783,7 @@ async function hwqFetch(url, { method = 'GET', body = null, timeoutMs = 20000, w
 // Login email/senha: PUT /login retorna obj.token, que vira o header UserToken das chamadas seguintes
 async function hwqLogin({ force = false } = {}) {
   if (!HWQ.email || !HWQ.senha) return { ok: false, error: 'HARDWORQ_EMAIL/HARDWORQ_SENHA não configurados no .env do servidor.' };
+  try { await hwqTokenReady; } catch (_) { /* segue para login manual */ }
   if (!force && HWQ_STATE.userToken && HWQ_STATE.lastLoginOk) return { ok: true, token: HWQ_STATE.userToken, cached: true };
   const r = await hwqFetch(`${HWQ.hwqBase}/login`, {
     method: 'PUT',
@@ -1733,9 +1796,10 @@ async function hwqLogin({ force = false } = {}) {
   HWQ_STATE.lastLoginOk = ok;
   HWQ_STATE.userToken = token || null;
   if (ok) {
-    saveHwqToken(token);
-    console.log('🔑 [Hardworq] Login ok — token em cache (memória + disco).');
+    await saveHwqToken(token);
+    console.log('🔑 [Hardworq] Login ok — token em memória + persistência durável.');
   } else {
+    // Não apaga o token durável em falha transitória: o próximo request tenta de novo.
     try { fs.rmSync(HWQ_TOKEN_FILE, { force: true }); } catch (_) {}
     console.warn('⚠️ [Hardworq] Login falhou:', (r.data && r.data.msg) || r.error || `HTTP ${r.status}`);
   }
@@ -2009,6 +2073,8 @@ repairMojibakeInBank();
 // (HARDWORQ_AUTO_GIT=1 no .env; silencioso e com debounce de 5 min — sem git/GitHub, só ignora)
 let plUltimoAutoGit = 0;
 function autoGitBanco() {
+  // Vercel não tem repositório gravável nem git: a persistência durável é o Supabase.
+  if (IS_SERVERLESS) return;
   if (!/^(1|true|on)$/i.test(process.env.HARDWORQ_AUTO_GIT || '')) return;
   const agora = Date.now();
   if (agora - plUltimoAutoGit < 5 * 60 * 1000) return;
@@ -2064,7 +2130,8 @@ async function runHardworqSync(filters = {}) {
 }
 
 // Status da integração (painel do app)
-app.get('/api/questions/hardworq/status', (req, res) => {
+app.get('/api/questions/hardworq/status', async (req, res) => {
+  try { await hwqTokenReady; } catch (_) { /* status continua válido sem token */ }
   const bank = readQuestionsBank();
   const hwqCount = bank.filter(q => q.source && String(q.source).startsWith('Hardworq')).length;
   res.json({
@@ -2074,7 +2141,8 @@ app.get('/api/questions/hardworq/status', (req, res) => {
     authMode: (HWQ.email && HWQ.senha) ? 'login' : (HWQ.cookie ? 'cookie' : 'nenhum'),
     emailConfigured: !!HWQ.email,
     userTokenActive: !!HWQ_STATE.userToken,
-    tokenPersisted: fs.existsSync(HWQ_TOKEN_FILE),
+    tokenPersisted: HWQ_STATE.tokenStore === 'supabase',
+    tokenStore: HWQ_STATE.tokenStore || 'none',
     lastLoginAt: HWQ_STATE.lastLoginAt,
     lastLoginOk: HWQ_STATE.lastLoginOk,
     cookieConfigured: !!HWQ.cookie,
@@ -3503,6 +3571,31 @@ registerPlannerV3(app, {
     return buf;
   }
 });
+
+// Biblioteca compartilhada de flashcards extraídos automaticamente do Google Drive.
+app.get('/api/flashcards/library/status', (req, res) => res.json({ success: true, status: getFlashcardSyncStatus() }));
+app.get('/api/flashcards/library/decks', async (req, res) => {
+  try {
+    const manifest = await readFlashcardManifest(supabase);
+    res.set('Cache-Control', 'private, max-age=60');
+    res.json({ success: true, generatedAt: manifest.generatedAt, decks: (manifest.decks || []).map(({ id, name, cardCount, sourceName, sourcePath }) => ({ id, name, cardCount, sourceName, sourcePath })) });
+  } catch (error) { res.status(503).json({ success: false, error: error.message }); }
+});
+app.get('/api/flashcards/library/decks/:deckId/cards', async (req, res) => {
+  try {
+    const page = await readFlashcardPage(supabase, String(req.params.deckId || '').slice(0, 64), req.query.offset, req.query.limit);
+    if (!page) return res.status(404).json({ success: false, error: 'Deck não encontrado' });
+    res.set('Cache-Control', 'private, max-age=300');
+    res.json({ success: true, ...page });
+  } catch (error) { res.status(503).json({ success: false, error: error.message }); }
+});
+app.post('/api/flashcards/library/sync', async (req, res) => {
+  try {
+    if (req.user?.role !== 'admin') return res.status(403).json({ success: false, error: 'Apenas administradores podem iniciar a sincronização.' });
+    const result = await syncDriveFlashcards(supabase, { force: req.body?.force === true });
+    res.json(result);
+  } catch (error) { res.status(503).json({ success: false, error: error.message }); }
+});
 registerApostilaReader(app);
 registerMedreaderMarcas(app, { getSupabase: () => supabase });
 
@@ -3536,7 +3629,11 @@ app.get('/acervo-manifest.json', async (req, res, next) => {
     const ex = lerExtra();
     const sig = [ex.generatedAt, (ex.videos || []).length, (ex.materials || []).length, process.env.GOOGLE_DRIVE_FOLDER_ID || ''].join('|');
     if (!_manifCache || _manifCache.sig !== sig) {
-      const corpo = Buffer.from(JSON.stringify(juntarExtras(JSON.parse(fs.readFileSync(path.join(__dirname, 'acervo-manifest.json'), 'utf8')))));
+      // Manifest empacotado é somente-leitura (e pode faltar em bundle mínimo).
+      // Se não existir, monta a resposta com o catálogo já carregado do Supabase/Drive.
+      const base = safeReadJson(path.join(__dirname, 'acervo-manifest.json'), null)
+        || { generatedAt: ex.generatedAt || null, roots: [], videos: [], materials: [], folders: {} };
+      const corpo = Buffer.from(JSON.stringify(juntarExtras(base)));
       _manifCache = { sig, raw: corpo, gz: zlib.gzipSync(corpo, { level: 6 }), etag: '"' + crypto.createHash('md5').update(sig).digest('hex') + '"' };
     }
     res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('ETag', _manifCache.etag); res.setHeader('Vary', 'Accept-Encoding');
@@ -3546,12 +3643,61 @@ app.get('/acervo-manifest.json', async (req, res, next) => {
   } catch (_) { next(); }
 });
 // Varredura das pastas extras do Drive (em segundo plano; refaz a cada 6h)
-async function rodarExtras() { try { const r = await varrerExtras(); if (r) { resetCatalogo(); console.log(`📂 [Extras] ${r.videos} vídeos e ${r.materials} materiais das pastas extras.`); } } catch (e) { console.warn('⚠️ [Extras]', e.message); } }
-// repete depois de terminar cada varredura (intervalo em segundos; padrão 30min para poupar cota da API)
-const EXTRA_PAUSA = Math.max(60, parseInt(process.env.EXTRA_SCAN_S, 10) || 1800) * 1000;
-if (!IS_SERVERLESS) setTimeout(function cicloExtras() { rodarExtras().finally(() => setTimeout(cicloExtras, EXTRA_PAUSA)); }, 3000);
+async function rodarExtras() { try { const r = await varrerExtras(); if (r) { resetCatalogo(); console.log(`📂 [Extras] ${r.videos} vídeos e ${r.materials} materiais das pastas extras.`); } return r; } catch (e) { console.warn('⚠️ [Extras]', e.message); return null; } }
+async function processDriveUpdate() {
+  const result = await rodarExtras();
+  const flashcardStatus = getFlashcardSyncStatus();
+  const flashcardsConfigured = flashcardStatus.configured && flashcardStatus.enabled;
+  let flashcardsChanged = false;
+  if (flashcardsConfigured && result?.modo === 'delta' && Array.isArray(result.changes) && result.changes.length) {
+    const outcome = await syncDriveFlashcards(supabase, { changes: result.changes }).catch(error => { console.warn('[Flashcards] Delta por evento falhou:', error.message); return null; });
+    flashcardsChanged = !!outcome && !outcome.unchanged && !outcome.disabled;
+  } else if (flashcardsConfigured && result?.modo === 'full') {
+    const outcome = await syncDriveFlashcards(supabase).catch(error => { console.warn('[Flashcards] Reconciliação após full sync falhou:', error.message); return null; });
+    flashcardsChanged = !!outcome && !outcome.disabled;
+  }
+  if (result && (result.modo === 'full' || result.catalogChanged || flashcardsChanged)) {
+    const event = `event: catalog-updated\ndata: ${JSON.stringify({ generatedAt: new Date().toISOString(), mode: result.modo })}\n\n`;
+    for (const client of catalogEventClients) client.write(event);
+  }
+  return result;
+}
+// Vercel não preserva timers nem memória entre invocações. O cron chama esta rota
+// para recuperar deltas perdidos e renovar o canal do Drive.
+app.get('/webhooks/google-drive/maintenance', async (req, res) => {
+  const expected = String(process.env.CRON_SECRET || '');
+  const supplied = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const a = Buffer.from(expected), b = Buffer.from(supplied);
+  if (!expected || a.length !== b.length || !crypto.timingSafeEqual(a, b)) return res.status(401).json({ success: false, error: 'Unauthorized' });
+  try {
+    const result = await processDriveUpdate();
+    const channel = await renewDrivePushChannel();
+    return res.json({ success: true, mode: result?.modo || null, channelActive: !!channel.active, channelError: channel.error || null });
+  } catch (error) {
+    console.error('[Drive maintenance] Falha:', error.message);
+    return res.status(503).json({ success: false, error: error.message });
+  }
+});
+// Push é o caminho normal. Uma reconciliação diária recupera notificações perdidas;
+// não consulta o Supabase e, com token válido, só lê a Changes API incremental.
+const EXTRA_RECONCILE_MS = 24 * 60 * 60 * 1000;
+let drivePushRenewalStarted = false;
+if (!IS_SERVERLESS) setTimeout(async function cicloExtras() {
+  await processDriveUpdate();
+  if (!drivePushRenewalStarted) drivePushRenewalStarted = startDrivePushRenewal(processDriveUpdate);
+  setTimeout(cicloExtras, EXTRA_RECONCILE_MS).unref?.();
+}, 3000).unref?.();
 app.get('/api/acervo/extra-status', (req, res) => res.json({ success: true, ids: EXTRA_IDS(), principal: DRIVE_ROOT_FOLDER_ID, chave: DRIVE_OK, conta: temConta() ? emailConta() : '', erroConta: erroConta(), ...EXTRA_STATUS }));
 app.post('/api/acervo/extra-scan', (req, res) => { rodarExtras(); res.json({ success: true, started: !EXTRA_STATUS.running }); });
+
+app.get('/api/catalog/events', (req, res) => {
+  res.status(200).set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+  res.flushHeaders?.();
+  res.write(': connected\n\n');
+  catalogEventClients.add(res);
+  const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
+  req.on('close', () => { clearInterval(heartbeat); catalogEventClients.delete(res); });
+});
 
 /* ═══ 
 IMPORTAÇÃO DE FLASHCARDS ANKI (.apkg) ════════════════════════════════════════
@@ -3678,6 +3824,7 @@ if (!IS_SERVERLESS) {
   server = app.listen(PORT, HOST, () => {
     console.log(`Cuscuz-MED running at http://${HOST}:${PORT}`);
     checkDriveKey();
+    if (startFlashcardSyncScheduler(supabase)) console.log('🃏 Sincronização automática de flashcards do Drive agendada.');
   });
 
   process.on('SIGTERM', () => {

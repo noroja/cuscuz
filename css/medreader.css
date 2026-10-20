@@ -26,7 +26,7 @@
 
   /* Cores de destaque (compatível com tema escuro da plataforma) */
   --medreader-accent: #00d4b8;
-  --medreader-accent-hover: #0284c7;
+  --medreader-accent-hover: #007a6c;
   --medreader-accent-glow: rgba(0, 212, 184, 0.35);
   --medreader-rose: #fb7185;
   --medreader-amber: #fbbf24;
@@ -275,7 +275,7 @@
 }
 .medreader-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--medreader-accent), #38bdf8);
+  background: linear-gradient(90deg, var(--medreader-accent), #00d4b8);
   border-radius: 99px;
   transition: width 0.3s ease;
   box-shadow: 0 0 8px var(--medreader-accent-glow);

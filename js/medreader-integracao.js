@@ -841,7 +841,7 @@ async function medreaderCarregarMateriaisDaAula(aula) {
     if (apostilas.length) {
       boxApo.innerHTML = apostilas.map((m) =>
         `<div class="material-chip" style="cursor:pointer" onclick="medreaderApostilaInlineOpen('${escapeHtml(m.id)}', '${escapeHtml(m.nome)}')" title="Ler ${escapeHtml(m.nome)}">
-          <span class="pdf-icon" style="background:rgba(99,102,241,.14);color:#6366f1"><i class="ph ph-book-open"></i></span>
+          <span class="pdf-icon" style="background:rgba(99,102,241,.14);color:#0e6b5f"><i class="ph ph-book-open"></i></span>
           <div class="mat-info">
             <span class="mat-title">${escapeHtml(m.nome)}</span>
             <span class="mat-sub">Apostila - ${escapeHtml(m.aulaNome || aula.titulo)}</span>

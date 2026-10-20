@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Aula — Cuscuz-MED</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script>
 /* Auth da API: anexa o token em /api/* e volta ao login se o servidor responder 401 */
 (function(){
@@ -66,9 +66,9 @@
     --border-strong: rgba(255, 255, 255, .16);
     --text: #eef2f6;
     --muted: rgba(238, 242, 246, .55);
-    --accent: #38bdf8;
-    --accent-soft: rgba(56, 189, 248, .13);
-    --accent-hover: #0ea5e9;
+    --accent: #00d4b8;
+    --accent-soft: rgba(0, 212, 184, .13);
+    --accent-hover: #00a389;
     --danger: #f87171;
     --ok: #4ade80;
     --amber: #fbbf24;
@@ -143,7 +143,7 @@
     font-size: 14px;
     z-index: 2;
   }
-  .player-placeholder i { font-size: 46px; color: rgba(56, 189, 248, .82); }
+  .player-placeholder i { font-size: 46px; color: rgba(0, 212, 184, .82); }
 
   /* HUD / Toolbar de Controle do Player */
   .player-toolbar {
@@ -262,12 +262,12 @@
 
   /* Botão Praticar Questões do Tema (Pill Teal / VisionOS) */
   .aula-praticar-wrap { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: flex-start; }
-  .btn-praticar-questoes-tema { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: rgba(0,225,217,0.06); border: 1.5px solid #00E1D9; color: #00E1D9; border-radius: 9999px; padding: 9px 24px; font-family: var(--font, sans-serif); font-size: 14px; font-weight: 600; letter-spacing: -0.01em; cursor: pointer; transition: transform .22s cubic-bezier(0.16,1,0.3,1), opacity .22s cubic-bezier(0.16,1,0.3,1); box-shadow: 0 2px 14px rgba(0,225,217,0.12), inset 0 0 10px rgba(0,225,217,0.04); text-decoration: none; line-height: 1.4; outline: none; }
+  .btn-praticar-questoes-tema { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: rgba(0,225,217,0.06); border: 1.5px solid #2ce6cd; color: #2ce6cd; border-radius: 9999px; padding: 9px 24px; font-family: var(--font, sans-serif); font-size: 14px; font-weight: 600; letter-spacing: -0.01em; cursor: pointer; transition: transform .22s cubic-bezier(0.16,1,0.3,1), opacity .22s cubic-bezier(0.16,1,0.3,1); box-shadow: 0 2px 14px rgba(0,225,217,0.12), inset 0 0 10px rgba(0,225,217,0.04); text-decoration: none; line-height: 1.4; outline: none; }
   .btn-praticar-questoes-tema:hover { background: rgba(0,225,217,0.15); border-color: #38fdf8; color: #38fdf8; box-shadow: 0 0 24px rgba(0,225,217,0.3), inset 0 0 14px rgba(0,225,217,0.08); transform: translateY(-1px); }
   .btn-praticar-questoes-tema:active { transform: scale(0.98); }
-  .btn-praticar-questoes-tema .praticar-icon { display: inline-flex; align-items: center; justify-content: center; color: #00E1D9; flex-shrink: 0; }
-  .btn-praticar-questoes-tema .praticar-text { display: inline-flex; align-items: center; gap: 4px; color: #00E1D9; }
-  .btn-praticar-questoes-tema strong { font-weight: 700; color: #00E1D9; }
+  .btn-praticar-questoes-tema .praticar-icon { display: inline-flex; align-items: center; justify-content: center; color: #2ce6cd; flex-shrink: 0; }
+  .btn-praticar-questoes-tema .praticar-text { display: inline-flex; align-items: center; gap: 4px; color: #2ce6cd; }
+  .btn-praticar-questoes-tema strong { font-weight: 700; color: #2ce6cd; }
   .btn.espaco { margin-left: auto; }
 
   /* ═══ Componente de Abas do Aluno (Treino Livre + PDF Interativo + Materiais) ═══ */
@@ -302,9 +302,9 @@
   }
   .hub-tab-btn.ativo {
     background: linear-gradient(110deg, rgba(14,165,233,.16), rgba(99,102,241,.14));
-    border-color: rgba(56,189,248,.62);
+    border-color: rgba(0,212,184,.62);
     color: #7dd3fc;
-    box-shadow: inset 0 -2px 0 rgba(56,189,248,.8);
+    box-shadow: inset 0 -2px 0 rgba(0,212,184,.8);
   }
   .tab-badge {
     font-size: 11px;
@@ -315,24 +315,24 @@
     font-weight: 700;
   }
   .hub-tab-btn.ativo .tab-badge {
-    background: linear-gradient(110deg,#0ea5e9,#6366f1);
+    background: linear-gradient(110deg,#00a389,#0e6b5f);
     color: #fff;
   }
   .hub-tab-btn:focus-visible,.aula-fc-card:focus-visible,.aula-fc-grade button:focus-visible { outline: 3px solid #7dd3fc; outline-offset: 3px; }
   .aula-fc-panel { max-width: 820px; margin: 0 auto; }
   .aula-fc-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; color:var(--muted); font-size:12px; }
   .aula-fc-progress { height:6px; background:rgba(148,163,184,.16); border-radius:99px; overflow:hidden; margin:0 0 20px; }
-  .aula-fc-progress span { display:block; height:100%; background:linear-gradient(90deg,#0ea5e9,#6366f1); border-radius:inherit; transition:width .2s ease; }
-  .aula-fc-card { display:flex; flex-direction:column; justify-content:center; min-height:230px; padding:28px clamp(18px,4vw,44px); border:1px solid rgba(56,189,248,.32); border-radius:18px; background:radial-gradient(ellipse at 85% 8%,rgba(99,102,241,.13),transparent 45%),linear-gradient(145deg,#111b2d,#0c1422); box-shadow:0 18px 44px rgba(2,8,23,.28); cursor:pointer; text-align:center; transition:transform .18s,border-color .18s,background .18s; }
-  .aula-fc-card:hover { transform:translateY(-2px); border-color:rgba(56,189,248,.62); }
+  .aula-fc-progress span { display:block; height:100%; background:linear-gradient(90deg,#00a389,#0e6b5f); border-radius:inherit; transition:width .2s ease; }
+  .aula-fc-card { display:flex; flex-direction:column; justify-content:center; min-height:230px; padding:28px clamp(18px,4vw,44px); border:1px solid rgba(0,212,184,.32); border-radius:18px; background:radial-gradient(ellipse at 85% 8%,rgba(99,102,241,.13),transparent 45%),linear-gradient(145deg,#111b2d,#0c1422); box-shadow:0 18px 44px rgba(2,8,23,.28); cursor:pointer; text-align:center; transition:transform .18s,border-color .18s,background .18s; }
+  .aula-fc-card:hover { transform:translateY(-2px); border-color:rgba(0,212,184,.62); }
   .aula-fc-card .rotulo { color:#7dd3fc; font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; margin-bottom:14px; }
   .aula-fc-card .texto { color:var(--text); font-size:clamp(18px,2.2vw,24px); font-weight:650; line-height:1.45; text-wrap:pretty; }
   .aula-fc-card .dica { color:var(--muted); font-size:11px; margin-top:20px; }
   .aula-fc-notas { display:flex; justify-content:center; flex-wrap:wrap; gap:9px; margin-top:15px; }
   .aula-fc-notas button { min-height:42px; padding:8px 15px; border:1px solid var(--border); border-radius:10px; background:var(--card); color:var(--text); font-size:12px; font-weight:700; transition:transform .15s,border-color .15s,background .15s; }
-  .aula-fc-notas button:hover { transform:translateY(-1px); border-color:rgba(56,189,248,.55); background:rgba(56,189,248,.1); }
+  .aula-fc-notas button:hover { transform:translateY(-1px); border-color:rgba(0,212,184,.55); background:rgba(0,212,184,.1); }
   .aula-fc-empty { padding:28px 20px; border:1px dashed var(--border-strong); border-radius:14px; color:var(--muted); text-align:center; line-height:1.6; }
-  .aula-fc-empty i { display:block; color:#818cf8; font-size:28px; margin-bottom:8px; }
+  .aula-fc-empty i { display:block; color:#12a08c; font-size:28px; margin-bottom:8px; }
   @keyframes aula-fc-spin { to { transform:rotate(360deg); } }
   .hub-painel { display: none; }
   .hub-painel.ativo { display: block; animation: fadeIn .2s ease; }
@@ -811,8 +811,9 @@
     }
   }
 </style>
+<link rel="stylesheet" href="/css/cuscuz-brand.css">
 </head>
-<body>
+<body class="aula-page">
 
 <header class="topbar glass">
   <a class="voltar" href="/"><i class="ph ph-arrow-left"></i> Voltar</a>
@@ -850,7 +851,7 @@
       <video id="aula-video" class="player-video ativo" aria-label="Player de videoaulas" preload="metadata" playsinline controls controlslist="nodownload"></video>
       <!-- Iframe fallback para o player oficial do Drive -->
       <iframe id="drive-iframe" class="player-iframe" allow="autoplay; encrypted-media; fullscreen" title="Player Google Drive"></iframe>
-      <div class="player-placeholder" id="player-placeholder"><i class="ph ph-play-circle"></i><span>Selecione uma videoaula no menu ao lado</span></div>
+      <div class="player-placeholder" id="player-placeholder"><i class="ph ph-play-circle"></i><span>Selecione uma videoaula no menu</span></div>
     </div>
 
     <!-- Barra de Ferramentas / Seletor de Resolução & Buffer Status -->
@@ -1343,7 +1344,7 @@ async function extrairTagsECarregarSimuladoTreino(v) {
     <span class="tag-pill" style="border-color:var(--accent);background:var(--accent-soft);color:var(--accent)">
       <i class="ph ph-folder-open"></i> <b>Disciplina:</b> ${esc(meta.disciplina)}
     </span>
-    <span class="tag-pill" style="border-color:rgba(56,189,248,.4);background:rgba(56,189,248,.12);color:#38bdf8">
+    <span class="tag-pill" style="border-color:rgba(0,212,184,.4);background:rgba(0,212,184,.12);color:#00d4b8">
       <i class="ph ph-bookmark-simple"></i> <b>Tema:</b> ${esc(meta.tema)}
     </span>
     ${meta.tags.slice(2).map(t => `<span class="tag-pill"><i class="ph ph-tag"></i> #${esc(t)}</span>`).join('')}

@@ -17,7 +17,7 @@ const arquivos = [
   'manifest.webmanifest', 'icon-512.png', 'apple-touch-icon.png',
   '3457_False_a.png', '3457_True_a.png'
 ];
-const pastas = ['css', 'js'];
+const pastas = ['css', 'js', 'assets'];
 
 let copiados = 0;
 for (const f of arquivos) {
