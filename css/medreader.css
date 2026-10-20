@@ -856,3 +856,90 @@ mark.mr-pulso { outline: 2px solid #f97316; outline-offset: 2px; }
 .mr-item-trecho:hover { text-decoration: underline; }
 .mr-item-nota { margin: 0 0 6px; font-size: 13px; padding: 6px 8px; border-left: 3px solid #f97316; background: rgba(128, 128, 128, 0.12); white-space: pre-wrap; }
 .mr-item-acoes { display: flex; gap: 6px; justify-content: flex-end; }
+
+/* ══════════════ Visual v2: barra de ícones, folha clara, rodapé com barra, painéis ══════════════ */
+.medreader-shell { background: #15191d; }
+.medreader-shell #medreader-container { background: #15191d; }
+
+/* Barra superior (voltar · título · nuvem) e barra de ícones */
+.medreader-shell .medreader-topo {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; background: #1a1e22; color: #fff;
+}
+.medreader-shell .medreader-topo .medreader-title { flex: 1 1 auto; text-align: center; font-size: 15px; }
+.medreader-shell .medreader-voltar, .medreader-shell .medreader-nuvem { width: 40px; height: 36px; flex: 0 0 40px; justify-content: center; }
+.medreader-shell .medreader-nuvem { display: inline-flex; align-items: center; color: #7b8791; }
+.medreader-shell .medreader-nuvem[data-estado="ok"] { color: #3fc1dd; }
+.medreader-shell .medreader-nuvem[data-estado="pend"] { color: #f59e0b; animation: mr-pulsa 1s ease-in-out infinite; }
+.medreader-shell .medreader-nuvem[data-estado="off"] { color: #f97316; }
+.medreader-shell .mr-nuvem-ok { opacity: 0; }
+.medreader-shell .medreader-nuvem[data-estado="ok"] .mr-nuvem-ok { opacity: 1; }
+@keyframes mr-pulsa { 50% { opacity: 0.4; } }
+
+.medreader-shell .medreader-toolbar { background: #38424a; justify-content: center; padding: 4px 10px; border-bottom: 0; }
+.medreader-shell .medreader-toolbar .medreader-controls { gap: 14px; justify-content: center; flex-wrap: nowrap; overflow-x: auto; max-width: 100%; }
+.medreader-shell .medreader-btn { position: relative; background: transparent; border: 0; color: #fff; padding: 7px 8px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; }
+.medreader-shell .medreader-btn:hover, .medreader-shell .medreader-btn[aria-expanded="true"] { background: rgba(255, 255, 255, 0.14); }
+.medreader-shell .medreader-btn svg { width: 22px; height: 22px; }
+.medreader-shell .medreader-btn .medreader-btn-txt { display: none; }
+.medreader-shell .medreader-btn-fonte { font-size: 17px; font-weight: 700; min-width: 34px; }
+.medreader-shell .medreader-badge { position: absolute; top: 0; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #3fc1dd; color: #06222a; font-size: 10px; line-height: 16px; text-align: center; box-sizing: border-box; }
+.medreader-shell .medreader-busca .medreader-btn { border: 1px solid rgba(255, 255, 255, 0.2); }
+
+/* A apostila numa folha clara sobre o fundo escuro (o tema muda a folha, não o fundo) */
+.medreader-shell .medreader-content {
+  max-width: 1100px; min-height: 0; margin: 20px auto 40px;
+  padding: 28px clamp(14px, 3.2vw, 40px) 40px;
+  background: #f5f7f9; color: #27394a; border-radius: 2px;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+}
+.medreader-shell #medreader-container.medreader-theme-sepia .medreader-content { background: #f3ead6; color: #3d3022; }
+.medreader-shell #medreader-container.medreader-theme-night .medreader-content { background: #f5f7f9; filter: invert(1) hue-rotate(180deg); box-shadow: none; }
+.medreader-shell #medreader-container.medreader-theme-night .medreader-content :is(img, video, canvas, picture, iframe) { filter: invert(1) hue-rotate(180deg); }
+.medreader-shell .medreader-estado { color: #e5edf7; }
+@media (max-width: 700px) {
+  .medreader-shell .medreader-content { margin: 0 0 24px; padding: 18px 14px 28px; border-radius: 0; }
+  .medreader-shell .medreader-toolbar { padding: 2px 4px; }
+  .medreader-shell .medreader-toolbar .medreader-controls { gap: 2px; justify-content: space-between; width: 100%; }
+  .medreader-shell .medreader-topo .medreader-title { flex: 1 1 auto; }
+}
+
+/* Rodapé: barra de progresso arrastável + porcentagem e tempo */
+.medreader-shell .medreader-rodape {
+  display: flex; flex-direction: column; align-items: stretch; gap: 0;
+  padding: 0 0 6px; background: #1a1e22; color: #e8eef3; border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.medreader-shell #medreader-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; margin: 0; padding: 0; background: transparent; cursor: pointer; --fill: 0%; }
+.medreader-shell #medreader-slider::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, #3fc1dd var(--fill), #4a5560 var(--fill)); }
+.medreader-shell #medreader-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%; background: #3fc1dd; border: 0; box-shadow: 0 0 0 3px rgba(63, 193, 221, 0.25); }
+.medreader-shell #medreader-slider::-moz-range-track { height: 4px; border-radius: 2px; background: #4a5560; }
+.medreader-shell #medreader-slider::-moz-range-progress { height: 4px; border-radius: 2px; background: #3fc1dd; }
+.medreader-shell #medreader-slider::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #3fc1dd; border: 0; }
+.medreader-shell .medreader-rodape-txt { display: flex; justify-content: center; gap: 56px; font-size: 12px; }
+.medreader-shell .medreader-rodape-txt span { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.medreader-shell .medreader-rodape b { color: #3fc1dd; font-weight: 600; font-size: 13px; }
+
+/* Painéis laterais (índice, marcações, ajuda) */
+.medreader-shell .medreader-painel {
+  top: 8px; right: 8px; bottom: 8px; width: 380px; max-width: calc(100% - 16px);
+  background: rgba(88, 118, 146, 0.97); color: #fff; border: 0; border-radius: 14px;
+  backdrop-filter: blur(6px); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+.medreader-shell .medreader-painel-cab { border-bottom: 0; padding: 14px 16px 6px; }
+.medreader-shell .medreader-painel-cab strong { display: inline-flex; align-items: center; gap: 10px; font-size: 18px; }
+.medreader-shell .medreader-painel-cab .medreader-btn { font-size: 18px; }
+.medreader-shell .medreader-indice-item {
+  position: relative; text-transform: uppercase; font-weight: 600; font-size: 14px; letter-spacing: 0.01em;
+  padding: 10px 16px 10px calc(18px + var(--n, 0) * 22px);
+}
+.medreader-shell .medreader-indice-item[data-n]:not([data-n="0"])::before {
+  content: ""; position: absolute; left: calc(var(--n) * 22px - 2px); top: 0; height: 55%; width: 14px;
+  border-left: 2px solid rgba(255, 255, 255, 0.55); border-bottom: 2px solid rgba(255, 255, 255, 0.55); border-bottom-left-radius: 4px;
+}
+.medreader-shell .medreader-indice-item:hover, .medreader-shell .medreader-indice-item:focus-visible { background: rgba(255, 255, 255, 0.14); }
+.medreader-shell .medreader-ajuda { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 18px 20px; font-size: 13.5px; line-height: 1.5; }
+.medreader-shell .medreader-ajuda h4 { margin: 14px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.85; }
+.medreader-shell .medreader-ajuda p { margin: 0; }
+@media (max-width: 600px) {
+  .medreader-shell .medreader-painel { top: 0; right: 0; bottom: 0; width: 100%; max-width: 100%; border-radius: 0; }
+}

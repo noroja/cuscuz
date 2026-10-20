@@ -43,6 +43,7 @@ export class MedReaderMarcas {
     this.aoFlashcard = o.aoFlashcard || (() => {});
     this.aviso = o.aviso || (() => {});
     this.token = o.token || (() => '');
+    this.onEstado = () => {};
     this.id = null;
     this.marcas = [];
     this.atualizado = 0;
@@ -220,6 +221,7 @@ export class MedReaderMarcas {
   _persistir() {
     this.atualizado = Date.now();
     this._sujo = true;
+    this.onEstado('pend');
     try {
       localStorage.setItem(this._chave(), JSON.stringify({ atualizado: this.atualizado, marcas: this.marcas.map(this._limpa) }));
     } catch (_) { /* cota cheia: fica só na memória */ }
@@ -243,8 +245,8 @@ export class MedReaderMarcas {
         keepalive: true,
       });
       const j = await res.json().catch(() => ({}));
-      if (res.ok && j.success && id === this.id) this._sujo = false;
-    } catch (_) { /* offline: tenta de novo na próxima alteração */ }
+      if (res.ok && j.success && id === this.id) { this._sujo = false; this.onEstado('ok'); } else this.onEstado('off');
+    } catch (_) { this.onEstado('off'); /* offline: tenta de novo na próxima alteração */ }
   }
 
   /** Abre as marcações de uma apostila (chamar depois que o conteúdo foi carregado). */
@@ -259,9 +261,10 @@ export class MedReaderMarcas {
       const res = await fetch(`/api/medreader/marcas/${encodeURIComponent(id)}`, {
         headers: { Authorization: 'Bearer ' + this.token() },
       });
-      if (!res.ok) return;
+      if (!res.ok) { this.onEstado('off'); return; }
       const j = await res.json();
-      if (!j || !j.success || id !== this.id) return;
+      if (!j || !j.success || id !== this.id) { this.onEstado('off'); return; }
+      this.onEstado(this._sujo ? 'pend' : 'ok');
       const remoto = j.dados;
       if (remoto && Array.isArray(remoto.marcas) && Number(remoto.atualizado) > this.atualizado) {
         this.marcas = remoto.marcas;

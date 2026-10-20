@@ -55,6 +55,7 @@ function medreaderInit() {
     else if (busca && !busca.hidden) medreaderBuscaFechar();
     else if (painel && !painel.hidden) medreaderIndiceFechar();
     else if (painelM && !painelM.hidden) medreaderMarcasFechar();
+    else if (document.getElementById('medreader-painel-ajuda') && !document.getElementById('medreader-painel-ajuda').hidden) medreaderAjudaFechar();
     else medreaderFechar();
   });
 
@@ -72,7 +73,7 @@ function medreaderInit() {
     container,
     theme: 'default',
     fontSize: 'medium',
-    fontFamily: 'sans',
+    fontFamily: 'serif',
     storagePrefix: 'cuscuz-medreader',
   });
 
@@ -117,7 +118,13 @@ function medreaderInit() {
     token: () => localStorage.getItem('cuscuz_token') || '',
   });
   marcas.ligarPainel(document.getElementById('medreader-marcas-lista'));
-  marcas.onContagem = (n) => { const el = document.getElementById('medreader-marcas-n'); if (el) el.textContent = n ? '(' + n + ')' : ''; };
+  marcas.onContagem = (n) => { const el = document.getElementById('medreader-marcas-n'); if (el) { el.textContent = n ? String(n) : ''; el.hidden = !n; } };
+  marcas.onEstado = (estado) => {
+    const el = document.getElementById('medreader-nuvem');
+    if (!el) return;
+    el.dataset.estado = estado;
+    el.title = estado === 'ok' ? 'Marcações salvas na nuvem' : estado === 'pend' ? 'Salvando marcações…' : 'Marcações salvas só neste aparelho';
+  };
   marcas.aoIrNoCelular = medreaderMarcasFechar;
   window.medreader.marcas = marcas;
 
@@ -126,9 +133,14 @@ function medreaderInit() {
 
 /** Ícones da barra (SVG simples, herdam a cor do botão). */
 const MEDREADER_ICONES = {
-  indice: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
-  busca: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
-  tela: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>',
+  indice: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+  busca: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+  hist: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>',
+  info: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>',
+  tela: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>',
+  tema: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg>',
+  voltar: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
+  nuvem: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 9.5a4 4 0 0 1-.5 8.5z"/><path d="M9.5 13l2 2 3.5-3.5" class="mr-nuvem-ok"/></svg>',
 };
 
 /** Ordem dos temas e tamanhos de fonte usados pelos botões da barra. */
@@ -152,17 +164,21 @@ function medreaderCriarShell() {
   shell.setAttribute('aria-modal', 'true');
   shell.setAttribute('aria-label', 'Leitor de apostilas');
   shell.innerHTML =
-    '<div class="medreader-toolbar" role="toolbar" aria-label="Controles do leitor">' +
+    '<div class="medreader-topo">' +
+      '<button type="button" class="medreader-btn medreader-voltar" data-mr="fechar" title="Fechar (Esc)" aria-label="Fechar leitor">' + MEDREADER_ICONES.voltar + '<span class="medreader-btn-txt">Fechar</span></button>' +
       '<div class="medreader-title" id="medreader-title">Apostila</div>' +
+      '<span class="medreader-nuvem" id="medreader-nuvem" title="Marcações salvas" role="img" aria-label="Estado da sincronização">' + MEDREADER_ICONES.nuvem + '</span>' +
+    '</div>' +
+    '<div class="medreader-toolbar" role="toolbar" aria-label="Controles do leitor">' +
       '<div class="medreader-controls">' +
         '<button type="button" class="medreader-btn" data-mr="indice" id="medreader-btn-indice" title="Índice da apostila" aria-label="Índice da apostila" aria-expanded="false">' + MEDREADER_ICONES.indice + '<span class="medreader-btn-txt">Índice</span></button>' +
-        '<button type="button" class="medreader-btn" data-mr="marcas" id="medreader-btn-marcas" title="Marcações e histórico" aria-label="Marcações e histórico" aria-expanded="false">\u270E<span class="medreader-btn-txt">Marcações <b id="medreader-marcas-n"></b></span></button>' +
         '<button type="button" class="medreader-btn" data-mr="busca" title="Busca de texto (Ctrl+F)" aria-label="Busca de texto">' + MEDREADER_ICONES.busca + '<span class="medreader-btn-txt">Buscar</span></button>' +
-        '<button type="button" class="medreader-btn" data-mr="fonte-menos" title="Diminuir fonte" aria-label="Diminuir fonte">A\u2212</button>' +
-        '<button type="button" class="medreader-btn" data-mr="fonte-mais" title="Aumentar fonte" aria-label="Aumentar fonte">A+</button>' +
-        '<button type="button" class="medreader-btn" data-mr="tema" title="Alternar tema" aria-label="Alternar tema">Tema</button>' +
+        '<button type="button" class="medreader-btn" data-mr="marcas" id="medreader-btn-marcas" title="Histórico de marcações" aria-label="Histórico de marcações" aria-expanded="false">' + MEDREADER_ICONES.hist + '<span class="medreader-btn-txt">Marcações</span><b class="medreader-badge" id="medreader-marcas-n" hidden></b></button>' +
+        '<button type="button" class="medreader-btn medreader-btn-fonte" data-mr="fonte-menos" title="Diminuir fonte" aria-label="Diminuir fonte">A−</button>' +
+        '<button type="button" class="medreader-btn medreader-btn-fonte" data-mr="fonte-mais" title="Aumentar fonte" aria-label="Aumentar fonte">A+</button>' +
+        '<button type="button" class="medreader-btn" data-mr="tema" title="Alternar tema (claro, sépia, escuro)" aria-label="Alternar tema">' + MEDREADER_ICONES.tema + '<span class="medreader-btn-txt">Tema</span></button>' +
+        '<button type="button" class="medreader-btn" data-mr="ajuda" id="medreader-btn-ajuda" title="Como usar o leitor" aria-label="Como usar o leitor" aria-expanded="false">' + MEDREADER_ICONES.info + '<span class="medreader-btn-txt">Ajuda</span></button>' +
         '<button type="button" class="medreader-btn" data-mr="tela-cheia" id="medreader-btn-tela" title="Tela cheia" aria-label="Tela cheia">' + MEDREADER_ICONES.tela + '<span class="medreader-btn-txt" id="medreader-fs-txt">Tela cheia</span></button>' +
-        '<button type="button" class="medreader-btn primary" data-mr="fechar" title="Fechar (Esc)" aria-label="Fechar leitor">\u2715 Fechar</button>' +
       '</div>' +
     '</div>' +
     '<div class="medreader-busca" id="medreader-busca" hidden>' +
@@ -170,23 +186,37 @@ function medreaderCriarShell() {
       '<span class="medreader-busca-cont" id="medreader-busca-cont" aria-live="polite"></span>' +
       '<button type="button" class="medreader-btn" data-mr="busca-ant" title="Anterior (Shift+Enter)" aria-label="Resultado anterior">↑</button>' +
       '<button type="button" class="medreader-btn" data-mr="busca-prox" title="Próximo (Enter)" aria-label="Próximo resultado">↓</button>' +
-      '<button type="button" class="medreader-btn" data-mr="busca-fechar" title="Fechar busca (Esc)" aria-label="Fechar busca">\u2715</button>' +
+      '<button type="button" class="medreader-btn" data-mr="busca-fechar" title="Fechar busca (Esc)" aria-label="Fechar busca">✕</button>' +
     '</div>' +
     '<div class="medreader-corpo">' +
       '<div id="medreader-container" class="medreader-body" tabindex="-1"></div>' +
       '<div class="medreader-rodape" id="medreader-rodape">' +
-        '<span>Porcentagem lida <b id="medreader-pct">0%</b></span>' +
-        '<span>Término estimado <b id="medreader-eta">—</b></span>' +
+        '<input type="range" id="medreader-slider" min="0" max="1000" step="1" value="0" aria-label="Posição de leitura">' +
+        '<div class="medreader-rodape-txt">' +
+          '<span>Porcentagem lida<b id="medreader-pct">0%</b></span>' +
+          '<span>Término estimado<b id="medreader-eta">—</b></span>' +
+        '</div>' +
       '</div>' +
       '<aside class="medreader-painel" id="medreader-painel" aria-label="Índice da apostila" hidden>' +
-        '<div class="medreader-painel-cab"><strong>Índice da apostila</strong>' +
-          '<button type="button" class="medreader-btn" data-mr="indice-fechar" title="Fechar índice" aria-label="Fechar índice">\u2715</button></div>' +
+        '<div class="medreader-painel-cab"><strong>' + MEDREADER_ICONES.indice + ' Índice</strong>' +
+          '<button type="button" class="medreader-btn" data-mr="indice-fechar" title="Fechar índice" aria-label="Fechar índice">✕</button></div>' +
         '<nav id="medreader-indice"></nav>' +
       '</aside>' +
       '<aside class="medreader-painel" id="medreader-painel-marcas" aria-label="Marcações" hidden>' +
-        '<div class="medreader-painel-cab"><strong>Marcações</strong>' +
-          '<button type="button" class="medreader-btn" data-mr="marcas-fechar" title="Fechar" aria-label="Fechar marcações">\u2715</button></div>' +
+        '<div class="medreader-painel-cab"><strong>' + MEDREADER_ICONES.hist + ' Marcações</strong>' +
+          '<button type="button" class="medreader-btn" data-mr="marcas-fechar" title="Fechar" aria-label="Fechar marcações">✕</button></div>' +
         '<div id="medreader-marcas-lista"></div>' +
+      '</aside>' +
+      '<aside class="medreader-painel" id="medreader-painel-ajuda" aria-label="Como usar o leitor" hidden>' +
+        '<div class="medreader-painel-cab"><strong>' + MEDREADER_ICONES.info + ' Como usar</strong>' +
+          '<button type="button" class="medreader-btn" data-mr="ajuda-fechar" title="Fechar" aria-label="Fechar ajuda">✕</button></div>' +
+        '<div class="medreader-ajuda">' +
+          '<h4>Marcar o texto</h4><p>Selecione um trecho: aparece um menu para <b>sublinhar</b> (4 cores), guardar um <b>bookmark</b>, <b>anotar</b>, <b>buscar</b> a seleção ou depositar uma <b>dúvida</b>. Toque numa marca para trocar a cor, editar, criar flashcard ou remover.</p>' +
+          '<h4>Histórico</h4><p>O ícone do relógio lista tudo o que você marcou; toque num item para ir até o trecho.</p>' +
+          '<h4>Navegar</h4><p>O <b>Índice</b> mostra os títulos; a barra lá embaixo é arrastável e mostra quanto já foi lido e o tempo que falta. O leitor lembra onde você parou.</p>' +
+          '<h4>Atalhos</h4><p><b>Ctrl+F</b> busca no texto · <b>Enter</b> / <b>Shift+Enter</b> próximo / anterior · <b>Esc</b> fecha menu, busca, painéis e depois o leitor.</p>' +
+          '<h4>Leitura</h4><p><b>A−</b> / <b>A+</b> mudam o tamanho da letra; o botão de tema alterna entre claro, sépia e escuro.</p>' +
+        '</div>' +
       '</aside>' +
     '</div>';
   shell.addEventListener('click', (ev) => {
@@ -201,11 +231,21 @@ function medreaderCriarShell() {
     else if (acao === 'indice-fechar') medreaderIndiceFechar();
     else if (acao === 'marcas') medreaderMarcasAlternar();
     else if (acao === 'marcas-fechar') medreaderMarcasFechar();
+    else if (acao === 'ajuda') medreaderAjudaAlternar();
+    else if (acao === 'ajuda-fechar') medreaderAjudaFechar();
     else if (acao === 'busca') medreaderBuscaAlternar();
     else if (acao === 'busca-ant') medreaderBuscaIr(-1);
     else if (acao === 'busca-prox') medreaderBuscaIr(1);
     else if (acao === 'busca-fechar') medreaderBuscaFechar();
     else if (acao === 'tela-cheia') medreaderTelaCheia();
+  });
+
+  // Barra de progresso: arrastar pula para o ponto do texto
+  const slider = shell.querySelector('#medreader-slider');
+  slider.addEventListener('input', () => {
+    const c = window.medreader.container;
+    if (!c || !window.medreader.pronto) return;
+    c.scrollTop = (Number(slider.value) / 1000) * Math.max(0, c.scrollHeight - c.clientHeight);
   });
 
   // Campo de busca: busca ao digitar (com pequena espera); Enter / Shift+Enter navegam
@@ -246,11 +286,32 @@ function medreaderMarcasAlternar() {
   if (!painel) return;
   if (painel.hidden) {
     medreaderIndiceFechar();
+    medreaderAjudaFechar();
     painel.hidden = false;
     const b = $mr('medreader-btn-marcas'); if (b) b.setAttribute('aria-expanded', 'true');
   } else {
     medreaderMarcasFechar();
   }
+}
+
+/** Painel de ajuda (botão "i"). */
+function medreaderAjudaAlternar() {
+  const painel = $mr('medreader-painel-ajuda');
+  if (!painel) return;
+  if (painel.hidden) {
+    medreaderIndiceFechar();
+    medreaderMarcasFechar();
+    painel.hidden = false;
+    const b = $mr('medreader-btn-ajuda'); if (b) b.setAttribute('aria-expanded', 'true');
+  } else {
+    medreaderAjudaFechar();
+  }
+}
+
+function medreaderAjudaFechar() {
+  const painel = $mr('medreader-painel-ajuda');
+  if (painel) painel.hidden = true;
+  const b = $mr('medreader-btn-ajuda'); if (b) b.setAttribute('aria-expanded', 'false');
 }
 
 function medreaderMarcasFechar() {
@@ -327,7 +388,8 @@ function medreaderMontarIndice() {
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'medreader-indice-item';
-    item.style.paddingLeft = (14 + t.nivel * 16) + 'px';
+    item.dataset.n = String(t.nivel);
+    item.style.setProperty('--n', String(t.nivel));
     item.textContent = t.texto;
     item.addEventListener('click', () => {
       t.el.scrollIntoView({ block: 'start' });
@@ -343,6 +405,7 @@ function medreaderIndiceAlternar() {
   if (!painel) return;
   if (painel.hidden) {
     medreaderMarcasFechar();
+    medreaderAjudaFechar();
     medreaderMontarIndice();
     painel.hidden = false;
     const b = $mr('medreader-btn-indice'); if (b) b.setAttribute('aria-expanded', 'true');
@@ -508,11 +571,11 @@ function medreaderContarPalavras(raiz) {
 }
 
 function medreaderFormatarMinutos(min) {
-  if (min < 1) return 'menos de 1 min';
-  if (min < 60) return min + ' min';
+  if (min < 1) return 'menos de 1min';
+  if (min < 60) return min + 'min';
   const h = Math.floor(min / 60);
   const m = min % 60;
-  return h + ' h' + (m ? ' ' + m + ' min' : '');
+  return h + 'h' + (m ? ' e ' + m + 'min' : '');
 }
 
 function medreaderFracaoLida() {
@@ -526,9 +589,11 @@ function medreaderAtualizarProgresso() {
   const pctEl = $mr('medreader-pct');
   const etaEl = $mr('medreader-eta');
   if (!pctEl || !etaEl) return 0;
-  if (!window.medreader.pronto) { pctEl.textContent = '0%'; etaEl.textContent = '—'; return 0; }
+  const slider = $mr('medreader-slider');
+  if (!window.medreader.pronto) { pctEl.textContent = '0%'; etaEl.textContent = '—'; if (slider) { slider.value = 0; slider.style.setProperty('--fill', '0%'); } return 0; }
   const frac = medreaderFracaoLida();
-  pctEl.textContent = Math.round(frac * 100) + '%';
+  pctEl.textContent = (frac * 100).toFixed(1).replace(/\.0$/, '') + '%';
+  if (slider) { slider.value = Math.round(frac * 1000); slider.style.setProperty('--fill', (frac * 100) + '%'); }
   etaEl.textContent = frac >= 0.995
     ? 'concluída'
     : medreaderFormatarMinutos(Math.ceil((window.medreader.palavras || 0) * (1 - frac) / MEDREADER_PALAVRAS_POR_MIN));
@@ -593,6 +658,7 @@ async function medreaderAbrir(fileId, fileName) {
   medreaderBuscaFechar();
   medreaderIndiceFechar();
   medreaderMarcasFechar();
+  medreaderAjudaFechar();
   if (window.medreader.marcas) window.medreader.marcas.fechar();
 
   shell.classList.add('open');
@@ -699,6 +765,7 @@ function medreaderCloseOverlay() {
   medreaderBuscaFechar();
   medreaderIndiceFechar();
   medreaderMarcasFechar();
+  medreaderAjudaFechar();
   if (document.fullscreenElement) {
     const p = document.exitFullscreen && document.exitFullscreen();
     if (p && p.catch) p.catch(() => {});
