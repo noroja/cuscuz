@@ -27,7 +27,7 @@ import { temConta, emailConta, erroConta, driveFetch, authHeaders, driveFetchWit
 
 import { downloadCatalogFromSupabase, downloadQuestionsBankFromSupabase, uploadQuestionsBankToSupabase, supabaseCatalogReady, ensureSupabaseBucket } from './src/supabase-catalog.js';
 import { IS_SERVERLESS, TMP_DIR, writableDir, safeReadJson, safeWriteJson } from './src/fs-safe.js';
-import { getSystemConfig, setSystemConfig } from './src/system-config.js';
+import { getSystemConfig, setSystemConfig, systemConfigHealth } from './src/system-config.js';
 import { getFlashcardSyncStatus, readFlashcardManifest, readFlashcardPage, startFlashcardSyncScheduler, syncDriveFlashcards } from './src/drive-flashcards.js';
 import { acceptDriveNotification, queueDriveChange, renewDrivePushChannel, startDrivePushRenewal } from './src/drive-push.js';
 
@@ -75,8 +75,9 @@ app.set('trust proxy', 1);
 registerAuthRoutes(app);
 
 // Health check endpoint (sempre acessível, sem autenticação)
-app.get('/api/health', (req, res) => {
-  res.json({
+app.get('/api/health', async (req, res) => {
+  res.set('Cache-Control', 'no-store, max-age=0');
+  const payload = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     openaiConfigured: !!openai,
@@ -87,7 +88,30 @@ app.get('/api/health', (req, res) => {
     geminiConfigured: false, // legado: o Gemini foi substituído pela Groq
     authConfigured: true,
     drive: driveStatus
-  });
+  };
+
+  // ?deep=1 faz um diagnóstico sem expor valores: tabela system_configs,
+  // bucket privado e um teste real de login no Hardworq (com cooldown).
+  if (req.query.deep === '1') {
+    try { payload.systemConfig = await systemConfigHealth(); } catch (err) { payload.systemConfig = { error: err.message }; }
+    try {
+      const auth = await hwqEnsureToken();
+      payload.hardworq = {
+        authMode: (HWQ.email && HWQ.senha) ? 'login' : (HWQ.cookie ? 'cookie' : 'nenhum'),
+        emailConfigured: !!HWQ.email,
+        userTokenActive: !!HWQ_STATE.userToken,
+        tokenStore: HWQ_STATE.tokenStore || 'none',
+        lastLoginOk: HWQ_STATE.lastLoginOk,
+        lastLoginAt: HWQ_STATE.lastLoginAt,
+        lastLoginStatus: HWQ_STATE.lastLoginStatus || null,
+        loginTest: { ok: !!auth.ok, status: auth.status || null, error: auth.error ? String(auth.error).slice(0, 240) : null }
+      };
+    } catch (err) {
+      payload.hardworq = { loginTest: { ok: false, error: err.message } };
+    }
+  }
+
+  res.json(payload);
 });
 
 // Middleware de autenticação para todas as rotas /api/*
@@ -1004,36 +1028,78 @@ app.get('/api/config', (req, res) => {
 // ══════════════════════════════════════════════════════════════════
 // RADAR MÉDICO: ATUALIZAÇÕES E EDITAIS (Estratégia MED + IA)
 // ══════════════════════════════════════════════════════════════════
+const RADAR_CACHE_KEY = 'radar_medico_cache';
+const RADAR_AI_KEY = 'radar_medico_last_ai';
 const RADAR_CACHE_FILE = path.join(DATA_DIR, 'radar_medico_cache.json');
-const RADAR_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 horas (atualização 1 a 2x ao dia)
+const RADAR_SEED_FILE = path.join(__dirname, 'radar-medico.json');
+const RADAR_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 1x ao dia
+const RADAR_AI_RETRY_MS = 60 * 60 * 1000; // se a IA falhar, tenta de novo em 1h
 let radarMemoryCache = null;
+let radarRefreshPromise = null;
 
-function loadRadarCache() {
+function radarCacheFresh(cache) {
+  return !!(cache && cache.cachedAt && (Date.now() - Number(cache.cachedAt) < RADAR_CACHE_TTL_MS));
+}
+
+/* Fonte da verdade: Supabase (tabela ou bucket privado). /tmp e o seed do
+   repositório são apenas fallback para dev/cold start sem Supabase. */
+async function loadRadarCache() {
   if (radarMemoryCache) return radarMemoryCache;
+
   try {
-    if (fs.existsSync(RADAR_CACHE_FILE)) {
-      const data = JSON.parse(fs.readFileSync(RADAR_CACHE_FILE, 'utf8'));
-      radarMemoryCache = data;
-      return data;
+    const durable = await getSystemConfig(RADAR_CACHE_KEY, null);
+    if (durable && Array.isArray(durable.articles) && durable.articles.length) {
+      radarMemoryCache = durable;
+      return durable;
     }
   } catch (e) {
-    console.warn('⚠️ Erro ao ler cache do Radar Médico:', e.message);
+    console.warn('⚠️ Erro ao ler cache durável do Radar Médico:', e.message);
+  }
+
+  for (const file of [RADAR_CACHE_FILE, RADAR_SEED_FILE]) {
+    try {
+      const data = safeReadJson(file, null);
+      if (data && Array.isArray(data.articles) && data.articles.length) {
+        radarMemoryCache = data;
+        return data;
+      }
+    } catch (e) {
+      console.warn('⚠️ Erro ao ler cache local do Radar Médico:', e.message);
+    }
   }
   return null;
 }
 
-function saveRadarCache(data) {
+async function saveRadarCache(data) {
+  radarMemoryCache = data;
+  try { safeWriteJson(RADAR_CACHE_FILE, data); } catch (_) {}
   try {
-    radarMemoryCache = data;
-    const dir = path.dirname(RADAR_CACHE_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(RADAR_CACHE_FILE, JSON.stringify(data, null, 2), 'utf8');
+    await setSystemConfig(RADAR_CACHE_KEY, data);
   } catch (e) {
-    console.warn('⚠️ Erro ao salvar cache do Radar Médico:', e.message);
+    console.warn('⚠️ Erro ao salvar cache durável do Radar Médico:', e.message);
   }
 }
 
-async function scrapeAndSummarizeRadar() {
+/* Garante no máximo 1 chamada de IA por dia, mesmo com vários cold starts. */
+async function radarAiAllowed() {
+  try {
+    const last = await getSystemConfig(RADAR_AI_KEY, null);
+    const at = Number(last && last.at || 0);
+    if (!at) return true;
+    const wait = last.ok ? RADAR_CACHE_TTL_MS : RADAR_AI_RETRY_MS;
+    return Date.now() - at >= wait;
+  } catch (_) {
+    return true;
+  }
+}
+
+async function markRadarAi(ok) {
+  try {
+    await setSystemConfig(RADAR_AI_KEY, { at: Date.now(), ok: !!ok });
+  } catch (_) { /* best-effort */ }
+}
+
+async function scrapeAndSummarizeRadar(previous = null) {
   console.log('📡 Buscando artigos recentes em med.estrategia.com/portal/atualidades...');
   const res = await fetch('https://med.estrategia.com/portal/atualidades', {
     headers: {
@@ -1098,127 +1164,179 @@ async function scrapeAndSummarizeRadar() {
     if (!art.bodyText) art.bodyText = art.excerpt || art.title;
   }
 
-  // Resumo inteligente com a API do IA focado em Diretrizes e Prática Clínica
-  const gemini = aiConfigured();
-  const processedArticles = [];
-  let geminiUnavailable = false;
+  // Resumo inteligente: UMA única chamada de IA para todas as matérias.
+  // A marca `radar_medico_last_ai` garante no máximo 1 chamada por dia,
+  // mesmo com vários cold starts ou instâncias serverless diferentes.
+  const aiReady = aiConfigured();
+  const summaries = new Map();
+  let aiUsed = false;
 
-  for (const art of rawArticles) {
-    let resumo = null;
-    if (gemini && !geminiUnavailable) {
+  if (aiReady) {
+    if (!(await radarAiAllowed())) {
+      console.log('[Radar Médico] IA já consultada nas últimas 24h; reutilizando resumos/cache.');
+    } else {
+      const materias = rawArticles.map((art, i) => ({
+        id: String(i),
+        titulo: art.title,
+        data: art.date,
+        categoria: art.category,
+        trecho: String(art.bodyText || art.excerpt || '').slice(0, 3500)
+      }));
       const prompt = `Você é um preceptor médico especialista em residência médica e diretrizes clínicas.
-Analise a matéria/diretriz a seguir e elabore um resumo estratégico de alto rendimento estruturado estritamente nestes 3 eixos fundamentais:
+Analise TODAS as matérias abaixo e elabore, para cada uma, um resumo estratégico de alto rendimento estruturado estritamente nestes 3 eixos:
+1. implementacoes: quais novos protocolos, portarias, diretrizes ou normativas foram anunciados.
+2. praticaClinica: o que é essencial para a prática clínica diária, raciocínio diagnóstico, dosagens, rastreios e conduta.
+3. oQueMudou: o que mudou de fato em comparação com recomendações ou condutas prévias.
 
-1. Quais são as implementações: Detalhe quais são os novos protocolos, portarias, diretrizes ou normativas anunciadas.
-2. O que é relevante para a prática clínica: Explique o que é essencial para a prática clínica diária, raciocínio diagnóstico, dosagens, rastreios e conduta médica.
-3. O que mudou de fato: Destaque o que mudou de fato em comparação com as recomendações ou condutas prévias (mudanças práticas, quebra de paradigmas, alertas para pegadinhas de prova).
+Responda APENAS com um objeto JSON no formato:
+{"resumos":[{"id":"0","implementacoes":"...","praticaClinica":"...","oQueMudou":"..."}]}
 
-Título: ${art.title}
-Conteúdo da matéria: ${art.bodyText}
+Use exatamente o mesmo "id" de cada matéria. Seja conciso, claro e técnico.
 
-Retorne estritamente o objeto JSON com os 3 campos solicitados. Seja conciso, claro e técnico para médicos e estudantes de medicina.`;
+MATÉRIAS:
+${JSON.stringify(materias)}`;
 
       try {
         const aiRes = await generateAI({
           contents: prompt,
           config: {
+            temperature: 0.2,
             responseMimeType: 'application/json',
             responseSchema: {
               type: Type.OBJECT,
+              required: ['resumos'],
               properties: {
-                implementacoes: {
-                  type: Type.STRING,
-                  description: 'Quais são as implementações e novas diretrizes normatizadas'
-                },
-                praticaClinica: {
-                  type: Type.STRING,
-                  description: 'O que é relevante para a prática clínica e conduta médica'
-                },
-                oQueMudou: {
-                  type: Type.STRING,
-                  description: 'O que mudou de fato em relação aos protocolos ou condutas anteriores'
+                resumos: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    required: ['id', 'implementacoes', 'praticaClinica', 'oQueMudou'],
+                    properties: {
+                      id: { type: Type.STRING },
+                      implementacoes: { type: Type.STRING },
+                      praticaClinica: { type: Type.STRING },
+                      oQueMudou: { type: Type.STRING }
+                    }
+                  }
                 }
-              },
-              required: ['implementacoes', 'praticaClinica', 'oQueMudou']
+              }
             }
           }
         });
 
         if (aiRes.text) {
-          resumo = JSON.parse(aiRes.text);
+          const parsed = JSON.parse(aiRes.text);
+          for (const item of (parsed.resumos || [])) {
+            if (item && item.id != null) summaries.set(String(item.id), item);
+          }
+          aiUsed = summaries.size > 0;
         }
+        await markRadarAi(aiUsed);
       } catch (err) {
-        const msg = String(err.message || '');
-        if (msg.includes('API key not valid') || msg.includes('API_KEY_INVALID') || msg.includes('UNAUTHENTICATED') || msg.includes('503') || /429|RESOURCE_EXHAUSTED|quota|exceeded your current quota/i.test(msg)) {
-          geminiUnavailable = true;
-          console.log('[Radar Médico] IA indisponível no momento, aplicando resumos clínicos pré-estruturados.');
-        }
+        await markRadarAi(false);
+        console.log('[Radar Médico] IA indisponível; aplicando resumos clínicos pré-estruturados:', String(err.message || '').slice(0, 160));
       }
     }
+  }
 
-    if (!resumo || !resumo.implementacoes) {
-      resumo = {
-        implementacoes: `Novas diretrizes e atualizações clínicas publicadas oficialmente: ${art.title}.`,
-        praticaClinica: art.excerpt ? art.excerpt.slice(0, 180) + '...' : 'Adoção das recomendações em ambulatório, enfermaria e atendimento primário com foco em segurança do paciente.',
-        oQueMudou: 'Atualização e alinhamento dos critérios de conduta médica e parâmetros para provas de residência médica e Revalida.'
-      };
-    }
+  const oldByLink = new Map(((previous && previous.articles) || []).map(a => [a.link, a]));
+  const processedArticles = rawArticles.map((art, i) => {
+    const old = oldByLink.get(art.link);
+    const resumo = summaries.get(String(i)) || old?.resumoEstrategico || {};
+    const finalResumo = {
+      implementacoes: resumo.implementacoes || `Novas diretrizes e atualizações clínicas publicadas oficialmente: ${art.title}.`,
+      praticaClinica: resumo.praticaClinica || (art.excerpt ? art.excerpt.slice(0, 180) + '...' : 'Adoção das recomendações em ambulatório, enfermaria e atendimento primário com foco em segurança do paciente.'),
+      oQueMudou: resumo.oQueMudou || 'Atualização e alinhamento dos critérios de conduta médica e parâmetros para provas de residência médica e Revalida.'
+    };
 
-    processedArticles.push({
+    return {
       id: Buffer.from(art.link).toString('base64').slice(0, 16),
       title: art.title,
       link: art.link,
       img: art.img || 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&auto=format&fit=crop&q=80',
       date: art.date,
       category: art.category,
-      resumoEstrategico: resumo,
+      resumoEstrategico: finalResumo,
       bullets: [
-        `Implementações: ${resumo.implementacoes}`,
-        `Prática Clínica: ${resumo.praticaClinica}`,
-        `O Que Mudou: ${resumo.oQueMudou}`
+        `Implementações: ${finalResumo.implementacoes}`,
+        `Prática Clínica: ${finalResumo.praticaClinica}`,
+        `O Que Mudou: ${finalResumo.oQueMudou}`
       ]
-    });
-  }
+    };
+  });
 
   const cachePayload = {
     cachedAt: Date.now(),
+    aiAt: aiUsed ? Date.now() : (previous?.aiAt || null),
     articles: processedArticles
   };
 
-  saveRadarCache(cachePayload);
+  await saveRadarCache(cachePayload);
   return cachePayload;
 }
 
-app.get('/api/radar-medico', async (req, res) => {
-  const force = req.query.force === 'true' || req.query.refresh === 'true';
-  const cached = loadRadarCache();
-
-  if (cached && !force && (Date.now() - cached.cachedAt < RADAR_CACHE_TTL_MS)) {
-    return res.json({
-      status: 'cached',
-      cachedAt: cached.cachedAt,
-      articles: cached.articles
-    });
+async function getRadar({ force = false } = {}) {
+  const cached = await loadRadarCache();
+  if (!force && radarCacheFresh(cached)) {
+    return { status: 'cached', cachedAt: cached.cachedAt, aiAt: cached.aiAt || null, articles: cached.articles };
   }
 
+  if (radarRefreshPromise) return radarRefreshPromise;
+
+  radarRefreshPromise = (async () => {
+    try {
+      const fresh = await scrapeAndSummarizeRadar(cached);
+      return { status: 'fresh', ...fresh };
+    } catch (err) {
+      if (cached) {
+        return {
+          status: 'cached_fallback',
+          warning: 'Usando cache prévio devido a erro na extração: ' + err.message,
+          cachedAt: cached.cachedAt,
+          aiAt: cached.aiAt || null,
+          articles: cached.articles
+        };
+      }
+      throw err;
+    } finally {
+      radarRefreshPromise = null;
+    }
+  })();
+
+  return radarRefreshPromise;
+}
+
+function radarNoStore(res) {
+  res.set('Cache-Control', 'no-store, max-age=0');
+}
+
+app.get('/api/radar-medico', async (req, res) => {
+  radarNoStore(res);
+  const force = req.query.force === 'true' || req.query.refresh === 'true';
   try {
-    const result = await scrapeAndSummarizeRadar();
-    res.json({
-      status: 'fresh',
-      cachedAt: result.cachedAt,
-      articles: result.articles
-    });
+    const out = await getRadar({ force });
+    res.json(out);
   } catch (err) {
     console.error('❌ Erro no Radar Médico:', err.message);
-    if (cached) {
-      return res.json({
-        status: 'cached_fallback',
-        warning: 'Usando cache prévio devido a erro na extração: ' + err.message,
-        cachedAt: cached.cachedAt,
-        articles: cached.articles
-      });
-    }
     res.status(500).json({ error: 'Não foi possível carregar as notícias: ' + err.message });
+  }
+});
+
+// Cron diário da Vercel: atualiza somente se o cache estiver vencido.
+// Com o TTL de 24h, isso resulta em no máximo 1 chamada de IA por dia.
+app.get('/api/radar-medico/refresh', async (req, res) => {
+  radarNoStore(res);
+  const expected = String(process.env.CRON_SECRET || '');
+  const supplied = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const a = Buffer.from(expected), b = Buffer.from(supplied);
+  if (!expected || a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+  try {
+    const out = await getRadar({ force: false });
+    return res.json({ success: true, ...out });
+  } catch (err) {
+    return res.status(503).json({ success: false, error: err.message });
   }
 });
 
@@ -1517,7 +1635,7 @@ app.get('/api/questions/match', async (req, res) => {
           const key = alvo.map(d => d.id).sort().join(',');
           let vivo = _qVivoCache.get(key);
           if (!vivo || Date.now() - vivo.at > 6 * 3600 * 1000) {
-            if (!HWQ_STATE.userToken) await hwqLogin();
+            await hwqEnsureToken();
             const busca = await Promise.race([
               hwqFetchAll({ ids_doencas: alvo.map(d => d.id), qtd_maxima: Math.min(limit, 60), areas: ['Clínica Médica', 'Cirurgia Geral', 'Pediatria', 'Ginecologia e Obstetrícia', 'Medicina Preventiva'] }),
               new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 25000))
@@ -1666,7 +1784,8 @@ const HWQ = {
   mirror: !/^(0|false|off)$/i.test(process.env.HARDWORQ_MIRROR || ''),
   mirrorMax: Math.max(500, parseInt(process.env.HARDWORQ_MIRROR_MAX, 10) || 2000000) // sem limite prático
 };
-const HWQ_STATE = { userToken: null, tokenStore: null, lastLoginAt: null, lastLoginOk: null, lastSyncAt: null, lastSyncOk: null, lastSyncResult: null, doencas: null, doencasAt: 0 };
+const HWQ_STATE = { userToken: null, tokenStore: null, lastLoginAt: null, lastLoginOk: null, lastLoginError: '', lastLoginStatus: 0, lastLoginAttemptAt: 0, lastSyncAt: null, lastSyncOk: null, lastSyncResult: null, doencas: null, doencasAt: 0 };
+const HWQ_LOGIN_RETRY_MS = 30 * 1000;
 
 // Login contínuo: o token do aluno é estado DURÁVEL e vive no Supabase
 // (system_configs → chave `hwq_token`). Na Vercel /tmp é apagado a cada cold
@@ -1782,28 +1901,60 @@ async function hwqFetch(url, { method = 'GET', body = null, timeoutMs = 20000, w
 
 // Login email/senha: PUT /login retorna obj.token, que vira o header UserToken das chamadas seguintes
 async function hwqLogin({ force = false } = {}) {
-  if (!HWQ.email || !HWQ.senha) return { ok: false, error: 'HARDWORQ_EMAIL/HARDWORQ_SENHA não configurados no .env do servidor.' };
+  if (!HWQ.email || !HWQ.senha) {
+    HWQ_STATE.lastLoginError = 'HARDWORQ_EMAIL/HARDWORQ_SENHA não configurados no servidor.';
+    HWQ_STATE.lastLoginStatus = 0;
+    return { ok: false, error: HWQ_STATE.lastLoginError, status: 0 };
+  }
   try { await hwqTokenReady; } catch (_) { /* segue para login manual */ }
   if (!force && HWQ_STATE.userToken && HWQ_STATE.lastLoginOk) return { ok: true, token: HWQ_STATE.userToken, cached: true };
+  // Evita martelar o login em um status/health chamado em sequência quando a senha está errada.
+  if (!force && HWQ_STATE.lastLoginError && Date.now() - HWQ_STATE.lastLoginAttemptAt < HWQ_LOGIN_RETRY_MS) {
+    return { ok: false, error: HWQ_STATE.lastLoginError, status: HWQ_STATE.lastLoginStatus, cooldown: true };
+  }
+
+  HWQ_STATE.lastLoginAttemptAt = Date.now();
   const r = await hwqFetch(`${HWQ.hwqBase}/login`, {
     method: 'PUT',
     body: { email: HWQ.email, senha: HWQ.senha, platform: '', uuid: '' },
     withUserToken: false
   });
   HWQ_STATE.lastLoginAt = new Date().toISOString();
+  HWQ_STATE.lastLoginStatus = r.status || 0;
   const token = r.data && r.data.obj && r.data.obj.token ? String(r.data.obj.token) : '';
   const ok = !!(r.ok && token);
   HWQ_STATE.lastLoginOk = ok;
   HWQ_STATE.userToken = token || null;
   if (ok) {
+    HWQ_STATE.lastLoginError = '';
     await saveHwqToken(token);
     console.log('🔑 [Hardworq] Login ok — token em memória + persistência durável.');
   } else {
     // Não apaga o token durável em falha transitória: o próximo request tenta de novo.
+    HWQ_STATE.lastLoginError = (r.data && (r.data.msg || r.data.raw)) || r.error || `HTTP ${r.status}`;
     try { fs.rmSync(HWQ_TOKEN_FILE, { force: true }); } catch (_) {}
-    console.warn('⚠️ [Hardworq] Login falhou:', (r.data && r.data.msg) || r.error || `HTTP ${r.status}`);
+    console.warn('⚠️ [Hardworq] Login falhou:', HWQ_STATE.lastLoginError);
   }
-  return { ok, token, msg: (r.data && r.data.msg) || r.error || '' };
+  return { ok, token, status: r.status || 0, msg: (r.data && r.data.msg) || r.error || '', error: HWQ_STATE.lastLoginError || '' };
+}
+
+/* Garante um token válido antes de status/sync. Se o token durável não existir
+   (tabela ausente/cold start), faz login na hora em vez de ficar "aguardando". */
+let hwqEnsurePromise = null;
+async function hwqEnsureToken() {
+  if (hwqEnsurePromise) return hwqEnsurePromise;
+  hwqEnsurePromise = (async () => {
+    try { await hwqTokenReady; } catch (_) { /* tenta login abaixo */ }
+    if (HWQ_STATE.userToken && HWQ_STATE.lastLoginOk !== false) {
+      return { ok: true, token: HWQ_STATE.userToken, cached: true };
+    }
+    return hwqLogin();
+  })();
+  try {
+    return await hwqEnsurePromise;
+  } finally {
+    hwqEnsurePromise = null;
+  }
 }
 
 // Chamada com relogin automático: se a sessão cair (auth:false), refaz login e tenta 1× de novo
@@ -1835,16 +1986,20 @@ async function hwqSearchQuestions(opts = {}) {
 }
 
 // Busca em rodadas de 100 até não voltarem questões novas (a API não pagina — repete amostras).
-// qtd_maxima define o teto; "tudo" = 5000 (60 rodadas no máximo, por segurança).
+// qtd_maxima define o teto; budgetMs evita estourar o limite da função serverless.
 async function hwqFetchAll(opts = {}) {
   const target = Math.min(50000, Math.max(1, parseInt(opts.qtd_maxima, 10) || 50000));
+  const budgetMs = Math.max(5000, Math.min(240000, parseInt(opts.budgetMs, 10) || 90000));
+  const startedAt = Date.now();
   const seen = new Map();
   let rounds = 0;
+  let truncated = false;
   while (seen.size < target && rounds < 400) {
+    if (Date.now() - startedAt > budgetMs) { truncated = true; break; }
     rounds++;
     const search = await hwqSearchQuestions({ ...opts, qtd_maxima: 100 });
     if (search.error || search.authFailed || search.status >= 400) {
-      return { ...search, questions: [...seen.values()], rounds };
+      return { ...search, questions: [...seen.values()], rounds, truncated };
     }
     let novas = 0;
     for (const q of search.questions) {
@@ -1853,7 +2008,8 @@ async function hwqFetchAll(opts = {}) {
     }
     if (novas === 0) break; // a API começou a repetir — filtro esgotado
   }
-  return { ok: true, status: 200, authFailed: false, error: null, msg: '', questions: [...seen.values()].slice(0, target), rounds };
+  if (seen.size < target && rounds >= 400) truncated = true;
+  return { ok: true, status: 200, authFailed: false, error: null, msg: '', questions: [...seen.values()].slice(0, target), rounds, truncated };
 }
 
 // Normaliza para busca sem acento/caixa (ex.: "esquizofrenia" == "Esquizofrenia")
@@ -2096,8 +2252,21 @@ function autoGitBanco() {
 
 // Fluxo principal: busca na API + parse + merge no banco local (usado pelo painel e pelo auto-sync)
 async function runHardworqSync(filters = {}) {
-  if (!HWQ_STATE.userToken) await hwqLogin(); // garante token antes da busca (se falhar, hwqRequest tenta de novo)
-  const search = await hwqFetchAll(filters);
+  const auth = await hwqEnsureToken();
+  if (!auth.ok) {
+    HWQ_STATE.lastSyncAt = new Date().toISOString();
+    HWQ_STATE.lastSyncOk = false;
+    HWQ_STATE.lastSyncResult = { fetched: 0, imported: 0, authFailed: true, status: auth.status || 0 };
+    return {
+      ok: false,
+      authFailed: true,
+      status: auth.status || 401,
+      msg: auth.error || 'Login no Hardworq falhou. Verifique HARDWORQ_EMAIL/HARDWORQ_SENHA no servidor.',
+      fetched: 0
+    };
+  }
+
+  const search = await hwqFetchAll({ ...filters, budgetMs: filters.budgetMs || 90000 });
   HWQ_STATE.lastSyncAt = new Date().toISOString();
 
   if (search.error || search.authFailed || search.status >= 400) {
@@ -2108,7 +2277,7 @@ async function runHardworqSync(filters = {}) {
       authFailed: !!search.authFailed,
       status: search.status,
       msg: search.authFailed
-        ? 'Login no Hardworq falhou (auth:false). Verifique HARDWORQ_EMAIL/HARDWORQ_SENHA no .env do servidor.'
+        ? 'Login no Hardworq falhou (auth:false). Verifique HARDWORQ_EMAIL/HARDWORQ_SENHA no servidor.'
         : (search.msg || search.error || `A API do Hardworq respondeu ${search.status}.`),
       fetched: 0
     };
@@ -2117,21 +2286,24 @@ async function runHardworqSync(filters = {}) {
   const parsed = parseHardworqPayload(search.questions);
   if (!parsed.length) {
     HWQ_STATE.lastSyncOk = true;
-    HWQ_STATE.lastSyncResult = { fetched: search.questions.length, imported: 0, updated: 0 };
-    return { ok: true, fetched: search.questions.length, imported: 0, updated: 0, questions: [], msg: 'A API respondeu sem questões para os filtros escolhidos.' };
+    HWQ_STATE.lastSyncResult = { fetched: search.questions.length, imported: 0, updated: 0, truncated: !!search.truncated };
+    return { ok: true, fetched: search.questions.length, imported: 0, updated: 0, truncated: !!search.truncated, questions: [], msg: 'A API respondeu sem questões para os filtros escolhidos.' };
   }
 
   const merge = mergeQuestionsIntoBank(parsed);
   HWQ_STATE.lastSyncOk = true;
-  HWQ_STATE.lastSyncResult = { fetched: search.questions.length, imported: merge.imported, updated: merge.updated };
-  console.log(`🟣 [Hardworq] Sincronização: ${search.questions.length} buscadas → ${merge.imported} novas, ${merge.updated} atualizadas.`);
+  HWQ_STATE.lastSyncResult = { fetched: search.questions.length, imported: merge.imported, updated: merge.updated, truncated: !!search.truncated };
+  console.log(`🟣 [Hardworq] Sincronização: ${search.questions.length} buscadas → ${merge.imported} novas, ${merge.updated} atualizadas${search.truncated ? ' (parcial; continua na próxima chamada)' : ''}.`);
   autoGitBanco();
-  return { ok: true, fetched: search.questions.length, imported: merge.imported, updated: merge.updated, total: merge.total, questions: parsed };
+  return { ok: true, fetched: search.questions.length, imported: merge.imported, updated: merge.updated, total: merge.total, truncated: !!search.truncated, questions: parsed };
 }
 
 // Status da integração (painel do app)
 app.get('/api/questions/hardworq/status', async (req, res) => {
-  try { await hwqTokenReady; } catch (_) { /* status continua válido sem token */ }
+  res.set('Cache-Control', 'no-store, max-age=0');
+  // Antes de responder, garante o login: sem isso o painel ficava eternamente
+  // em "aguardando login" quando o token não sobrevivia ao cold start.
+  try { await hwqEnsureToken(); } catch (_) { /* status continua válido sem token */ }
   const bank = readQuestionsBank();
   const hwqCount = bank.filter(q => q.source && String(q.source).startsWith('Hardworq')).length;
   res.json({
@@ -2145,6 +2317,8 @@ app.get('/api/questions/hardworq/status', async (req, res) => {
     tokenStore: HWQ_STATE.tokenStore || 'none',
     lastLoginAt: HWQ_STATE.lastLoginAt,
     lastLoginOk: HWQ_STATE.lastLoginOk,
+    lastLoginError: HWQ_STATE.lastLoginError || null,
+    lastLoginStatus: HWQ_STATE.lastLoginStatus || null,
     cookieConfigured: !!HWQ.cookie,
     autoSync: HWQ.autoSync,
     syncIntervalHours: HWQ.syncIntervalHours,
@@ -2158,7 +2332,17 @@ app.get('/api/questions/hardworq/status', async (req, res) => {
 
 // Sincronização com a API do Hardworq (botão "Sincronizar Hardworq" do app)
 const HWQ_BG = { running: false, startedAt: 0, last: null };
-app.get('/api/questions/hardworq/sync-status', (req, res) => res.json({ success: true, ...HWQ_BG, total: readQuestionsBank().length }));
+app.get('/api/questions/hardworq/sync-status', (req, res) => {
+  res.set('Cache-Control', 'no-store, max-age=0');
+  res.json({
+    success: true,
+    ...HWQ_BG,
+    total: readQuestionsBank().length,
+    userTokenActive: !!HWQ_STATE.userToken,
+    lastLoginError: HWQ_STATE.lastLoginError || null,
+    lastLoginStatus: HWQ_STATE.lastLoginStatus || null
+  });
+});
 app.post('/api/questions/hardworq/sync', async (req, res) => {
   try {
     const { areas, anos, grupos_prova, qtd_maxima, cookie, email, senha, idTurma, ids_doencas, salvar = true } = req.body || {};
@@ -2166,8 +2350,11 @@ app.post('/api/questions/hardworq/sync', async (req, res) => {
     if (cookie) HWQ.cookie = String(cookie).trim(); // legado
 
     if (salvar === false) {
-      if (!HWQ_STATE.userToken) await hwqLogin();
-      const search = await hwqFetchAll({ areas, anos, grupos_prova, qtd_maxima, ids_doencas, idTurma });
+      const auth = await hwqEnsureToken();
+      if (!auth.ok) {
+        return res.status(401).json({ success: false, authFailed: true, status: auth.status || 401, msg: auth.error || 'Login no Hardworq falhou.' });
+      }
+      const search = await hwqFetchAll({ areas, anos, grupos_prova, qtd_maxima, ids_doencas, idTurma, budgetMs: 60000 });
       if (search.error || search.authFailed || search.status >= 400) {
         return res.status(search.authFailed ? 401 : 502).json({
           success: false, authFailed: !!search.authFailed, status: search.status,
@@ -2179,17 +2366,28 @@ app.post('/api/questions/hardworq/sync', async (req, res) => {
     }
 
     if ((req.body || {}).background) {
-      // Resposta imediata: o banco espelhado já está no servidor; a busca ao vivo no Hardworq roda por trás
+      // O login é síncrono para o app receber o erro real (401) em vez de um
+      // "success" falso. Na Vercel a busca também roda síncrona: trabalho
+      // disparado depois da resposta não é garantido em serverless.
+      const auth = await hwqEnsureToken();
+      if (!auth.ok) {
+        return res.status(401).json({ success: false, authFailed: true, status: auth.status || 401, msg: auth.error || 'Login no Hardworq falhou.' });
+      }
+      if (IS_SERVERLESS) {
+        const result = await runHardworqSync({ areas, anos, grupos_prova, qtd_maxima, ids_doencas, idTurma, budgetMs: 90000 });
+        return res.status(result.ok ? 200 : (result.authFailed ? 401 : 502)).json({ ...result, background: false });
+      }
+      // Render/local: mantém a resposta imediata e o trabalho em segundo plano.
       if (!HWQ_BG.running) {
         HWQ_BG.running = true; HWQ_BG.startedAt = Date.now();
         runHardworqSync({ areas, anos, grupos_prova, qtd_maxima, ids_doencas, idTurma })
-          .then(r => { HWQ_BG.last = { ok: !!r.ok, imported: r.imported || 0, updated: r.updated || 0, msg: r.msg || '', at: Date.now() }; })
+          .then(r => { HWQ_BG.last = { ok: !!r.ok, imported: r.imported || 0, updated: r.updated || 0, truncated: !!r.truncated, msg: r.msg || '', at: Date.now() }; })
           .catch(e => { HWQ_BG.last = { ok: false, msg: e.message, at: Date.now() }; })
           .finally(() => { HWQ_BG.running = false; });
       }
-      return res.json({ success: true, background: true, running: HWQ_BG.running, total: readQuestionsBank().length });
+      return res.json({ success: true, background: true, auth: true, running: HWQ_BG.running, total: readQuestionsBank().length });
     }
-    const result = await runHardworqSync({ areas, anos, grupos_prova, qtd_maxima, ids_doencas, idTurma });
+    const result = await runHardworqSync({ areas, anos, grupos_prova, qtd_maxima, ids_doencas, idTurma, budgetMs: 90000 });
     res.status(result.ok ? 200 : (result.authFailed ? 401 : 502)).json(result);
   } catch (err) {
     console.error('Erro na sincronização Hardworq:', err);
@@ -2226,7 +2424,7 @@ app.post('/api/questions/import-hardworq', async (req, res) => {
     if (payload || jsonText) {
       parsedQuestions = parseHardworqPayload(payload || jsonText);
     } else if (idTurma || HWQ.email || HWQ.cookie) {
-      if (!HWQ_STATE.userToken) await hwqLogin();
+      await hwqEnsureToken();
       const search = await hwqFetchAll({ idTurma, areas, anos, grupos_prova, qtd_maxima, ids_doencas });
       if (search.error || search.authFailed || search.status >= 400) {
         return res.status(search.authFailed ? 401 : 502).json({
@@ -2313,7 +2511,7 @@ async function mirrorTick() {
   MIRROR.running = true;
   let espera = Math.max(1, parseFloat(process.env.HARDWORQ_MIRROR_PAUSE_S) || 10) * 1000;
   try {
-    if (!HWQ_STATE.userToken) await hwqLogin();
+    await hwqEnsureToken();
     const doencas = await hwqListarDoencas();
     MIRROR.total = doencas.length;
     if (!doencas.length) throw new Error('catálogo de doenças vazio');

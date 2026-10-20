@@ -490,7 +490,7 @@ cuscuz/
 
 | Método | Rota | Observação |
 |---|---|---|
-| GET | `/api/radar-medico?force=true` | scraping do Estratégia MED + cache 12 h |
+| GET | `/api/radar-medico?force=true` | scraping do Estratégia MED + cache durável de 24 h |
 | POST | `/api/chat` | chat com OpenAI (opcional) |
 | GET | `/api/conversations/:id` | histórico |
 | DELETE | `/api/conversations/:id` | apaga conversa |
@@ -510,9 +510,9 @@ cuscuz/
 | Banco de questões (seed) | `data/questions-bank.json` no repo | sim | — |
 | Banco de questões (trabalho) | `/tmp/questions-bank.json` + Supabase Storage `acervo/questions-bank.json` | sim, com Supabase | recarrega o seed/Storage |
 | Banco oficial atualizado | `data/questions-bank.json.gz` no GitHub | sim | Action mensal |
-| Token do Hardworq | Supabase `system_configs` (`hwq_token`) | sim | relogin automático |
+| Token do Hardworq | Supabase `system_configs` (`hwq_token`) ou bucket privado `system` | sim | relogin automático sob demanda |
 | Mirror do Hardworq | `/tmp/hwq-mirror.json` | não | recomeça |
-| Cache do Radar | `/tmp/radar_medico_cache.json` | não | scraping |
+| Cache do Radar + marca da IA | Supabase `system_configs`/bucket `system` | sim | `/tmp`/seed `radar-medico.json` |
 | Decks do planejador | `/tmp/decks/` | não | regeneração |
 | Plano e chat do aluno | IndexedDB do navegador | sim (por dispositivo) | — |
 | Espelho do estado do aluno | Firebase RTDB `users/<user>/state` | sim (opcional) | localStorage/IndexedDB |
@@ -666,12 +666,13 @@ cuscuz/
 
 ### 11.11 Radar médico
 
-1. `GET /api/radar-medico` verifica o cache de 12 h.
+1. `GET /api/radar-medico` verifica o cache durável de 24 h (`system_configs`/bucket `system`; `/tmp` e o seed são fallback).
 2. Cache válido → responde `status: cached`.
 3. Sem cache (ou `force=true`) → scraping de `med.estrategia.com/portal/atualidades`.
-4. O conteúdo é resumido com Gemini (3 eixos: implementações, prática clínica, o que mudou) e gravado em `/tmp`.
-5. Se o Gemini falha, o Radar usa resumos pré-estruturados e continua respondendo.
-6. Falha com cache → `cached_fallback`; falha sem cache → 500.
+4. O conteúdo é resumido em **uma única chamada de IA** (Groq) para todas as matérias (3 eixos: implementações, prática clínica, o que mudou) e o resultado é gravado no Supabase.
+5. A marca `radar_medico_last_ai` limita a IA a **1 chamada a cada 24 h**, inclusive com vários cold starts; o cron `/api/radar-medico/refresh` só renova cache vencido.
+6. Se a IA falha, o Radar usa resumos anteriores/pré-estruturados e continua respondendo.
+7. Falha com cache → `cached_fallback`; falha sem cache → 500.
 
 ### 11.12 Sync do catálogo (Delta/Full)
 

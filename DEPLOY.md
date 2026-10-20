@@ -92,11 +92,13 @@ A Vercel roda o mesmo `server.js`, mas em modo **função serverless**: o disco 
 Na Vercel **nada** é gravado no disco do projeto. Todo o estado mutável vai para `DATA_DIR`, que em serverless aponta para `/tmp/cuscuz-med`:
 
 - banco de questões de trabalho (`questions-bank.json`) — o `data/questions-bank.json` do repositório serve apenas de **semente** somente-leitura; no cold start, se o `/tmp` estiver vazio, o app usa a semente e tenta a cópia mais completa do Supabase Storage;
-- cache do radar, mirror do Hardworq, decks do planner, catálogo de extras, cache das apostilas.
+- cache do radar (renovado no máximo 1x por dia), mirror do Hardworq, decks do planner, catálogo de extras, cache das apostilas.
 
-O **token do Hardworq não fica em arquivo**: ele é gravado com UPSERT na tabela `system_configs` (chave `hwq_token`) e lido do Supabase a cada cold start. O `/tmp` guarda apenas um cache best-effort. Para habilitar, rode uma vez o `supabase-schema.sql` no SQL Editor do Supabase.
+O **token do Hardworq não fica em arquivo**: ele é gravado com UPSERT na tabela `system_configs` (chave `hwq_token`) e lido do Supabase a cada cold start. Se a tabela ainda não tiver sido criada, o app usa automaticamente um **bucket privado `system`** no Supabase Storage (criado na primeira gravação, com a `SERVICE_ROLE_KEY`). O `/tmp` guarda apenas um cache best-effort. Para habilitar a tabela, rode uma vez o `supabase-schema.sql` no SQL Editor do Supabase.
 
-Como `/tmp` é por invocação, o estado durável continua vindo da nuvem (Supabase) e do repositório. As tarefas de background (auto-sync do Hardworq, espelho, varredura de extras) **não** rodam em serverless — são acionadas por requisição/endpoints. O webhook do Drive processa a notificação dentro da própria chamada serverless; o cron diário recupera deltas perdidos e renova o canal.
+O **Radar Médico** também é durável: o cache e a marca da última chamada de IA ficam no Supabase. A IA é chamada no máximo **1x a cada 24h** (inclusive com vários cold starts); o cron diário só renova se o cache estiver vencido. O endpoint `/api/radar-medico` não é mais cacheável pelo navegador (`Cache-Control: no-store`).
+
+Como `/tmp` é por invocação, o estado durável continua vindo da nuvem (Supabase) e do repositório. Na Vercel, a sincronização do Hardworq roda **dentro da própria requisição** (com orçamento de tempo), porque trabalho disparado depois da resposta não é garantido em serverless. O webhook do Drive processa a notificação dentro da própria chamada serverless; o cron diário recupera deltas perdidos e renova o canal.
 
 ## Passo a passo
 
@@ -109,9 +111,10 @@ Como `/tmp` é por invocação, o estado durável continua vindo da nuvem (Supab
    - `DRIVE_PUSH_WEBHOOK_URL` → URL pública do deploy terminada em `/webhooks/google-drive`.
    - `DRIVE_PUSH_WEBHOOK_TOKEN` e `CRON_SECRET` → segredos aleatórios distintos; não os coloque no GitHub.
    - Mantenha as outras variáveis exigidas pelo app (`APP_PASSWORD`, `GROQ_API_KEY`, `HARDWORQ_*`, etc.).
-4. No **Supabase → SQL Editor**, rode `supabase-schema.sql`. A tabela `system_configs` é o que torna o token do Hardworq durável entre cold starts; sem ela o token cai para o cache efêmero de `/tmp`.
+4. No **Supabase → SQL Editor**, rode `supabase-schema.sql`. A tabela `system_configs` é o caminho principal para o token do Hardworq. Se ela não existir, o app tenta o bucket privado `system` (requer `SUPABASE_SERVICE_ROLE_KEY`); sem nenhum dos dois, o token cai para o cache efêmero de `/tmp`.
 5. **Deploy**. O build roda `node scripts/build-public.js` e a função sobe em `api/index.js`.
-6. Depois do deploy, chame uma vez `GET /webhooks/google-drive/maintenance` com `Authorization: Bearer <CRON_SECRET>` para iniciar a reconciliação e registrar o canal. O cron diário do `vercel.json` renova o canal e recupera deltas sem polling do Supabase.
+6. Depois do deploy, chame uma vez `GET /webhooks/google-drive/maintenance` com `Authorization: Bearer <CRON_SECRET>` para iniciar a reconciliação e registrar o canal. O cron diário do `vercel.json` renova o canal e recupera deltas sem polling do Supabase. Há também o cron `/api/radar-medico/refresh`, que atualiza o Radar no máximo 1x por dia.
+7. Diagnóstico: `GET /api/health?deep=1` mostra se a tabela/bucket estão prontos e faz um teste real de login no Hardworq (sem expor a senha). Use após configurar `HARDWORQ_EMAIL`/`HARDWORQ_SENHA`.
 
 ## Cuidados
 

@@ -12,6 +12,7 @@
     }
   },
   "crons": [
-    { "path": "/webhooks/google-drive/maintenance", "schedule": "17 6 * * *" }
+    { "path": "/webhooks/google-drive/maintenance", "schedule": "17 6 * * *" },
+    { "path": "/api/radar-medico/refresh", "schedule": "23 6 * * *" }
   ]
 }

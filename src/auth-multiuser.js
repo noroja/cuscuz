@@ -385,6 +385,7 @@ export function authMiddleware(req, res, next) {
   if (full.startsWith('/api/auth/')) return next();
   if (full === '/api/health') return next();
   if (full === '/api/config') return next();
+  if (full === '/api/radar-medico/refresh') return next(); // cron: valida CRON_SECRET na própria rota
   if (full.startsWith('/api/drive/')) return next();
   const authHeader = req.headers.authorization || '';
   const token =
