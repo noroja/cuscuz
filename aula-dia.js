@@ -90,6 +90,15 @@
 .ad-md ul,.ad-md ol{margin:6px 0 10px 20px}.ad-md hr{border:0;border-top:1px dashed var(--border-muted);margin:14px 0}
 .ad-md a{color:var(--cyan)}
 .ad-step{font-size:12.5px;margin:3px 0;color:var(--text-secondary)}.ad-step.ok{color:var(--green,#27ae60)}.ad-step.go{color:var(--amber)}.ad-step.er{color:var(--rose,#e11d48)}
+.ak-bar{display:flex;gap:10px;align-items:center;margin:8px 0;flex-wrap:wrap}
+.ak-bar audio{width:100%;height:40px}
+.ak-max{max-height:58vh;overflow:auto;padding:4px 2px}
+.ak-chunk{margin:8px 0}.ak-chunk h5{margin:0 0 2px;font-size:10.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em}
+.ak-line{padding:4px 10px;border-radius:10px;cursor:pointer;font-size:14px;line-height:1.6;transition:background .15s}
+.ak-line:hover{background:var(--bg-base)}
+.ak-line.on{background:var(--teal-dim);box-shadow:inset 0 0 0 1.5px var(--teal-border);color:var(--text-primary)}
+.ak-line .t{color:var(--text-muted);font-family:var(--font-mono);font-size:11.5px;margin-right:8px}
+.ak-info{font-size:12px;color:var(--text-muted);margin:6px 0}
 @media(max-width:600px){.ad .row,.ad .row3{grid-template-columns:1fr}}`;
     document.head.appendChild(s);
   }
@@ -169,14 +178,27 @@
     <div class="card"><b>Aulas gravadas</b> <small class="sub">(por Área › Conteúdo › Parte)</small>${historicoAgrupado()}</div></div>`;
   }
 
+  function estadoGrav() { return rec ? (rec.parar ? 'finalizando' : rec.parado ? 'parada' : rec.pausado ? 'pausada' : 'gravando') : null; }
+  function decorridoMs() { if (!rec) return 0; return rec.ganho + (!(rec.pausado || rec.parado || rec.parar) ? Date.now() - rec.refer : 0).valueOf(); }
+
   function desenharGravando() {
     const r = $('ad-root'); if (!r || !rec) return;
-    r.innerHTML = `<div class="ad"><h2><span class="ad-dot" style="display:inline-block;margin-right:8px"></span>Gravando — ${E(rec.sess.disciplina || 'aula')}</h2><div class="sub">${E(rec.sess.tema || '')}</div>
-    <div class="card"><div class="ad-big" style="margin-top:0"><span class="ad-timer" id="ad-timer">00:00</span><div class="ad-meter"><i id="ad-meter"></i></div>
-    <button class="b" onclick="auladia.marcar()">⭐ Marcar momento</button><button class="b pri" onclick="auladia.parar()"><i class="ph ph-stop-circle"></i> Finalizar</button></div>
-    <div class="sub" id="ad-status" style="margin:8px 0 0"></div></div>
+    const est = estadoGrav();
+    const bPausa = est === 'pausada'
+      ? `<button class="b pri" onclick="auladia.continuar()"><i class="ph ph-play"></i> Continuar</button>`
+      : est === 'gravando' ? `<button class="b" onclick="auladia.pausar()"><i class="ph ph-pause"></i> Pausar</button>` : '';
+    const bParada = est === 'parada'
+      ? `<button class="b pri" onclick="auladia.retomar()"><i class="ph ph-microphone"></i> Continuar gravação</button><button class="b pri" onclick="auladia.finalizar()"><i class="ph ph-sparkle"></i> ✅ Finalizar e revisar</button>`
+      : est === 'gravando' || est === 'pausada' ? `<button class="b" onclick="auladia.parar()"><i class="ph ph-stop-circle"></i> ⏹ Parar</button>` : '';
+    const stTxt = est === 'pausada' ? '⏸ Pausado — o microfone ficou em espera; o trecho atual foi guardado junto com o áudio.'
+      : est === 'parada' ? '⏹ Gravação parada — toque em "Continuar gravação" para somar mais um trecho, ou "Finalizar e revisar" para gerar o material de estudo.'
+      : est === 'finalizando' ? 'Finalizando e transcrevendo o último trecho…'
+      : (geminiOk ? 'Gravando · trechos enviados à IA a cada ~1,5 min' : 'Gravando · legenda ao vivo do navegador');
+    r.innerHTML = `<div class="ad"><h2><span class="ad-dot" style="display:inline-block;margin-right:8px;${est === 'gravando' ? '' : 'animation:none;background:var(--amber)'}"></span>${est === 'gravando' ? 'Gravando' : est === 'pausada' ? 'Pausado' : est === 'parada' ? 'Gravação parada' : 'Finalizando'} — ${E(rec.sess.disciplina || 'aula')}</h2><div class="sub">${E(rec.sess.tema || '')}</div>
+    <div class="card"><div class="ad-big" style="margin-top:0"><span class="ad-timer" id="ad-timer">${mmss(decorridoMs() / 1000)}</span><div class="ad-meter"><i id="ad-meter"></i></div>
+    <button class="b" onclick="auladia.marcar()">⭐ Marcar momento</button>${bPausa}${bParada}${est !== 'finalizando' ? `<button class="b pri" onclick="auladia.finalizar()"><i class="ph ph-check-circle"></i> Finalizar</button>` : ''}</div>
+    <div class="sub" id="ad-status" style="margin:8px 0 0">${E(stTxt)}</div></div>
     <div class="card"><b>Transcrição ao vivo</b><div class="ad-tr" id="ad-tr"></div></div></div>`;
-    atualizarTexto();
   }
 
   function textoHtml(s) {
@@ -233,7 +255,7 @@
   async function comecar(stream, disc, tema, parte, cor) {
     const sess = { id: 'a' + Date.now(), data: hojeISO(), inicio: Date.now(), disciplina: disc.trim(), tema: tema.trim(), parte, cor, duracao: 0, chunks: [], marcas: [], texto: '', live: '', resultado: null };
     const mime = escolherMime();
-    rec = { sess, stream, mime, mr: null, t0: Date.now(), parar: false, fila: [], enviando: false, chunkIdx: 0, silencio: 0, timers: [], ctx: null, wake: null, sr: null };
+    rec = { sess, stream, mime, mr: null, t0: Date.now(), parar: false, pausado: false, parado: false, ganho: 0, refer: Date.now(), fila: [], enviando: false, chunkIdx: 0, silencio: 0, timers: [], ctx: null, wake: null, sr: null };
     sessAtual = sess; salvarSess(sess);
     // medidor de nível
     try {
@@ -244,10 +266,12 @@
         an.getByteTimeDomainData(buf); let m = 0; for (const v of buf) m = Math.max(m, Math.abs(v - 128));
         const nv = Math.min(100, m * 1.6); const el = $('ad-meter'); if (el) el.style.width = nv + '%';
         rec.silencio = nv < 3 ? rec.silencio + 0.1 : 0;
-        const st = $('ad-status'); if (st) st.textContent = rec.silencio > 20 ? '⚠ Sem som há mais de 20 s — verifique o microfone e a distância do professor.' : (geminiOk ? 'Gravando · trechos enviados à IA a cada ~1,5 min' : 'Gravando · legenda ao vivo do navegador');
+        if (estadoGrav() === 'gravando') {
+          const st = $('ad-status'); if (st) st.textContent = rec.silencio > 20 ? '⚠ Sem som há mais de 20 s — verifique o microfone e a distância do professor.' : 'Gravando · trechos enviados à IA a cada ~1,5 min';
+        }
       }, 100));
     } catch (_) {}
-    rec.timers.push(setInterval(() => { const el = $('ad-timer'); if (el) el.textContent = mmss((Date.now() - rec.t0) / 1000); sess.duracao = Math.round((Date.now() - rec.t0) / 1000); }, 500));
+    rec.timers.push(setInterval(() => { const el = $('ad-timer'); if (el) el.textContent = mmss(decorridoMs() / 1000); if (!(rec.pausado || rec.parado || rec.parar)) sess.duracao = Math.round(decorridoMs() / 1000); }, 500));
     try { if (navigator.wakeLock) rec.wake = await navigator.wakeLock.request('screen'); } catch (_) {}
     document.addEventListener('visibilitychange', aoMudarVisibilidade);
     desenharGravando();
@@ -263,18 +287,20 @@
   }
 
   function iniciarTrecho() {
-    if (!rec) return;
+    if (!rec || rec.parar || rec.pausado || rec.parado) return;
     const idx = rec.chunkIdx++;
     const parts = [];
     let mr;
     try { mr = new MediaRecorder(rec.stream, rec.mime ? { mimeType: rec.mime, audioBitsPerSecond: 32000 } : undefined); }
     catch (e) { try { mr = new MediaRecorder(rec.stream); } catch (e2) { toast('Não foi possível iniciar a gravação neste navegador.', 'error'); return; } }
-    rec.mr = mr;
+    rec.mr = mr; rec.tChunkStart = Date.now();
     mr.ondataavailable = ev => { if (ev.data && ev.data.size) parts.push(ev.data); };
     mr.onstop = () => {
       const blob = new Blob(parts, { type: mr.mimeType || rec.mime || 'audio/webm' });
       if (blob.size > 2000) { const sess = sessAtual; sess.chunks.push({ i: idx, status: 'pendente', texto: '', mime: blob.type }); salvarSess(sess); idbPut(sess.id + ':' + idx, blob); if (geminiOk) { rec.fila.push({ sess, idx, blob }); bombear(); } }
-      if (rec && !rec.parar) iniciarTrecho(); else if (rec && rec.parar) finalizarDepois();
+      // a bola volta a rolar só se a gravação segue ativa (pausa/parada mantêm tudo congelado até a retomada)
+      if (rec && rec.parar) finalizarDepois();
+      else if (rec && !rec.pausado && !rec.parado) iniciarTrecho();
     };
     mr.start();
     clearTimeout(rec.tChunk);
@@ -301,7 +327,7 @@
 
   function marcar() {
     if (!rec) return;
-    const t = mmss((Date.now() - rec.t0) / 1000);
+    const t = mmss(decorridoMs() / 1000);
     sessAtual.marcas.push(t);
     // insere a marca no ponto atual da transcrição ao vivo / entre trechos
     if (!geminiOk) sessAtual.live = (sessAtual.live ? sessAtual.live + '\n' : '') + '⭐ [' + t + ']\n';
@@ -309,14 +335,65 @@
     atualizarTexto(); toast('Momento marcado em ' + t, 'success');
   }
 
-  async function parar() {
-    if (!rec) return;
-    rec.parar = true;
+  function pausar() {
+    if (!rec || rec.pausado || rec.parado || rec.parar) return;
+    rec.pausado = true;
+    clearTimeout(rec.tChunk);
+    rec.ganho += Date.now() - rec.refer;
+    try {
+      if (rec.mr && rec.mr.state === 'recording') { try { rec.mr.pause(); } catch (e) { rec.mr.stop(); } }
+      else if (rec.mr && rec.mr.state !== 'inactive') rec.mr.stop();
+    } catch (_) {}
+    try { rec.sr && rec.sr.stop(); } catch (_) {} // legenda ao vivo também congela na pausa
+    desenharGravando();
+    toast('Gravação em pausa — o trecho em curso ficou salvo com o áudio.', 'info');
+  }
+
+  function continuar() {
+    if (!rec || !rec.pausado || rec.parado || rec.parar) return;
+    rec.pausado = false; rec.refer = Date.now();
+    let retomou = false;
+    try { if (rec.mr && rec.mr.state === 'paused') { rec.mr.resume(); retomou = true; } } catch (_) {}
+    if (!retomou || !rec.mr || rec.mr.state === 'inactive') { rec.mr = null; iniciarTrecho(); }
+    else { // replaneja a virada do trecho com o tempo que restava
+      clearTimeout(rec.tChunk);
+      const restante = Math.max(5000, CHUNK_MS - (Date.now() - (rec.tChunkStart || Date.now())));
+      rec.tChunk = setTimeout(() => { try { if (rec.mr && rec.mr.state !== 'inactive') rec.mr.stop(); } catch (_) {} }, restante);
+    }
+    if (!geminiOk) iniciarLegendaAoVivo();
+    desenharGravando();
+    toast('Gravação retomada.', 'success');
+  }
+
+  function parar() { // ⏹ Para a gravação sem encerrar a sessão — dá para continuar depois
+    if (!rec || rec.parar) return;
+    rec.parado = true; rec.pausado = false;
+    clearTimeout(rec.tChunk);
+    rec.ganho += Date.now() - rec.refer;
+    try { rec.sr && rec.sr.stop(); } catch (_) {}
+    sessAtual.duracao = Math.round(decorridoMs() / 1000);
+    try { if (rec.mr && rec.mr.state !== 'inactive') rec.mr.stop(); } catch (_) {}
+    desenharGravando();
+    atualizarTexto();
+  }
+
+  function retomar() { // ▶ Continua a gravação após o ⏹
+    if (!rec || !rec.parado || rec.parar) return;
+    rec.parado = false; rec.refer = Date.now(); rec.mr = null;
+    iniciarTrecho();
+    if (!geminiOk) iniciarLegendaAoVivo();
+    desenharGravando();
+    toast('Gravação retomada — o novo trecho entra no fim da aula.', 'success');
+  }
+
+  function finalizar() { // ✅ Encerra a gravação e dispara o processo secundário (revisão → resumo → flashcards)
+    if (!rec || rec.parar) return;
+    rec.parar = true; rec.pausado = false; rec.parado = false;
     rec.timers.forEach(clearInterval); clearTimeout(rec.tChunk);
     try { rec.sr && rec.sr.stop(); } catch (_) {}
-    sessAtual.duracao = Math.round((Date.now() - rec.t0) / 1000);
+    sessAtual.duracao = Math.round(decorridoMs() / 1000);
     try { if (rec.mr && rec.mr.state !== 'inactive') rec.mr.stop(); else finalizarDepois(); } catch (_) { finalizarDepois(); }
-    const r = $('ad-root'); if (r) { const st = $('ad-status'); if (st) st.textContent = 'Finalizando e transcrevendo o último trecho…'; }
+    desenharGravando();
   }
 
   function finalizarDepois() {
@@ -373,7 +450,12 @@
         const b = usarWav ? await paraWav16k(blob) : blob;
         const r = await fetch('/api/aula/transcrever', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audio: await blobParaB64(b), mime: b.type, disciplina: sess.disciplina, tema: (sess.tema + (sess.parte && sess.parte !== 'Única' ? ' — ' + sess.parte : '')).trim(), anterior, glossario: assuntosPlano(sess.disciplina).slice(0, 60) }) });
         const j = await r.json().catch(() => ({}));
-        if (r.ok && j.success) { c.status = 'ok'; c.texto = j.texto || ''; salvarSess(sess); idbDel(sess.id + ':' + idx); if (!c.texto) c.texto = ''; return; }
+        if (r.ok && j.success) {
+          c.status = 'ok'; c.texto = j.texto || '';
+          // segmentos com marca de tempo (Whisper verbose_json) — entram no timeline do karaoke
+          c.segs = (Array.isArray(j.segmentos) && j.segmentos.length) ? j.segmentos.map(x => ({ a: Number(x.ini) || 0, b: Number(x.fim) || 0, t: String(x.text || '') })) : null;
+          c.dur = null; salvarSess(sess); return; // ⚠ o áudio (blob) PERMANECE no IndexedDB — é o que alimenta o modo karaoke
+        }
         if (j.formato && !usarWav) { usarWav = true; continue; }
         if (r.status === 503) break;
       } catch (_) {}
@@ -518,6 +600,116 @@
     return out.join('\n');
   }
 
+  /* ───────────── modo KARAOKE: áudio guardado + transcrição pintada em tempo real ───────────── */
+  const ak = { pars: [], cur: -1, j: 0, chave: '', el: null, url: null, montando: false };
+
+  // duração de um trecho de áudio (decodeAudioData; se o webm vier sem metadados, hack do seek)
+  async function durDe(blob) {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext; const ctx = new AC();
+      const dec = await ctx.decodeAudioData(await blob.arrayBuffer()); ctx.close && ctx.close();
+      if (isFinite(dec.duration) && dec.duration > 0) return dec.duration;
+    } catch (_) {}
+    try {
+      return await new Promise((ok, no) => {
+        const a = new Audio(); a.preload = 'metadata';
+        a.onloadedmetadata = () => {
+          if (isFinite(a.duration) && a.duration > 0) { URL.revokeObjectURL(a.src); ok(a.duration); return; }
+          a.currentTime = 1e7;
+          a.onseeked = () => { const d = a.duration; URL.revokeObjectURL(a.src); ok(isFinite(d) && d > 0 ? d : CHUNK_MS / 1000); };
+        };
+        a.onerror = () => { URL.revokeObjectURL(a.src); no(new Error('sem duração')); };
+        a.src = URL.createObjectURL(blob);
+      });
+    } catch (_) { return CHUNK_MS / 1000; }
+  }
+
+  function karaokeParar(sair) {
+    try { const au = $('ak-au'); au && au.pause(); } catch (_) {}
+    if (sair) {
+      if (ak.url) { URL.revokeObjectURL(ak.url); ak.url = null; }
+      ak.cur = -1; ak.j = 0; ak.chave = ''; ak.el = null; ak.pars = []; ak.montando = false;
+    }
+  }
+
+  function karaokeTick() {
+    const au = $('ak-au'); const it = ak.pars[ak.cur];
+    if (!au || !it) return;
+    const tL = au.currentTime;
+    let j = ak.j;
+    if (it.c.segs && it.c.segs.length) {
+      j = Math.max(0, Math.min(j, it.c.segs.length - 1));
+      while (j + 1 < it.c.segs.length && it.c.segs[j].b <= tL) j++;
+      while (j > 0 && it.c.segs[j - 1].b > tL) j--;
+    } else j = 0;
+    const chave = ak.cur + '-' + j;
+    if (chave === ak.chave) return;
+    ak.chave = chave; ak.j = j;
+    if (ak.el) ak.el.classList.remove('on');
+    ak.el = document.getElementById('ak-' + chave);
+    if (ak.el) {
+      ak.el.classList.add('on');
+      const m = $('ak-max');
+      if (m && !au.paused) m.scrollTo({ top: Math.max(0, ak.el.offsetTop - m.clientHeight / 2), behavior: 'smooth' });
+    }
+  }
+
+  async function kVai(i, jIdx) {
+    const it = ak.pars[i]; const au = $('ak-au');
+    if (!it || !au) return;
+    if (ak.cur !== i || !au.src) {
+      if (ak.url) { URL.revokeObjectURL(ak.url); ak.url = null; }
+      ak.url = URL.createObjectURL(it.blob);
+      ak.cur = i; ak.j = jIdx || 0; ak.chave = '';
+      au.src = ak.url;
+      await new Promise(r => { if (au.readyState >= 1) r(); else { au.onloadedmetadata = r; setTimeout(r, 1500); } });
+    }
+    ak.j = jIdx || 0;
+    const segs = it.c.segs || [];
+    const alvo = segs.length && segs[ak.j] ? Math.min(segs[ak.j].a, Math.max(0, it.dur - 0.05)) : 0;
+    try { au.currentTime = alvo; } catch (_) {}
+    au.play().catch(() => {});
+  }
+
+  async function desenharKaraoke() {
+    const s = sessAtual, box = $('ak-box');
+    if (!box || !s || ak.montando) return;
+    ak.montando = true;
+    try {
+      karaokeParar(false);
+      if (ak.url) { URL.revokeObjectURL(ak.url); ak.url = null; ak.cur = -1; }
+      const itens = (s.chunks || []).filter(c => Number.isInteger(c.i) && c.status !== 'pendente').sort((a, b) => a.i - b.i);
+      const plavs = [];
+      for (const c of itens) { const blob = await idbGet(s.id + ':' + c.i); if (blob) plavs.push({ c, blob, dur: 0, off: 0 }); }
+      if (!plavs.length) {
+        box.innerHTML = '<div class="sub">🎙 Os áudios desta aula não estão guardados neste navegador (gravados numa versão anterior ou limpos do armazenamento). Grave uma aula nova para acompanhar no modo karaoke.</div>';
+        ak.montando = false; return;
+      }
+      let off = 0;
+      for (const it of plavs) { it.dur = await durDe(it.blob); it.off = off; off += it.dur; }
+      ak.pars = plavs; ak.cur = -1; ak.j = 0; ak.chave = ''; ak.el = null;
+      let corpo = '';
+      plavs.forEach((it, i) => {
+        const marc = `Trecho ${it.c.i + 1} · 🎵 de ${mmss(it.off)} a ${mmss(it.off + it.dur)}`;
+        const linhas = (it.c.segs && it.c.segs.length)
+          ? it.c.segs.map((g, j) => `<div class="ak-line" id="ak-${i}-${j}" onclick="auladia.kVai(${i},${j})"><span class="t">${mmss(it.off + Math.max(0, g.a))}</span>${E(g.t || '—')}</div>`).join('')
+          : `<div class="ak-line" id="ak-${i}-0" onclick="auladia.kVai(${i},0)"><span class="t">${mmss(it.off)}</span>${it.c.status === 'ok' ? E(it.c.texto || '') : '<span class="pend">[trecho sem transcrição]</span>'}</div>`;
+        corpo += `<div class="ak-chunk"><h5>${E(marc)}</h5>${linhas}</div>`;
+      });
+      box.innerHTML = `<div class="ak-bar"><audio id="ak-au" controls preload="metadata" style="width:100%"></audio></div>
+        <div class="ak-info">${plavs.length} trecho(s) · ${hms(off)} no total · a linha acende conforme o professor fala; toque em qualquer linha para pular para ela 🎤</div>
+        <div class="ak-max" id="ak-max">${corpo}</div>`;
+      const au = $('ak-au');
+      au.ontimeupdate = karaokeTick;
+      au.onended = () => { if (ak.cur + 1 < ak.pars.length) { const i = ak.cur + 1; kVai(i, 0); } };
+      // um trecho que estava pendente pode ter chegado: recarrega se os dados mudarem por trás
+      ak.montando = false;
+    } catch (_) {
+      box.innerHTML = '<div class="sub">Não consegui montar o player de áudio neste navegador.</div>';
+      ak.montando = false;
+    }
+  }
+
   /* ───────────── resultado ───────────── */
   function desenharResultado() {
     const r = $('ad-root'); const s = sessAtual; if (!r || !s) return;
@@ -526,9 +718,11 @@
     if (s.resumoMd) tabs.push(['resumo', 'Resumo']);
     if (s.flashcards) tabs.push(['flash', 'Flashcards (' + s.flashcards.length + ')']);
     if (res) tabs.push(['prova', 'Cai na prova']);
+    if ((s.chunks || []).some(c => Number.isInteger(c.i))) tabs.push(['audio', '🎤 Áudio · karaoke']);
     if (!tabs.some(t => t[0] === abaRes)) abaRes = tabs[0][0];
     let corpo = '';
     if (abaRes === 'transcricao') corpo = `<div class="ad-tr">${s.textoRevisado ? E(s.textoRevisado).replace(/⭐ \[(\d\d:\d\d)\]/g, '<span class="mk">⭐ [$1]</span>') : textoHtml(s)}</div>`;
+    else if (abaRes === 'audio') corpo = `<div id="ak-box"><div class="sub">Montando o player do karaoke…</div></div>`;
     else if (abaRes === 'resumo') corpo = `<div class="ad-md" id="ad-md">${mdParaHtml(s.resumoMd)}</div>`;
     else if (abaRes === 'flash') {
       const grupos = {}; (s.flashcards || []).forEach(f => { (grupos[f.tema || 'Geral'] = grupos[f.tema || 'Geral'] || []).push(f); });
@@ -540,6 +734,7 @@
     <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="b" onclick="auladia.voltar()"><i class="ph ph-arrow-left"></i> Aulas</button>${geminiOk && !completo ? '<button class="b pri" onclick="auladia.gerar()"><i class="ph ph-sparkle"></i> Gerar / continuar</button>' : ''}${falhas ? `<button class="b" onclick="auladia.reenviar()">Tentar novamente (${falhas})</button>` : ''}<button class="b" onclick="auladia.copiar()">Copiar texto</button><button class="b" onclick="auladia.baixar('transcricao')">⬇ Transcrição .md</button>${s.resumoMd ? '<button class="b" onclick="auladia.baixar(\'resumo\')">⬇ Resumo .md</button>' : ''}<button class="b" onclick="auladia.baixar('tudo')">⬇ Tudo (NotebookLM)</button></div><div id="ad-proc" style="margin:0 0 8px"></div>
     <div class="ad-tabs">${tabs.map(([k, n]) => `<button class="b ${abaRes === k ? 'on' : ''}" onclick="auladia.aba('${k}')">${n}</button>`).join('')}</div>${corpo}</div></div>`;
     if (pipelineRodando && sessAtual && htmlPassos) { const el = $('ad-proc'); if (el) el.innerHTML = htmlPassos; }
+    if (abaRes === 'audio') desenharKaraoke();
   }
 
   /* ───────────── ações ───────────── */
@@ -565,15 +760,17 @@
     if (typeof saveFC === 'function') saveFC();
     toast(n + ' flashcards adicionados ao Treino — eles entram na revisão espaçada de hoje.', 'success');
   }
-  async function abrirSess(id) { const s = await carregarSess(id); if (!s) return; sessAtual = s; abaRes = s.resumoMd ? 'resumo' : 'transcricao'; desenharResultado(); }
+  async function abrirSess(id) { if (rec) return toast('Fim da gravação primeiro — finalize ou aguarde terminar.', 'warning'); const s = await carregarSess(id); if (!s) return; sessAtual = s; abaRes = s.resumoMd ? 'resumo' : 'transcricao'; desenharResultado(); }
   function apagarSess(id) { if (!confirm('Apagar esta aula gravada?')) return; salvarSessoes(sessoes().filter(x => x.id !== id)); idbDel(id + ':'); idbDelKey('doc:' + id); if (sessAtual && sessAtual.id === id) sessAtual = null; render(); }
 
   window.auladia = {
-    iniciar, parar, marcar, abrir: abrirSess, apagar: apagarSess, enviarFlash, baixar, copiar,
+    iniciar, marcar, abrir: abrirSess, apagar: apagarSess, enviarFlash, baixar, copiar,
+    pausar, continuar, parar, retomar, finalizar,
     gerar() { if (sessAtual) pipeline(sessAtual); }, reenviar: reenviarFalhas, parteAuto: atualizarParteSugerida,
+    kVai,
     ancora(id) { const el = document.getElementById('adh-' + id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
-    aba(k) { abaRes = k; desenharResultado(); },
-    voltar() { if (rec) return; sessAtual = null; render(); }
+    aba(k) { if (abaRes === 'audio' && k !== 'audio') karaokeParar(true); abaRes = k; desenharResultado(); },
+    voltar() { if (rec) return; karaokeParar(true); sessAtual = null; render(); }
   };
 
   // integra com a navegação do app

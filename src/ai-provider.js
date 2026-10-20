@@ -379,7 +379,9 @@ export async function generateAI(params) {
 }
 
 // Transcrição de áudio (Groq Whisper). audioBase64 sem prefixo data:.
-export async function transcribeAudio({ audioBase64, mime = 'audio/webm', prompt = '', language = 'pt' }) {
+// Com timestamps:true usa verbose_json e devolve { texto, segmentos: [{ ini, fim, text }] } — é o que
+// sincroniza o "karaoke" da Aula do Dia; sem a flag, segue devolvendo só o texto (compatibilidade).
+export async function transcribeAudio({ audioBase64, mime = 'audio/webm', prompt = '', language = 'pt', timestamps = false }) {
   const c = cfg().groq;
   if (!c.key) throw new AIError('GROQ_API_KEY não configurada no servidor (transcrição usa o Whisper da Groq).', { status: 503, code: 'no_key' });
   if (!disponivel('groq')) throw new AIError('Limite da Groq atingido — tente novamente em instantes.', { status: 429, code: 'rate_limit', provider: 'groq' });
@@ -390,11 +392,17 @@ export async function transcribeAudio({ audioBase64, mime = 'audio/webm', prompt
   form.append('model', c.stt);
   form.append('language', language);
   form.append('temperature', '0');
-  form.append('response_format', 'json');
+  form.append('response_format', timestamps ? 'verbose_json' : 'json');
   if (prompt) form.append('prompt', String(prompt).slice(0, 800)); // Whisper aceita um prompt curto (glossário / contexto)
   const r = await chamar(c.base + '/audio/transcriptions', { method: 'POST', headers: { Authorization: 'Bearer ' + c.key }, body: form }, { ...c, nome: 'groq', timeout: Math.max(c.timeout, 60000) }, 'transcrição');
   const j = await r.json();
-  return String(j.text || '').trim();
+  const texto = String(j.text || '').trim();
+  if (!timestamps) return texto;
+  const segmentos = (Array.isArray(j.segments) ? j.segments : [])
+    .map(s => ({ ini: Number(s.start) || 0, fim: Number(s.end) || 0, text: String(s.text || '').replace(/[\r\n]+/g, ' ').trim() }))
+    .filter(s => s.text && fimIni(s.fim, s.ini) >= 0);
+  return { texto, segmentos };
 }
+const fimIni = (fim, ini) => fim - ini;
 
 export function _resetForTests() { bloqueadoAte.groq = 0; bloqueadoAte.gemini = 0; }

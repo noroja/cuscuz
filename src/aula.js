@@ -115,9 +115,11 @@ export function registerAula(app, { generateAI, aiConfigured }) {
       if (audio.length > 28 * 1024 * 1024) return res.status(413).json({ success: false, msg: 'Trecho de áudio grande demais.' });
       const mimeBase = String(mime).split(';')[0] || 'audio/webm';
       const termos = (Array.isArray(glossario) ? glossario : []).map(String).filter(Boolean).slice(0, 80);
-      let texto = await transcribeAudio({ audioBase64: audio, mime: mimeBase, language: 'pt', prompt: [disciplina && ('Aula de ' + disciplina + (tema ? ': ' + tema : '') + '.'), termos.length && ('Termos: ' + termos.join(', '))].filter(Boolean).join(' ') });
+      const ria = await transcribeAudio({ audioBase64: audio, mime: mimeBase, language: 'pt', timestamps: true, prompt: [disciplina && ('Aula de ' + disciplina + (tema ? ': ' + tema : '') + '.'), termos.length && ('Termos: ' + termos.join(', '))].filter(Boolean).join(' ') });
+      let texto = typeof ria === 'string' ? ria : ria.texto;
+      const segmentos = (ria && typeof ria === 'object' && Array.isArray(ria.segmentos)) ? ria.segmentos : [];
       if (/^\[sem fala\]$/i.test(texto)) texto = '';
-      res.json({ success: true, texto });
+      res.json({ success: true, texto, segmentos });
     } catch (err) {
       console.warn('[Aula transcrever]', err.message);
       const unsupported = /unsupported|invalid.*(mime|argument)|could not.*process|INVALID_ARGUMENT/i.test(err.message);
