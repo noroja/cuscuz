@@ -99,6 +99,12 @@
 .ak-line.on{background:var(--teal-dim);box-shadow:inset 0 0 0 1.5px var(--teal-border);color:var(--text-primary)}
 .ak-line .t{color:var(--text-muted);font-family:var(--font-mono);font-size:11.5px;margin-right:8px}
 .ak-info{font-size:12px;color:var(--text-muted);margin:6px 0}
+.mm-tools{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}
+.mm-tools .b{padding:5px 10px;font-size:12px}
+.mm-sc{overflow:auto;max-height:72vh;border-radius:14px;border:1px solid rgba(120,160,150,.25);background:#0b1216}
+.mm-inner{transform-origin:0 0;width:max-content}
+.mm-node{cursor:pointer}
+.mm-node text{user-select:none}
 @media(max-width:600px){.ad .row,.ad .row3{grid-template-columns:1fr}}`;
     document.head.appendChild(s);
   }
@@ -710,6 +716,122 @@
     }
   }
 
+  /* ───────────── Resumo Geral (material autossuficiente) + MAPA MENTAL interativo ───────────── */
+  let rqRodando = false;
+  async function gerarResumoGeral() {
+    const s = sessAtual;
+    if (!s) return;
+    if (!geminiOk) return toast('Precisa de IA configurada (Gemini ou Groq) no servidor.', 'warning');
+    if (rqRodando || pipelineRodando) return toast('Já estou gerando material para esta aula.', 'info');
+    rqRodando = true; abaRes = 'resumo_g'; desenharResultado();
+    try {
+      const j = await post('/api/aula/resumo-geral', {
+        transcricao: s.textoRevisado || s.texto || textoPuro(s),
+        area: s.disciplina || '',
+        conteudo: [s.tema, s.parte && s.parte !== 'Única' ? s.parte : ''].filter(Boolean).join(' — '),
+        parte: s.parte || '',
+        capitulos: (s.mapa && s.mapa.capitulos) || []
+      }, 3);
+      s.resumoGeral = j.markdown; await salvarAgora(s);
+      toast('Resumo Geral pronto — arquivo novo também disponível em "⬇ Resumo Geral .md".', 'success');
+    } catch (e) { toast('Resumo Geral falhou: ' + e.message, 'error'); }
+    rqRodando = false; desenharResultado();
+  }
+
+  // Mapa mental: estado + layout + SVG reenderizado à mão (leve, sem dependência externa e exportável p/ PNG)
+  const mm = { zoom: 1, fech: new Set(), raiz: null };
+  let mmRodando = false;
+  const MM_H = 28, MM_GAP = 4, MM_OX = 14, MM_COL = 34;
+  function mmEnxugia(no) { return { t: String((no && no.t) || '—'), f: (no && Array.isArray(no.f) ? no.f.filter(x => x && x && x.t) : []).slice(0, 9) }; }
+  function mmDeMapa(s) {
+    const caps = (s.mapa && s.mapa.capitulos) || [];
+    return mmEnxugia({ t: 'Aula — ' + (s.tema || s.disciplina || ''), f: caps.map(c => ({ t: c.titulo, f: (c.pontos || []).slice(0, 8).map(p => ({ t: p })) })) });
+  }
+  function mmClique(p) { mm.fech.has(p) ? mm.fech.delete(p) : mm.fech.add(p); desenharMindmap(); }
+  function mmTudo(fechar) {
+    mm.fech.clear();
+    if (fechar) { const passa = (no, path) => { if (path && (no.f || []).length) mm.fech.add(path.join('-')); (no.f || []).forEach((f, k) => passa(f, path.concat(k))); }; passa(mm.raiz || {}, []); }
+    desenharMindmap();
+  }
+
+  function desenharMindmap() {
+    const s = sessAtual, box = $('mm-box'); if (!box || !s) return;
+    if (!mm.raiz && s.mindmap) { mm.raiz = mmEnxugia(s.mindmap); }
+    if (mmRodando) { box.innerHTML = '<div class="sub">⏳ Montando o mapa mental com a IA (1 chamada)…</div>'; return; }
+    if (!mm.raiz) {
+      if (s.mapa && (s.mapa.capitulos || []).length) mm.raiz = mmDeMapa(s);
+      else {
+        box.innerHTML = '<div class="sub">O mapa mental é a árvore da aula: tema central → temas → subtemas → pontos de memorização (com os números/doses exatos da aula). Interativo: feche/abra ramos tocando nos nós, ajuste o zoom e exporte em PNG.</div><button class="b pri" onclick="auladia.mmGerar()"><i class="ph ph-tree-structure"></i> Gerar mapa mental (IA)</button>';
+        return;
+      }
+    }
+    // ── layout: cada ramo avança para a direita; folhas empilham no cursor vertical ──
+    let cur = 14 + MM_H / 2, maxX = 0;
+    const nos = [], lig = [];
+    const largura = (d, t) => d === 0 ? Math.min(250, Math.max(160, t.length * 7.4 + 42)) : Math.min(460, Math.max(118, t.length * 7.1 + 28));
+    const volta = (no, d, x, path) => {
+      no.w = largura(d, no.t);
+      const fil = (no.f || []).map(mmEnxugia);
+      const aberto = fil.length > 0 && !mm.fech.has(path.join('-'));
+      let y;
+      if (aberto) {
+        const ys = fil.map((f, k) => volta(f, d + 1, x + no.w + MM_COL, path.concat(k)));
+        y = (ys[0] + ys[ys.length - 1]) / 2;
+        fil.forEach((f, k) => lig.push({ x1: x + no.w, y1: y, x2: f.x, y2: f.y }));
+      } else { y = cur; cur += MM_H + MM_GAP; }
+      maxX = Math.max(maxX, x + no.w);
+      nos.push({ t: no.t, d, x, y, w: no.w, p: path.join('-'), temFilhos: fil.length > 0, aberto });
+      return y;
+    };
+    volta(mm.raiz, 0, MM_OX, []);
+    const W = Math.max(320, maxX + MM_OX + 8), H = cur + 24 - MM_GAP;
+    const trunc = (t, max) => { t = String(t || ''); return t.length > max ? t.slice(0, max - 1).trimEnd() + '…' : t; };
+    // raízes/ramos cheios (fundo colorido); folhas em estilo "card" com contorno
+    let svg = lig.map(l => `<path d="M${l.x1},${l.y1} C${l.x1 + MM_COL / 2},${l.y1} ${l.x2 - MM_COL / 2},${l.y2} ${l.x2},${l.y2}" fill="none" stroke="#31473f" stroke-width="1.4"/>`).join('');
+    svg += nos.map(n => {
+      if (n.d >= 2 && !n.temFilhos) {
+        return `<g class="mm-node" data-p="${n.p}" onclick="auladia.mmToggle('${n.p}')"><rect x="${n.x}" y="${n.y - MM_H / 2}" width="${n.w}" height="${MM_H}" rx="8" fill="#0d221f" stroke="#14b8a6" stroke-width="1.1"/><text x="${n.x + 10}" y="${n.y + 4}" font-size="11" fill="#a7e8df">${E(trunc(n.t, 62))}</text></g>`;
+      }
+      const fundo = ['#115e59', '#155e75', '#5b21b6'][Math.min(n.d, 2)];
+      const h = n.d === 0 ? MM_H + 8 : MM_H;
+      const fs = n.d === 0 ? 13 : 11.5, fw = n.d === 0 ? '700' : '600';
+      return `<g class="mm-node" data-p="${n.p}" onclick="auladia.mmToggle('${n.p}')"><rect x="${n.x}" y="${n.y - h / 2}" width="${n.w}" height="${h}" rx="10" fill="${fundo}"/><text x="${n.x + 12}" y="${n.y + 4.5}" font-size="${fs}" font-weight="${fw}" fill="#e9fbf7">${E(trunc(n.t, n.d === 0 ? 28 : 52))}</text>${n.temFilhos ? `<text x="${n.x + n.w - 14}" y="${n.y + 4}" font-size="11" fill="#9fd8cf">${n.aberto ? '−' : '+'}</text>` : ''}</g>`;
+    }).join('');
+    const tools = `<div class="mm-tools"><button class="b" onclick="auladia.mmZoom(0.75)">−</button><button class="b" onclick="auladia.mmZoom(1.3)">+</button><button class="b" onclick="auladia.mmFit()">⌂ Ajustar</button><button class="b" onclick="auladia.mmTudo(true)">⇲ Fechar ramos</button><button class="b" onclick="auladia.mmTudo(false)">⇱ Abrir tudo</button><button class="b" onclick="auladia.mmPNG()">⬇ PNG</button><button class="b pri" onclick="auladia.mmGerar()"><i class="ph ph-tree-structure"></i> ${s.mindmap ? 'Regenerar (IA)' : 'Gerar (IA)'}</button></div>`;
+    box.innerHTML = tools + `<div class="mm-sc"><div class="mm-inner" style="transform:scale(${mm.zoom})"><svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${svg}</svg></div></div><div class="sub" style="margin-top:6px">🗺 Toque num nó para fechar/abrir os ramos dele · arraste as barras de rolagem para navegar · ⬇ PNG para imprimir ou colar no caderno.</div>`;
+  }
+
+  function mmAceitar(raiz, salvar) { mm.raiz = mmEnxugia(raiz || {}); mm.fech.clear(); mm.zoom = 1; }
+  async function mmGerar() {
+    const s = sessAtual; if (!s || mmRodando) return;
+    if (!geminiOk) return toast('Precisa de IA configurada (Gemini ou Groq) no servidor.', 'warning');
+    if (rqRodando || pipelineRodando) return toast('Já estou gerando material para esta aula — aguarde.', 'info');
+    mmRodando = true; desenharMindmap();
+    try {
+      const j = await post('/api/aula/mapa-mental', { transcricao: s.textoRevisado || s.texto || textoPuro(s), area: s.disciplina || '', conteudo: s.tema || '', capitulos: (s.mapa && s.mapa.capitulos) || [] }, 1);
+      if (j.raiz && j.raiz.t) { mmAceitar(j.raiz); s.mindmap = j.raiz; await salvarAgora(s); toast('Mapa mental pronto!', 'success'); }
+    } catch (e) {
+      if (s.mapa && (s.mapa.capitulos || []).length) { s.mindmap = mmDeMapa(s); mm.raiz = s.mindmap; mm.fech.clear(); mm.zoom = 1; await salvarAgora(s); toast('IA falhou — montei o mapa pelo esqueleto dos capítulos da aula.', 'warning'); }
+      else toast('Mapa mental falhou: ' + e.message, 'error');
+    }
+    mmRodando = false; desenharMindmap();
+  }
+  function mmZoom(f) { mm.zoom = Math.min(2.6, Math.max(0.45, mm.zoom * f)); desenharMindmap(); }
+  function mmFit() { mm.zoom = 1; desenharMindmap(); }
+  async function mmPNG() {
+    const sv = document.querySelector('#mm-box svg'); if (!sv) return toast('Abra a aba do mapa mental primeiro.', 'info');
+    try {
+      const xml = new XMLSerializer().serializeToString(sv);
+      const img = new Image();
+      await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml); });
+      const c = document.createElement('canvas'); const sc = Math.min(2, 7000 / Math.max(img.width || 1, img.height || 1, 1)) || 2;
+      c.width = Math.ceil((img.width || 2000) * sc); c.height = Math.ceil((img.height || 1000) * sc);
+      const g = c.getContext('2d'); g.fillStyle = '#0b1216'; g.fillRect(0, 0, c.width, c.height); g.scale(sc, sc); g.drawImage(img, 0, 0);
+      const a = document.createElement('a'); a.href = c.toDataURL('image/png'); a.download = 'mapa-mental-' + slug((sessAtual && (sessAtual.tema || sessAtual.disciplina)) || 'aula') + '.png'; a.click();
+      toast('PNG do mapa mental salvo.', 'success');
+    } catch (_) { toast('Não consegui exportar o PNG neste navegador.', 'error'); }
+  }
+
   /* ───────────── resultado ───────────── */
   function desenharResultado() {
     const r = $('ad-root'); const s = sessAtual; if (!r || !s) return;
@@ -718,7 +840,9 @@
     if (s.resumoMd) tabs.push(['resumo', 'Resumo']);
     if (s.flashcards) tabs.push(['flash', 'Flashcards (' + s.flashcards.length + ')']);
     if (res) tabs.push(['prova', 'Cai na prova']);
+    if (s.textoRevisado || s.texto) tabs.push(['resumo_g', s.resumoGeral ? '📜 Resumo Geral' : '📜 Resumo Geral ✨']);
     if ((s.chunks || []).some(c => Number.isInteger(c.i))) tabs.push(['audio', '🎤 Áudio · karaoke']);
+    tabs.push(['mm', '🗺 Mapa mental']);
     if (!tabs.some(t => t[0] === abaRes)) abaRes = tabs[0][0];
     let corpo = '';
     if (abaRes === 'transcricao') corpo = `<div class="ad-tr">${s.textoRevisado ? E(s.textoRevisado).replace(/⭐ \[(\d\d:\d\d)\]/g, '<span class="mk">⭐ [$1]</span>') : textoHtml(s)}</div>`;
@@ -728,13 +852,20 @@
       const grupos = {}; (s.flashcards || []).forEach(f => { (grupos[f.tema || 'Geral'] = grupos[f.tema || 'Geral'] || []).push(f); });
       corpo = `<button class="b pri" onclick="auladia.enviarFlash()"><i class="ph ph-cards"></i> Adicionar ao Treino (revisão espaçada)</button><div style="margin-top:10px">${Object.keys(grupos).map(g => `<div class="grp2">${E(g)}</div>` + grupos[g].map(f => `<div class="fc"><b>${E(f.frente)}</b>${E(f.verso)}</div>`).join('')).join('')}</div>`;
     } else if (res && abaRes === 'prova') corpo = `${(res.caiNaProva || []).length ? '<ul>' + res.caiNaProva.map(p => `<li>${E(p)}</li>`).join('') + '</ul>' : '<div class="sub">O professor não indicou explicitamente o que cai na prova.</div>'}${(s.marcas || []).length ? '<h4>Momentos que você marcou</h4><div class="sub">' + s.marcas.map(E).join(' · ') + '</div>' : ''}${(res.assuntosCobertos || []).length ? '<h4>Assuntos do manual abordados nesta aula</h4><ul>' + res.assuntosCobertos.map(a => `<li>${E(a)}</li>`).join('') + '</ul>' : ''}${(res.duvidas || []).length ? '<h4>Para conferir (possíveis imprecisões)</h4><ul>' + res.duvidas.map(d => `<li>${E(d)}</li>`).join('') + '</ul>' : ''}`;
+    else if (abaRes === 'resumo_g') corpo = rqRodando
+      ? `<div class="card"><div class="ad-step go">⏳ Gerando o Resumo Geral — examinando TODA a aula e escrevendo o material autossuficiente (índice, hierarquia completa, tabelas, Síntese Integradora e Revisão de Véspera). Pode levar 1–3 min; não feche a página.</div></div>`
+      : s.resumoGeral
+        ? `<div class="ad-md" id="ad-md">${mdParaHtml(s.resumoGeral)}</div>`
+        : `<div class="card"><div class="sub">Resumo Geral EXTREMAMENTE DETALHADO: cobre todo o conteúdo relevante (conceitos, seções, exemplos, ressalvas e relações), com título, visão geral e índice, seções hierárquicas, tabelas, distinções entre conceitos semelhantes, <b>Síntese Integradora</b> e <b>Revisão de Véspera</b> — tudo fiel à transcrição.</div><button class="b pri" onclick="auladia.gerarRQ()"><i class="ph ph-scroll"></i> Gerar Resumo Geral</button></div>`;
+    else if (abaRes === 'mm') corpo = `<div id="mm-box"></div>`;
     const falhas = (s.chunks || []).filter(c => c.status === 'erro' || c.status === 'pendente').length;
     const completo = s.resumoMd && s.flashcards && s.resultado;
     r.innerHTML = `<div class="ad"><h2>${E(nomeCompleto(s))}</h2><div class="sub">${E(s.disciplina || '')} › ${E(s.tema || 'sem conteúdo definido')} › ${E(s.parte || 'Única')} · ${E(s.data)} · ${hms(s.duracao || 0)} · ${palavrasDe(s.textoRevisado || s.texto)} palavras</div>
-    <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="b" onclick="auladia.voltar()"><i class="ph ph-arrow-left"></i> Aulas</button>${geminiOk && !completo ? '<button class="b pri" onclick="auladia.gerar()"><i class="ph ph-sparkle"></i> Gerar / continuar</button>' : ''}${falhas ? `<button class="b" onclick="auladia.reenviar()">Tentar novamente (${falhas})</button>` : ''}<button class="b" onclick="auladia.copiar()">Copiar texto</button><button class="b" onclick="auladia.baixar('transcricao')">⬇ Transcrição .md</button>${s.resumoMd ? '<button class="b" onclick="auladia.baixar(\'resumo\')">⬇ Resumo .md</button>' : ''}<button class="b" onclick="auladia.baixar('tudo')">⬇ Tudo (NotebookLM)</button></div><div id="ad-proc" style="margin:0 0 8px"></div>
+    <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="b" onclick="auladia.voltar()"><i class="ph ph-arrow-left"></i> Aulas</button>${geminiOk && !completo ? '<button class="b pri" onclick="auladia.gerar()"><i class="ph ph-sparkle"></i> Gerar / continuar</button>' : ''}${falhas ? `<button class="b" onclick="auladia.reenviar()">Tentar novamente (${falhas})</button>` : ''}<button class="b" onclick="auladia.copiar()">Copiar texto</button><button class="b" onclick="auladia.baixar('transcricao')">⬇ Transcrição .md</button>${s.resumoMd ? '<button class="b" onclick="auladia.baixar(\'resumo\')">⬇ Resumo .md</button>' : ''}${s.resumoGeral ? '<button class="b" onclick="auladia.baixar(\'resumogeral\')">⬇ Resumo Geral .md</button>' : ''}<button class="b" onclick="auladia.baixar('tudo')">⬇ Tudo (NotebookLM)</button></div><div id="ad-proc" style="margin:0 0 8px"></div>
     <div class="ad-tabs">${tabs.map(([k, n]) => `<button class="b ${abaRes === k ? 'on' : ''}" onclick="auladia.aba('${k}')">${n}</button>`).join('')}</div>${corpo}</div></div>`;
     if (pipelineRodando && sessAtual && htmlPassos) { const el = $('ad-proc'); if (el) el.innerHTML = htmlPassos; }
     if (abaRes === 'audio') desenharKaraoke();
+    if (abaRes === 'mm') desenharMindmap();
   }
 
   /* ───────────── ações ───────────── */
@@ -743,7 +874,9 @@
     const transc = `## Transcrição completa${s.textoRevisado ? ' (revisada)' : ''}\n\n${s.textoRevisado || s.texto || textoPuro(s)}\n`;
     if (tipo === 'transcricao') return cabecalho(s) + transc;
     if (tipo === 'resumo') return s.resumoMd || '';
+    if (tipo === 'resumogeral') return s.resumoGeral ? cabecalho(s) + s.resumoGeral : '';
     let md = s.resumoMd ? s.resumoMd + '\n\n---\n\n' : cabecalho(s);
+    if (s.resumoGeral) md += s.resumoGeral + '\n\n---\n\n';
     if (s.flashcards && s.flashcards.length) md += `## Flashcards de revisão\n\n` + s.flashcards.map((f, i) => `**${i + 1}. ${f.frente}**\n${f.verso}\n${f.tema ? '*(' + f.tema + ')*\n' : ''}`).join('\n') + '\n\n---\n\n';
     return md + transc;
   }
@@ -768,6 +901,8 @@
     pausar, continuar, parar, retomar, finalizar,
     gerar() { if (sessAtual) pipeline(sessAtual); }, reenviar: reenviarFalhas, parteAuto: atualizarParteSugerida,
     kVai,
+    gerarRQ: gerarResumoGeral,
+    mmGerar, mmToggle: mmClique, mmZoom, mmFit, mmTudo, mmPNG,
     ancora(id) { const el = document.getElementById('adh-' + id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
     aba(k) { if (abaRes === 'audio' && k !== 'audio') karaokeParar(true); abaRes = k; desenharResultado(); },
     voltar() { if (rec) return; karaokeParar(true); sessAtual = null; render(); }

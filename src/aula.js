@@ -396,6 +396,98 @@ ${partes[i].texto}`,
       res.status(500).json({ success: false, msg: err.message });
     }
   });
+
+  // 8) RESUMO GERAL — material de estudo autossuficiente, extremamente detalhado (Markdown)
+  app.post('/api/aula/resumo-geral', async (req, res) => {
+    try {
+      if (!exigeIA(res)) return;
+      const { transcricao = '', area = '', conteudo = '', parte = '', capitulos = [] } = req.body || {};
+      const t = String(transcricao).trim();
+      if (t.length < 100) return res.status(400).json({ success: false, msg: 'Transcrição curta demais.' });
+      const capRoteiro = (capitulos || []).length
+        ? `Roteiro da aula (guia de cobertura — NADA pode ficar fora): ${JSON.stringify((capitulos || []).map(c => ({ titulo: c.titulo, pontos: (c.pontos || []).slice(0, 10) })))}\n`
+        : '';
+      const ctx = `Fonte: aula de Medicina (área: ${area || 'n/i'}; conteúdo: ${conteudo || 'n/i'}${parte && parte !== 'Única' ? '; ' + parte : ''}).\n${capRoteiro}`;
+
+      const REGRAS_RESUMO_GERAL = `Você escreve um RESUMO GERAL EXTREMAMENTE DETALHADO e abrangente de TODO o conteúdo relevante da fonte, material de estudo AUTOSUFICIENTE, fiel e útil para compreender e revisar o assunto, em MARKDOWN.
+
+ANTES DE REDIGIR: examine a fonte por completo e organize tópicos e subtópicos — não deixe de fora conceitos, seções, exemplos, ressalvas ou relações importantes. Desenvolva cada tópico com profundidade proporcional ao conteúdo; não limite a síntese curta.
+
+FIDELIDADE (inviolável): baseie TODAS as afirmações na transcrição; preserve números, nomes, unidades, condições e ressalvas EXATAMENTE como ditos; não invente dados nem apresente inferência como fato; se a fonte for omissa, contraditória ou incerta, sinalize com ⚠️ explicitamente; condensar é reescrever melhor, NUNCA omitir. Explique termos técnicos na primeira ocorrência.
+
+ESTRUTURA (hierarquia sem saltos de nível): título principal (#), visão geral e índice, capítulos (##), seções (###) e subseções (####), com nomes informativos.
+EM CADA TEMA, quando aplicável: **definição e terminologia**; contexto e fundamentos; componentes, tipos e classificações; etapas, mecanismos e relações de causa e efeito (listas numeradas); características e exemplos; aplicações ou consequências; critérios, procedimentos e condutas; vantagens, limitações, exceções e condições; distinções entre conceitos semelhantes (*negrito-itálico* nos pares que costumam ser confundidos); conexões com os demais temas.
+FORMATAÇÃO: **negrito** em termos-chave, definições e dados de prova; listas numeradas para sequências; bullets para conjuntos; tabelas com cabeçalhos claros para comparações/classificações; parágrafos legíveis; alertas e pontos de fixação apenas quando sustentados pela fonte.
+FECHO OBRIGATÓRIO: ## Síntese Integradora (relações entre os temas centrais) e ## Revisão de Véspera (única lista densa de memorização: números, doses, cortes de ponto, critérios, escores, condutas de escolha, pegadinhas).
+NÃO gere quiz. Comece direto pelo título do resumo.`;
+
+      const partes = fatiarComOffsets(t, janelaChars(2400));
+      let md = '';
+      for (let i = 0; i < partes.length; i++) {
+        const adicional = partes.length > 1
+          ? `\n\nObs.: este é o TRECHO ${i + 1} de ${partes.length} da transcrição. Redija SOMENTE as seções correspondentes ao que o trecho traz${i === 0 ? ' (comece pelo título e pelo índice)' : ' (sem repetir índice/título; continue a hierarquia)'};\n`
+          : '';
+        const r = await generateAI({
+          contents: `${ctx}${REGRAS_RESUMO_GERAL}${adicional}
+FONTE (transcrição da aula):
+${partes[i].texto}`,
+          config: { temperature: 0.25 }
+        });
+        md += (md ? '\n\n' : '') + String(r.text || '').trim();
+      }
+      res.json({ success: true, markdown: md.trim() });
+    } catch (err) {
+      console.error('[Aula resumo-geral]', err);
+      res.status(500).json({ success: false, msg: err.message });
+    }
+  });
+
+  // 9) MAPA MENTAL — árvore hierárquica (até 4 níveis) para renderização interativa no app
+  app.post('/api/aula/mapa-mental', async (req, res) => {
+    try {
+      if (!exigeIA(res)) return;
+      const { transcricao = '', area = '', conteudo = '', capitulos = [] } = req.body || {};
+      const t = String(transcricao).trim();
+      if (t.length < 80) return res.status(400).json({ success: false, msg: 'Transcrição curta demais.' });
+      const roteiro = (capitulos || []).length ? `Concentre a estrutura nos capítulos já mapeados (nada pode faltar, nada inventado): ${JSON.stringify((capitulos || []).map(c => ({ titulo: c.titulo, pontos: (c.pontos || []).slice(0, 8) })))}\n` : '';
+      const r = await generateAI({
+        contents: `Monte o MAPA MENTAL hierárquico desta aula de Medicina (área: ${area || 'n/i'}; conteúdo: ${conteudo || 'n/i'}).
+Estrutura: "t" do nó raiz (tema central da aula, 2-5 palavras); filhos (2 a 7): temas grandes da aula; cada tema tem filhos (2 a 7): subtemas; cada subtema tem filhos (1 a 6 FOLHAS): pontos curtos e memoráveis (máx. 8 palavras; cite números/doses/nomes EXATAMENTE como ditos quando foram ditos).
+Fidelidade: só o que está na fonte; sem jargão vago ("outros assuntos"); sem repetir o mesmo nó em ramos diferentes.
+${roteiro}FONTE:
+${t.slice(0, janelaChars(1200))}`,
+        config: {
+          temperature: 0.2, responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT, required: ['t'], properties: {
+              t: { type: S },
+              f: { type: Type.ARRAY, items: { type: Type.OBJECT, required: ['t'], properties: {
+                t: { type: S },
+                f: { type: Type.ARRAY, items: { type: Type.OBJECT, required: ['t'], properties: {
+                  t: { type: S },
+                  f: { type: Type.ARRAY, items: { type: Type.OBJECT, required: ['t'], properties: { t: { type: S } } } }
+                } } }
+              } } }
+            }
+          }
+        }
+      });
+      const j = JSON.parse(String(r.text).trim());
+      res.json({ success: true, raiz: normalizarArvore(j) });
+    } catch (err) {
+      console.error('[Aula mapa-mental]', err);
+      res.status(500).json({ success: false, msg: err.message });
+    }
+  });
 }
+
+// Amarra a árvore recebida da IA: limita níveis/ramos, corta títulos longos, descarta lixo.
+export function normalizarArvore(no, nivel = 0) {
+  if (!no || typeof no !== 'object' || !no.t) return null;
+  const filhos = (Array.isArray(no.f) ? no.f : []).filter(x => x && x.t).slice(0, nosPorNivel(Math.max(0, nivel)));
+  return { t: String(no.t).slice(0, 64), f: nivel >= 3 ? undefined : filhos.map(f => normalizarArvore(f, nivel + 1)).filter(Boolean) };
+}
+const nosPorNivel = (nivel) => [7, 7, 8, 8][Math.min(nivel, 3)];
+
 
 export { dividir };
