@@ -5,14 +5,14 @@ import os from 'os';
 import path from 'path';
 import { execFile } from 'child_process';
 
-const hojeBR = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Fortaleza' }).format(new Date());
-const okHoje = h => (/^\d{4}-\d{2}-\d{2}$/.test(h || '') ? h : hojeBR());
+export const hojeBR = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Fortaleza' }).format(new Date());
+export const okHoje = h => (/^\d{4}-\d{2}-\d{2}$/.test(h || '') ? h : hojeBR());
 
 /* Streaming opcional para rotas de IA (Vercel corta conexões ociosas).
    O cliente pede SSE com Accept: text/event-stream (ou body.stream = true).
    Mandamos comentários a cada 10s para manter a conexão viva e, no fim,
    um evento "result" com o JSON que antes ia direto no res.json. */
-function enableSSE(req, res) {
+export function enableSSE(req, res) {
   const quer = req.body?.stream === true || /text\/event-stream/i.test(req.headers.accept || '');
   if (!quer) return false;
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');

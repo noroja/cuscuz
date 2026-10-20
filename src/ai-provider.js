@@ -93,7 +93,7 @@ async function montarMensagens(params, c) {
   return msgs;
 }
 
-async function pdfParaTexto(b64) {
+export async function pdfParaTexto(b64) {
   let pdfParse;
   try { pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default; }
   catch (_) { throw new AIError('Leitura de PDF indisponível: dependência "pdf-parse" não instalada no servidor.', { status: 501, code: 'pdf_unavailable' }); }

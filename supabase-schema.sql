@@ -58,3 +58,12 @@ create table if not exists public.medreader_marcas (
 );
 alter table public.medreader_marcas enable row level security;
 create policy "Permitir acesso total a medreader_marcas" on public.medreader_marcas for all using (true) with check (true);
+
+-- 5. Mentor IA acadêmico: perfil acadêmico + plano por usuário (sobrevive à troca de dispositivo)
+create table if not exists public.planner_estado (
+  username text primary key,
+  estado jsonb not null default '{}'::jsonb,
+  atualizado bigint not null default 0
+);
+alter table public.planner_estado enable row level security;
+create policy "Permitir acesso total a planner_estado" on public.planner_estado for all using (true) with check (true);

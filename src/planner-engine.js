@@ -209,7 +209,8 @@ export const PERFIL_VAZIO = () => ({
   objetivo: '', alvo: '', dataProva: '', semData: false,
   provasFaculdade: [], semProvas: false, aulasFaculdade: [], manualNome: '', semConteudo: false,
   horas: null, dificuldades: [], fortes: [], semDificuldades: false,
-  metodo: '', cursos: [], anseios: '', materiais: [], conteudoConfirmado: false, disciplinasConfirmadas: []
+  metodo: '', cursos: [], anseios: '', materiais: [], conteudoConfirmado: false, disciplinasConfirmadas: [],
+  cronogramaResidencia: []
 });
 
 
@@ -332,6 +333,11 @@ export function sanePerfil(atual, patch) {
   if (Array.isArray(x.aulasFaculdade)) {
     const au = x.aulasFaculdade.map(o => ({ disciplina: str(o && o.disciplina, 60), data: /^\d{4}-\d{2}-\d{2}$/.test(o && o.data) ? o.data : '', tema: str(o && o.tema, 140), detalhe: str(o && o.detalhe, 600) })).filter(o => o.disciplina && o.data && o.tema).slice(0, 500);
     if (au.length) p.aulasFaculdade = au;
+  }
+  if (Array.isArray(x.cronogramaResidencia)) {
+    // cronograma de preparação para residência enviado/criado pelo aluno (já conferido por ele); lista vazia limpa
+    p.cronogramaResidencia = x.cronogramaResidencia.map(o => ({ data: /^\d{4}-\d{2}-\d{2}$/.test(o && o.data) ? o.data : '', tema: str(o && o.tema, 140), disciplina: str(o && o.disciplina, 60) }))
+      .filter(o => o.data && o.tema).sort((m, n) => m.data.localeCompare(n.data)).slice(0, 600);
   }
   if (typeof x.semConteudo === 'boolean') p.semConteudo = x.semConteudo;
   if (typeof x.conteudoConfirmado === 'boolean') p.conteudoConfirmado = x.conteudoConfirmado;
@@ -1012,6 +1018,7 @@ export function gerarTarefas({ perfil, hoje, inicio, dias, retidas = [], banco =
   retidas.forEach(t => { if (t && t.cobre && t.status === 'feito') cobertas.add(t.cobre); });
   pool.forEach(e => (e.fila || []).forEach(it => { if (cobertas.has(chave(e.nome, it.assunto))) it.coberto = true; }));
   const aulasPend = (p.aulasFaculdade || []).filter(a => a.data >= ini).map(a => ({ ...a, feita: false }));
+  const resPend = p.objetivo === 'graduacao' ? [] : (p.cronogramaResidencia || []).filter(a => a.data >= ini).map(a => ({ ...a, feita: false }));
   const temasCache = new Map();
   const getTemas = nome => { if (!temasCache.has(nome)) temasCache.set(nome, temasDaDisc(nome, p.cursos)); return temasCache.get(nome); };
   const temaAtual = nome => getTemas(nome).find(t => t.videos.some(v => !usados.has(v.id)));
@@ -1038,7 +1045,7 @@ export function gerarTarefas({ perfil, hoje, inicio, dias, retidas = [], banco =
     const tarefasDia = [];
     // provas da faculdade: evento + modo prova
     const provaHoje = provas.find(x => x.data === d);
-    if (provaHoje) tarefasDia.push({ id: mkId(d), data: d, tipo: 'prova', titulo: `PROVA — ${provaHoje.disciplina}`, materia: provaHoje.disciplina, tema: 'Prova', minutos: 0, passos: [{ n: 1, acao: 'prova', minutos: 0, texto: 'Dia de prova: só uma passada de 15 min no seu resumo de 1 página pela manhã. Durma bem ontem, coma bem hoje e chegue com folga.', recursos: [] }], recursos: [], estrategia: {}, observacoes: 'Nada novo hoje. Depois da prova, descanse — o cronograma volta amanhã.', status: 'pendente' });
+    if (provaHoje) tarefasDia.push({ id: mkId(d), data: d, trilha: 'faculdade', tipo: 'prova', titulo: `PROVA — ${provaHoje.disciplina}`, materia: provaHoje.disciplina, tema: 'Prova', minutos: 0, passos: [{ n: 1, acao: 'prova', minutos: 0, texto: 'Dia de prova: só uma passada de 15 min no seu resumo de 1 página pela manhã. Durma bem ontem, coma bem hoje e chegue com folga.', recursos: [] }], recursos: [], estrategia: {}, observacoes: 'Nada novo hoje. Depois da prova, descanse — o cronograma volta amanhã.', status: 'pendente' });
     let avail = horas[wd] || 0;
     if (provaHoje) avail = 0;
     const provaProx = provas.find(x => { const dd = diffDias(d, x.data); return dd >= 1 && dd <= 10; });
@@ -1095,8 +1102,26 @@ export function gerarTarefas({ perfil, hoje, inicio, dias, retidas = [], banco =
         if (tc) { passos.push({ n: 1, acao: 'aula', minutos: 0, texto: `Se quiser reforço, há aula do acervo sobre este assunto: "${tituloAula(tc.videos[0]) || a.tema}".`, recursos: [recursos.push({ tipo: 'video', id: tc.videos[0].id, titulo: tituloAula(tc.videos[0]) || a.tema, curso: tc.videos[0].course }) - 1] }); passos[0].minutos = 5; }
         passos.push({ n: passos.length + 1, acao: 'resumo', minutos: 20, texto: `Leia no manual a parte de "${a.tema}" antes da aula de ${brDate(a.data)}.${a.detalhe && norm(a.detalhe).replace(/[^a-z0-9]/g, '') !== norm(a.tema).replace(/[^a-z0-9]/g, '') ? ' O roteiro da aula: ' + a.detalhe.replace(/[.;\s]+$/, '').slice(0, 300) + '.' : ''} Anote 3 perguntas que você espera que o professor responda e os termos que não conhece.`, recursos: [] });
         passos.push({ n: passos.length + 1, acao: 'questoes', minutos: mn - 20 - (tc ? 5 : 0), texto: `Faça 4–5 questões sobre "${a.tema}" para testar o que já sabe antes da aula.`, recursos: [recursos.push({ tipo: 'questoes', titulo: `Questões: ${a.tema}`, tema: a.tema, disc: nomeD }) - 1] });
-        tarefasDia.push({ id: mkId(d), data: d, tipo: 'estudo', contexto: `Aula de ${brDate(a.data)}: ${a.detalhe || a.tema}`.slice(0, 900), titulo: `Prévia da aula — ${a.disciplina}: ${a.tema}`, materia: nomeD, tema: a.tema, minutos: passos.reduce((x, s) => x + s.minutos, 0), passos, recursos, estrategia: Object.fromEntries(passos.map(s => [s.acao, s.minutos])), observacoes: `Aula/TBL da faculdade em ${brDate(a.data)}, conforme o manual. Chegar com leitura prévia aumenta muito o aproveitamento.`, cobre: chave(nomeD, a.tema), status: 'pendente', _semRevisao: true });
+        tarefasDia.push({ id: mkId(d), data: d, trilha: 'faculdade', tipo: 'estudo', contexto: `Aula de ${brDate(a.data)}: ${a.detalhe || a.tema}`.slice(0, 900), titulo: `Prévia da aula — ${a.disciplina}: ${a.tema}`, materia: nomeD, tema: a.tema, minutos: passos.reduce((x, s) => x + s.minutos, 0), passos, recursos, estrategia: Object.fromEntries(passos.map(s => [s.acao, s.minutos])), observacoes: `Aula/TBL da faculdade em ${brDate(a.data)}, conforme o manual. Chegar com leitura prévia aumenta muito o aproveitamento.`, cobre: chave(nomeD, a.tema), status: 'pendente', _semRevisao: true });
         usado += passos.reduce((x, s) => x + s.minutos, 0); previas++;
+      }
+      // 2c) cronograma de preparação para residência do próprio aluno: o que está marcado para hoje (ou ficou sem tempo antes) vira tarefa
+      for (const c of resPend.filter(x => !x.feita && x.data <= d).slice(0, 2)) {
+        if (avail - usado < 40) break;
+        c.feita = true;
+        const dd = detectDisc(c.disciplina || c.tema);
+        const nomeD = dd ? (dd.go ? 'Obstetrícia' : dd.nome) : (c.disciplina || 'Residência');
+        const tc = acharAulas(dd ? nomeD : null, c.tema, p.cursos, usados);
+        const mn = clamp(r5(avail - usado), 40, 75);
+        const m1 = r5(mn * 0.5), m2 = r5(mn * 0.2), m3 = Math.max(5, mn - m1 - m2);
+        const recursos = [], passos = [];
+        if (tc) passos.push({ n: 1, acao: 'aula', minutos: m1, texto: `Assista à aula do acervo sobre "${c.tema}": "${tituloAula(tc.videos[0]) || c.tema}".`, recursos: [recursos.push({ tipo: 'video', id: tc.videos[0].id, titulo: tituloAula(tc.videos[0]) || c.tema, curso: tc.videos[0].course }) - 1] });
+        else passos.push({ n: 1, acao: 'resumo', minutos: m1, texto: `Estude "${c.tema}" no seu material principal (sem aula correspondente no acervo) e anote os pontos que mais caem em prova.`, recursos: [] });
+        passos.push({ n: passos.length + 1, acao: 'resumo', minutos: m2, texto: `Faça um resumo de 1 página de "${c.tema}": critérios, conduta e armadilhas.`, recursos: [] });
+        passos.push({ n: passos.length + 1, acao: 'questoes', minutos: m3, texto: `Resolva questões de "${c.tema}" e anote o motivo de cada erro.`, recursos: [recursos.push({ tipo: 'questoes', titulo: `Questões: ${c.tema}`, tema: c.tema, disc: nomeD }) - 1] });
+        const tkRes = { id: mkId(d), data: d, trilha: 'residencia', tipo: 'estudo', titulo: `${nomeD} — ${c.tema}`, materia: nomeD, tema: c.tema, minutos: mn, passos, recursos, estrategia: Object.fromEntries(passos.map(x => [x.acao, x.minutos])), observacoes: `Do seu cronograma de residência (marcado para ${brDate(c.data)}).${c.data < d ? ' Atrasou por falta de tempo nos dias anteriores.' : ''}`, cobre: chaveCob(nomeD, c.tema), status: 'pendente' };
+        tarefasDia.push(tkRes); agendarRevisoes(tkRes);
+        usado += mn; if (tc) (tc.videos || []).forEach(v => usados.add(v.id));
       }
       // 3) blocos principais de estudo
       let resto = avail - usado;
@@ -1131,12 +1156,12 @@ export function gerarTarefas({ perfil, hoje, inicio, dias, retidas = [], banco =
         const escolhidas = new Set();
         for (let b = 0; b < nBlocos; b++) {
           // modo prova: se há prova da faculdade em até 10 dias, a disciplina dela domina
-          let escolha = null;
+          let escolha = null, porProva = false;
           if (provaProx) {
             const dn = detectDisc(provaProx.disciplina);
             const nm = dn ? (dn.go ? 'Obstetrícia' : dn.nome) : provaProx.disciplina;
             const e = pool.find(x => x.nome === nm);
-            if (e && (b === 0 || (b === 1 && diffDias(d, provaProx.data) <= 5 && nBlocos > 1) )) escolha = e;
+            if (e && (b === 0 || (b === 1 && diffDias(d, provaProx.data) <= 5 && nBlocos > 1) )) { escolha = e; porProva = true; }
           }
           if (!escolha) {
             const ativos = pool.filter(x => x.peso > 0);
@@ -1151,7 +1176,7 @@ export function gerarTarefas({ perfil, hoje, inicio, dias, retidas = [], banco =
           const reps = escolha.fila && tam >= 90 && (escolha._need || 0) > 0.8 ? 2 : 1;
           for (let q = 0; q < reps; q++) {
             const t = montarBloco(escolha, reps > 1 ? r5(tam / 2) : tam, d, p, usados, temaAtual, assuntoIdx, provaProx);
-            if (t) { trimTask(t, reps > 1 ? r5(tam / 2) : tam); t.id = mkId(d); t.data = d; tarefasDia.push(t); if (t.tipo === 'estudo') { (t._vids || []).forEach(id => usados.add(id)); agendarRevisoes(t); } }
+            if (t) { trimTask(t, reps > 1 ? r5(tam / 2) : tam); t.id = mkId(d); t.data = d; if (porProva) t.trilha = 'faculdade'; tarefasDia.push(t); if (t.tipo === 'estudo') { (t._vids || []).forEach(id => usados.add(id)); agendarRevisoes(t); } }
           }
         }
       }
@@ -1179,7 +1204,7 @@ export function gerarTarefas({ perfil, hoje, inicio, dias, retidas = [], banco =
 function buildEstudoRevisaoProva(nome, prova, mn, disc0) {
   const foco = (disc0 && disc0.foco) || 'o que você mais errou nos materiais da matéria';
   return {
-    tipo: 'estudo', titulo: `Véspera da prova — ${prova.disciplina}`, materia: nome, tema: 'Revisão final', minutos: mn,
+    trilha: 'faculdade', tipo: 'estudo', titulo: `Véspera da prova — ${prova.disciplina}`, materia: nome, tema: 'Revisão final', minutos: mn,
     passos: [
       { n: 1, acao: 'resumo', minutos: r5(mn * 0.5), texto: (prova.assuntos && prova.assuntos.length) ? `Releia seus resumos dos tópicos da prova, na ordem do manual: ${prova.assuntos.slice(0, 10).join('; ')}${prova.assuntos.length > 10 ? '…' : ''}. Marque o que ainda não está firme. Não abra conteúdo novo.` : `Releia apenas seus resumos e anotações de ${prova.disciplina}, focando em ${foco}. Não abra conteúdo novo.`, recursos: [] },
       { n: 2, acao: 'questoes', minutos: r5(mn * 0.4), texto: 'Refaça as questões que você errou antes. Só as erradas.', recursos: [0] },

@@ -13,6 +13,7 @@ import { Type, generateAI, aiConfigured, aiStatus } from './src/ai-provider.js';
 import * as cheerio from 'cheerio';
 import { plGerarPlanSinergia as plEngineGerarPlan } from './smart_scheduler.js';
 import { registerPlanner } from './src/planner-routes.js';
+import { registerPlannerV3 } from './src/planner-v3-routes.js';
 
 import { registerAula } from './src/aula.js';
 import { registerApostilaReader } from './src/apostila-reader.js';
@@ -3484,6 +3485,24 @@ app.post('/api/planner/deck', (req, res) => {
 registerPlanner(app, { generateAI, aiConfigured, getBank: () => readQuestionsBank() });
 
 registerAula(app, { generateAI, aiConfigured });
+
+// Mentor IA acadêmico (Faculdade + Residência) — rotas novas em /api/planner/v3/*
+registerPlannerV3(app, {
+  generateAI, aiConfigured, getBank: () => readQuestionsBank(), getSupabase: () => supabase,
+  // PDFs de cronograma do acervo (não há cronogramas estruturados; o aluno escolhe um PDF e confere o que foi lido)
+  listarCronogramasAcervo: () => (CAT.materials || [])
+    .filter(m => /cronograma/i.test(m.path || '') && /\.pdf$/i.test(m.path || '') && !/guia/i.test(m.path || ''))
+    .slice(0, 60).map(m => { const seg = String(m.path || '').split(' / '); return { id: m.id, nome: String(seg[seg.length - 1] || '').replace(/\.pdf$/i, ''), curso: m.course || '', pasta: seg.length > 1 ? seg[seg.length - 2] : '' }; }),
+  baixarArquivoDrive: async (fileId) => {
+    const id = cleanDriveId(fileId);
+    if (!id) throw new Error('ID do arquivo inválido.');
+    const r = await driveFetchWithRetry(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`, { signal: AbortSignal.timeout(45000) });
+    if (!r.ok) throw new Error(`Não consegui baixar o PDF do Drive (${r.status}).`);
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > 18 * 1024 * 1024) throw new Error('PDF grande demais para leitura (máx. 18 MB).');
+    return buf;
+  }
+});
 registerApostilaReader(app);
 registerMedreaderMarcas(app, { getSupabase: () => supabase });
 
