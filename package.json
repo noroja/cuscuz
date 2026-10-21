@@ -9,9 +9,11 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
+    "local": "node server.js",
+    "local:midia": "node scripts/media-host.mjs",
     "build": "node scripts/build-public.js",
     "lint": "echo 'Lint passed'",
-    "test": "node scripts/tests/ai-provider.test.mjs && node scripts/tests/planner-academico.test.mjs && node scripts/tests/study-navigation.test.mjs && node scripts/tests/study-interface.test.mjs && node scripts/tests/acervo-interface.test.mjs"
+    "test": "node scripts/tests/ai-provider.test.mjs && node scripts/tests/planner-academico.test.mjs && node scripts/tests/study-navigation.test.mjs && node scripts/tests/study-interface.test.mjs && node scripts/tests/acervo-interface.test.mjs && node scripts/tests/media-origin.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",

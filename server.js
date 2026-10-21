@@ -68,6 +68,15 @@ app.post('/webhooks/google-drive', async (req, res) => {
 // Secret for media ticket encryption (links /m/...)
 const AUTH_SECRET = crypto.createHash('sha256').update('cuscuz-media-ticket|' + (process.env.APP_PASSWORD || 'default-secret-change-me')).digest();
 
+// ── Mídia pesada fora da Vercel (economiza a "Transferência rápida de origem" do plano Hobby) ──
+// MEDIA_ORIGIN = endereço https público de OUTRO processo deste mesmo app (ex.: seu PC via túnel) que serve
+//   vídeos/PDFs; aqui o app só redireciona (poucos bytes). Os dois lados precisam do MESMO APP_PASSWORD
+//   (é a chave que assina os links /m/...) e das credenciais do Drive.
+// MEDIA_ONLY=1 = esse processo só serve /m/* e /api/health (todo o resto responde 404): seguro para expor num túnel.
+const MEDIA_ONLY = process.env.MEDIA_ONLY === '1';
+const MEDIA_ORIGIN = /^https?:\/\//i.test(process.env.MEDIA_ORIGIN || '') ? String(process.env.MEDIA_ORIGIN).trim().replace(/\/+$/, '') : '';
+if (MEDIA_ONLY) app.use((req, res, next) => (/^\/m\//.test(req.path) || req.path === '/api/health') ? next() : res.status(404).send('Not found'));
+
 /* ═══ AUTENTICAÇÃO MULTI-USUÁRIO (scrypt + sessões) ═══ */
 app.set('trust proxy', 1);
 
@@ -860,9 +869,21 @@ app.post('/api/media/ticket', (req, res) => {
   if (!id) return res.status(400).json({ success: false, msg: 'ID inválido' });
   res.json({ success: true, url: '/m/' + ticketSeal(id, kind) });
 });
+// Redireciona para o host de mídia (sem proxiar bytes). Só quando MEDIA_ORIGIN está definido e não somos nós mesmos.
+function midiaRemota(req) {
+  if (!MEDIA_ORIGIN || MEDIA_ONLY) return false;
+  try { return new URL(MEDIA_ORIGIN).host !== String(req.headers.host || ''); } catch (_) { return false; }
+}
+function redirecionarMidia(req, res, id, kind) {
+  res.setHeader('Cache-Control', 'private, max-age=600');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  return res.redirect(307, MEDIA_ORIGIN + '/m/' + ticketSeal(id, kind));
+}
 app.all('/m/:ticket', (req, res) => {
   const t = ticketOpen(req.params.ticket);
   if (!t) return res.status(404).send('Link expirado');
+  if (midiaRemota(req)) { res.setHeader('Access-Control-Allow-Origin', '*'); return res.redirect(307, MEDIA_ORIGIN + '/m/' + req.params.ticket); }
+  if (req.method === 'OPTIONS') { res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS'); res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept'); return res.sendStatus(204); }
   req.params.id = t.i;
   res.setHeader('Cache-Control', 'private, no-store');
   return (t.k === 'p' ? drivePdfHandler : driveStreamHandler)(req, res);
@@ -990,7 +1011,11 @@ async function driveStreamHandler(req, res) {
     try { up && up.ac.abort(); } catch (_) {}
   }
 }
-app.all('/api/drive/stream/:id', driveStreamHandler);
+app.all('/api/drive/stream/:id', (req, res, next) => {
+  const id = cleanDriveId(req.params.id);
+  if (id && req.method !== 'OPTIONS' && midiaRemota(req)) return redirecionarMidia(req, res, id, 'v');
+  return driveStreamHandler(req, res, next);
+});
 const clamp0 = n => Math.max(0, n);
 
 // Download direto de PDFs do Google Drive para caching offline no IndexedDB
@@ -1016,7 +1041,11 @@ async function drivePdfHandler(req, res) {
     if (!res.headersSent) res.status(500).send(err.message);
   }
 }
-app.get('/api/drive/pdf/:id', drivePdfHandler);
+app.get('/api/drive/pdf/:id', (req, res, next) => {
+  const id = cleanDriveId(req.params.id);
+  if (id && midiaRemota(req)) return redirecionarMidia(req, res, id, 'p');
+  return drivePdfHandler(req, res, next);
+});
 
 // Configuração pública para o frontend (não expõe segredos do servidor, apenas chaves anônimas do Supabase)
 app.get('/api/config', (req, res) => {
