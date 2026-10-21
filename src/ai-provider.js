@@ -23,6 +23,8 @@
 //   GEMINI_MAX_RETRIES tentativas extras (padrão 2)
 //   GEMINI_MAX_OUTPUT_TOKENS  teto de saída (padrão 8192)
 //   GEMINI_MAX_PROMPT_CHARS  teto de caracteres de prompt enviado ao Gemini (padrão 300000)
+//   AI_ORDER           ordem de preferência no modo auto, ex.: "gemini,groq,openrouter" (padrão groq,gemini,openrouter)
+//   AI_LOG             "0" silencia a linha de log por chamada (provedor, modelo, ms, resultado — nunca o conteúdo)
 //   OPENROUTER_API_KEY chave da OpenRouter (3º provedor, compatível com OpenAI). No modo auto entra como
 //                      ÚLTIMO recurso (depois de Groq/Gemini); com AI_PROVIDER=openrouter vira o único.
 //   OPENROUTER_MODEL   padrão nvidia/nemotron-3.5-super-vl:free (modelos ":free" têm cotas diárias baixas
@@ -73,6 +75,18 @@ const bloqueadoAte = { groq: 0, gemini: 0, openrouter: 0 };
 const bloquear = (nome, ms, maxMs = 6 * 3600e3) => { bloqueadoAte[nome] = Date.now() + Math.min(Math.max(ms, 0), maxMs); };
 const disponivel = (nome) => Date.now() >= bloqueadoAte[nome];
 
+// ── saúde por provedor: alimenta a ordem da fila e o /api/health (sem guardar conteúdo de prompt) ──
+const novaSaude = () => ({ chamadas: 0, ok: 0, falhas: 0, seguidas: 0, ultimaFalha: 0, ultimoErro: '', latMs: 0 });
+const saude = { groq: novaSaude(), gemini: novaSaude(), openrouter: novaSaude() };
+function registrar(nome, ok, ms, err, modelo) {
+  const h = saude[nome]; h.chamadas++;
+  if (ok) { h.ok++; h.seguidas = 0; h.latMs = h.latMs ? Math.round(h.latMs * 0.7 + ms * 0.3) : ms; }
+  else { h.falhas++; h.seguidas++; h.ultimaFalha = Date.now(); h.ultimoErro = String((err && err.code) || 'erro'); }
+  if (process.env.AI_LOG !== '0') console.log(`[ia] ${nome} ${modelo || ''} ${ok ? 'ok' : 'falhou(' + h.ultimoErro + ')'} ${ms}ms`);
+}
+// Rebaixa (não exclui) quem falhou 2x seguidas no último minuto: dá chance ao próximo sem esperar timeout de novo.
+const rebaixado = (nome) => saude[nome].seguidas >= 2 && Date.now() - saude[nome].ultimaFalha < 60000;
+
 const ROTEADO = { GROQ: 'groq', GEMINI: 'gemini' };
 // Resolve o modo efetivo e as chaves presentes.
 function roteador() {
@@ -98,6 +112,13 @@ export function aiStatus() {
     gemini: !!r.c.gemini.key, groq: !!r.c.groq.key,
     geminiModel: r.c.gemini.model,
     openrouter: !!r.c.openrouter.key, openrouterModel: r.c.openrouter.model,
+    provedores: Object.fromEntries(['groq', 'gemini', 'openrouter'].map(n => [n, {
+      configurado: n === 'groq' ? r.temGroq : n === 'gemini' ? r.temGem : r.temOR,
+      modelo: r.c[n].model,
+      limiteAte: disponivel(n) ? null : bloqueadoAte[n],
+      rebaixado: rebaixado(n),
+      ...saude[n]
+    }])),
     bloqueado: r.modo === 'auto'
       ? (['groq', 'gemini', 'openrouter'].some(n => (n === 'groq' ? r.temGroq : n === 'gemini' ? r.temGem : r.temOR) && disponivel(n)) ? null : Math.min(...['groq', 'gemini', 'openrouter'].filter(n => (n === 'groq' ? r.temGroq : n === 'gemini' ? r.temGem : r.temOR)).map(n => bloqueadoAte[n])))
       : (disponivel(r.modo) ? null : bloqueadoAte[r.modo])
@@ -408,34 +429,46 @@ export async function generateAI(params) {
   const querJson = !!schema || /json/i.test(conf.responseMimeType || '');
   const messages = await montarMensagens(params, r.c);
 
-  // Fila de provedores na ordem de tentativa.
-  const fila = [];
-  if (r.modo === 'auto' && r.temGroq && r.temGem) {
-    const cabeNaGroq = tokensEst(params) <= r.c.groq.tpm * 0.72; // prompt + saída entram no teto do minuto
-    const primeiro = cabeNaGroq ? 'groq' : 'gemini';
-    fila.push(primeiro, primeiro === 'groq' ? 'gemini' : 'groq');
-  } else if (r.modo === 'auto') {
-    if (r.temGem) fila.push('gemini'); else if (r.temGroq) fila.push('groq');
+  // ── ROTEAMENTO (modo auto) ──
+  // 1) elegibilidade por tamanho: Groq só se o prompt cabe no TPM do minuto; Gemini/OpenRouter pelo teto de
+  //    caracteres. 2) ordem de preferência (AI_ORDER; padrão Groq → Gemini → OpenRouter) entre os elegíveis.
+  // 3) provedor rebaixado (2 falhas seguidas no último minuto) vai para o fim. 4) quem não cabe só entra como
+  //    último recurso (o OpenRouter grande demais é pulado). Limites diários/de janela já ficam no disjuntor.
+  const tokens = tokensEst(params); const chars = JSON.stringify(messages).length;
+  let fila = [];
+  if (r.modo === 'auto') {
+    const tem = { groq: r.temGroq, gemini: r.temGem, openrouter: r.temOR };
+    const env = String(process.env.AI_ORDER || '').toLowerCase().split(/[\s,>]+/).filter(n => n in tem);
+    const base = [...new Set([...env, 'groq', 'gemini', 'openrouter'])].filter(n => tem[n]);
+    const cabe = (n) => n === 'groq' ? tokens <= r.c.groq.tpm * 0.72 : chars <= r.c[n].janelaMax;
+    const ordenar = (lista) => [...lista.filter(n => !rebaixado(n)), ...lista.filter(n => rebaixado(n))];
+    fila = [...ordenar(base.filter(cabe)), ...ordenar(base.filter(n => !cabe(n)))];
   } else {
-    fila.push(r.modo);
+    fila = [r.modo];
   }
-  // OpenRouter = último recurso no modo auto (prompt enorme demais para ele é pulado, não falha).
-  if (r.modo === 'auto' && r.temOR) fila.push('openrouter');
 
-  let ultimo = null; let todosBloqueados = true;
-  for (const nome of fila) {
-    if (!disponivel(nome)) { ultimo = ultimo || new AIError(`Limite do ${rotuloVoz(nome)} atingido — tente de novo em ~${Math.ceil((bloqueadoAte[nome] - Date.now()) / 60000)} min.`, { status: 429, code: 'rate_limit', retryAfterMs: bloqueadoAte[nome] - Date.now(), provider: nome }); continue; }
+  let ultimo = null; let todosBloqueados = true; const trilha = [];
+  for (let i = 0; i < fila.length; i++) {
+    const nome = fila[i];
+    if (!disponivel(nome)) { trilha.push({ provider: nome, pulado: 'limite' }); ultimo = ultimo || new AIError(`Limite do ${rotuloVoz(nome)} atingido — tente de novo em ~${Math.ceil((bloqueadoAte[nome] - Date.now()) / 60000)} min.`, { status: 429, code: 'rate_limit', retryAfterMs: bloqueadoAte[nome] - Date.now(), provider: nome }); continue; }
     todosBloqueados = false;
-    const cc = nome === 'gemini' ? r.c.gemini : nome === 'openrouter' ? r.c.openrouter : r.c.groq;
-    if (nome === 'openrouter' && r.modo === 'auto' && JSON.stringify(messages).length > cc.janelaMax) { ultimo = ultimo || new AIError('Prompt grande demais para o OpenRouter.', { status: 413, code: 'upstream', provider: nome }); continue; }
+    const base = nome === 'gemini' ? r.c.gemini : nome === 'openrouter' ? r.c.openrouter : r.c.groq;
+    if (nome === 'openrouter' && r.modo === 'auto' && chars > base.janelaMax) { trilha.push({ provider: nome, pulado: 'grande' }); ultimo = ultimo || new AIError('Prompt grande demais para o OpenRouter.', { status: 413, code: 'upstream', provider: nome }); continue; }
+    // Falha rápida: havendo outro provedor livre na fila, gasta no máximo 1 retry aqui e passa a bola.
+    const temProximo = fila.slice(i + 1).some(n => disponivel(n) && !(n === 'openrouter' && chars > r.c.openrouter.janelaMax));
+    const cc = temProximo ? { ...base, retries: Math.min(base.retries, 1) } : base;
+    const t0 = Date.now();
     try {
-      return nome === 'gemini'
+      const out = nome === 'gemini'
         ? await rodarGemini(messages, conf, schema, querJson, cc, params)
         : nome === 'openrouter'
           ? await rodarOpenRouter(messages, conf, schema, querJson, cc, params)
           : await rodarGroq(messages, conf, schema, querJson, cc, params);
+      registrar(nome, true, Date.now() - t0, null, out.model);
+      trilha.push({ provider: nome, ok: true });
+      return { ...out, tentativas: trilha };
     } catch (err) {
-      ultimo = err;
+      ultimo = err; registrar(nome, false, Date.now() - t0, err, base.model); trilha.push({ provider: nome, ok: false, code: err.code });
       if (err.code === 'unsupported_media' || err.code === 'pdf_unavailable' || err.code === 'pdf_sem_texto') throw err; // independe do provedor
       if (!(err instanceof AIError) || !TROCA_DE_PROVEDOR.has(err.code)) throw err;
     }
@@ -474,4 +507,4 @@ export async function transcribeAudio({ audioBase64, mime = 'audio/webm', prompt
 }
 const fimIni = (fim, ini) => fim - ini;
 
-export function _resetForTests() { bloqueadoAte.groq = 0; bloqueadoAte.gemini = 0; bloqueadoAte.openrouter = 0; }
+export function _resetForTests() { for (const n of ['groq', 'gemini', 'openrouter']) { bloqueadoAte[n] = 0; saude[n] = novaSaude(); } }

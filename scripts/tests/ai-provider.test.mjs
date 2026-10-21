@@ -22,7 +22,7 @@ const srv = http.createServer((req, res) => {
 await new Promise(r => srv.listen(0, r));
 process.env.GROQ_BASE_URL = `http://127.0.0.1:${srv.address().port}/openai/v1`;
 process.env.GROQ_API_KEY = 'gsk_teste_segredo';
-process.env.GROQ_TIMEOUT_MS = '5000'; process.env.GROQ_MAX_RETRIES = '2';
+process.env.AI_LOG = '0'; process.env.GROQ_TIMEOUT_MS = '5000'; process.env.GROQ_MAX_RETRIES = '2';
 
 // Servidor Gemini FALSO (mesma ideia: só testa o roteador, sem rede real).
 let gmode = 'ok'; const gcalls = [];
@@ -201,6 +201,36 @@ await teste('openrouter: cota diária (free-models-per-day) liga o disjuntor, se
   const n = ocalls.length;
   await assert.rejects(() => P.generateAI({ contents: 'x' }), e => e.code === 'rate_limit');
   assert.equal(ocalls.length, n, 'segunda chamada deve ser barrada pelo disjuntor');
+}));
+await teste('fluxo: prompt grande pula a Groq; trilha registra quem respondeu', async () => comOR(async () => {
+  resetOR('ok'); const r = await P.generateAI({ contents: 'x'.repeat(45000) });
+  assert.equal(r.provider, 'gemini'); assert.equal(calls.length, 0); assert.equal(ocalls.length, 0);
+  assert.deepEqual(r.tentativas, [{ provider: 'gemini', ok: true }]);
+}));
+await teste('fluxo: cadeia completa Groq(401) → Gemini(403) → OpenRouter, com trilha', async () => comOR(async () => {
+  resetOR('ok'); modo = '401'; gmode = '403key';
+  const r = await P.generateAI({ contents: 'oi' });
+  assert.deepEqual(r.tentativas.map(x => x.provider + ':' + (x.ok ? 'ok' : x.code)), ['groq:auth', 'gemini:auth', 'openrouter:ok']);
+}));
+await teste('fluxo: AI_ORDER muda a preferência', async () => comOR(async () => {
+  resetOR('ok'); process.env.AI_ORDER = 'openrouter,gemini';
+  try { const r = await P.generateAI({ contents: 'oi' }); assert.equal(r.provider, 'openrouter'); assert.equal(calls.length, 0); }
+  finally { delete process.env.AI_ORDER; }
+}));
+await teste('fluxo: provedor com 2 falhas seguidas é rebaixado (não gasta tempo de novo)', async () => comOR(async () => {
+  resetOR('ok'); modo = '500'; process.env.GROQ_MAX_RETRIES = '0';
+  try {
+    await P.generateAI({ contents: 'a' }); await P.generateAI({ contents: 'b' });
+    assert.equal(P.aiStatus().provedores.groq.rebaixado, true);
+    calls.length = 0; modo = 'ok';
+    const r = await P.generateAI({ contents: 'c' });
+    assert.equal(r.provider, 'gemini'); assert.equal(calls.length, 0, 'groq rebaixada não deve ser a primeira');
+  } finally { process.env.GROQ_MAX_RETRIES = '2'; }
+}));
+await teste('fluxo: status expõe saúde por provedor sem vazar chaves', async () => comOR(async () => {
+  resetOR('ok'); await P.generateAI({ contents: 'oi' });
+  const st = P.aiStatus(); assert.equal(st.provedores.groq.ok, 1); assert.equal(st.provedores.openrouter.configurado, true);
+  assert.ok(!JSON.stringify(st).includes('sk-or-segredo') && !JSON.stringify(st).includes('gsk_teste_segredo'));
 }));
 osrv.closeAllConnections?.(); osrv.close();
 gsrv.closeAllConnections?.(); gsrv.close();

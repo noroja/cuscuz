@@ -85,6 +85,7 @@ app.get('/api/health', async (req, res) => {
     aiConfigured: aiConfigured(),
     aiProvider: aiStatus().provider,
     aiModel: aiStatus().model,
+    aiProvedores: aiStatus().provedores,
     geminiConfigured: false, // legado: o Gemini foi substituído pela Groq
     authConfigured: true,
     drive: driveStatus
