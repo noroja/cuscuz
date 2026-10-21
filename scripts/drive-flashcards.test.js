@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { extractPackage, mapNoteCard, readFlashcardMedia, readFlashcardPage, validatePackageArchive } from '../src/drive-flashcards.js';
+import { extractPackage, mapNoteCard, parseFlashcardPdfText, readFlashcardMedia, readFlashcardPage, validatePackageArchive } from '../src/drive-flashcards.js';
 
 const file = { id: 'drive-file-1', name: 'deck.apkg', path: 'flashcards/deck.apkg' };
 
@@ -35,6 +35,23 @@ test('rejects cards with an empty side', () => {
   const note = { id: 1, mid: 1, tags: '', flds: 'Pergunta\x1f' };
   const model = { flds: [{ name: 'Front' }, { name: 'Back' }], tmpls: [{ ord: 0, qfmt: '{{Front}}', afmt: '{{Back}}' }] };
   assert.equal(mapNoteCard(note, { ord: 0 }, model, file, 'Deck'), null);
+});
+
+test('extracts only explicit front/back pairs from PDF text and keeps stable card identity', () => {
+  const pdf = { id: 'pdf-1', name: 'Flashcard Cardiologia.pdf', path: 'Apostilas/Flashcard Cardiologia.pdf', subject: 'Clínica Médica' };
+  const text = 'Frente: Qual achado define fibrilação atrial?\nVerso: Ausência de ondas P e intervalos RR irregularmente irregulares.\n\nQ: Qual é a primeira medida?\nA: Avaliar estabilidade hemodinâmica.';
+  const cards = parseFlashcardPdfText(text, pdf);
+  assert.equal(cards.length, 2);
+  assert.equal(cards[0].front, 'Qual achado define fibrilação atrial?');
+  assert.match(cards[0].back, /Ausência de ondas P/);
+  assert.equal(cards[0].subject, 'Clínica Médica');
+  assert.equal(cards[0].source.driveFileId, 'pdf-1');
+  const updated = parseFlashcardPdfText(text.replace('primeira medida', 'conduta inicial'), pdf);
+  assert.equal(updated[1].id, cards[1].id);
+});
+
+test('does not turn ordinary PDF prose into flashcards without explicit labels', () => {
+  assert.deepEqual(parseFlashcardPdfText('Resumo: insuficiência cardíaca é uma síndrome clínica.', { id: 'pdf-2', name: 'Resumo.pdf' }), []);
 });
 
 test('reads a page spanning two stored chunks without returning adjacent cards', async () => {

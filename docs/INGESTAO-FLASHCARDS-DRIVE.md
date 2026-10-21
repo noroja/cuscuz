@@ -2,7 +2,7 @@
 
 ## O que entrou no Cuscuz-MED
 
-- O servidor usa `data/flashcard-drive-index.json` como índice inicial, atualiza os metadados dos IDs no Drive e combina o resultado com a varredura das raízes configuradas. A varredura seleciona `.apkg` e `.colpkg`; o índice gerado a partir do catálogo local contém os oito `.apkg` conhecidos.
+- O servidor usa `data/flashcard-drive-index.json` para pacotes Anki e `data/flashcard-pdf-index.json` para PDFs candidatos. O segundo índice é gerado de `acervo-manifest.json` por `npm run index:flashcards-pdf`; atualmente contém 299 PDFs cujo nome ou pasta indica flashcard. Os metadados dos IDs são atualizados no Drive e combinados com a varredura das raízes configuradas.
 - A sincronização compara `modifiedTime`, `size` e `md5Checksum` antes de transferir; um processo sequencial transmite cada pacote para uma pasta temporária, valida nomes e limites do ZIP, extrai notas, modelos, cartões e tags e converte cada cartão para JSON versionado.
 - Os cartões são publicados em blocos de 500 no bucket privado `flashcards-library`; o manifesto só é atualizado depois do processamento do pacote.
 - A migração `supabase/migrations/20261021_flashcard_library.sql` cria as tabelas normalizadas de origens, jobs, decks, notas, cartões (`flashcard_library_cards`), mídia, estado SRS por usuário e eventos de revisão. O nome isolado evita colisão com a tabela legada `public.flashcards`, que pode ter IDs UUID; o worker usa hashes estáveis de texto. A UI lê e grava revisões identificadas pela sessão do Cuscuz-MED.
@@ -11,6 +11,7 @@
 - Na inicialização, faz uma carga inicial ou retoma pelo cursor persistido. Depois, usa notificações push do Google Drive para consultar apenas o feed incremental e processar os pacotes alterados. Uma reconciliação incremental diária recupera notificações perdidas; não há consulta periódica ao Supabase. Sem webhook configurado, a recuperação diária continua disponível.
 - HTML Anki passa por uma lista de elementos/atributos permitidos. Imagens raster referenciadas são extraídas, deduplicadas por SHA-256 e guardadas no Storage privado; cartões usam uma rota autenticada do Cuscuz-MED. SVG, áudio, vídeo e arquivos acima dos limites viram placeholders e não são publicados nesta fase.
 - Cloze permanece marcado como `type: cloze`, conserva a lacuna no enunciado, registra respostas e revela a resposta ao virar o cartão.
+- PDFs candidatos são baixados dentro do limite `FLASHCARD_MAX_PDF_BYTES` (18 MiB por padrão) e passam por extração de texto. Só se tornam cartões quando o PDF contém marcadores explícitos `Frente:`/`Verso:`, `Pergunta:`/`Resposta:`, `Front:`/`Back:`, `Question:`/`Answer:` ou `Q:`/`A:` em linhas separadas. Cada cartão conserva o ID e o caminho do PDF original e recebe disciplina/curso do catálogo.
 
 ## Configuração do servidor
 
@@ -21,6 +22,7 @@ GOOGLE_DRIVE_FLASHCARDS_ROOTS=ID|CAMINHO_DA_PASTA;ID|OUTRO_CAMINHO
 GOOGLE_DRIVE_FLASHCARDS_CATALOG_PATH=
 GOOGLE_DRIVE_FLASHCARDS_SYNC=true
 FLASHCARD_MAX_PACKAGE_BYTES=104857600
+FLASHCARD_MAX_PDF_BYTES=18874368
 FLASHCARD_MAX_UNPACKED_BYTES=536870912
 FLASHCARD_MAX_ARCHIVE_ENTRIES=50000
 FLASHCARD_MAX_MEDIA_FILE_BYTES=26214400
@@ -55,7 +57,8 @@ O scanner procura recursivamente qualquer `.apkg`/`.colpkg` abaixo das raízes c
 - O limite inicial é 100 MiB comprimidos e 512 MiB expandidos para proteger a função serverless. Pacotes maiores do catálogo ficam registrados como erro até serem processados por um worker com mais disco/tempo e limites explicitamente revistos.
 - Pacotes com modelos incomuns podem produzir frente/verso incompletos; cartões vazios são omitidos e registrados no job/manifesto.
 - Os testes usam um APKG sintético local com dois templates, Cloze e imagem; nenhum pacote do Drive foi baixado ou importado para Supabase durante esta implementação.
-- PDFs ainda não são convertidos por esta rotina. Eles precisam de extração de texto/OCR e classificação específica; este worker não os transforma silenciosamente em cartões inventados.
+- PDFs sem texto selecionável (escaneados), sem os pares de marcadores aceitos ou com layout ambíguo terminam como `failed` com motivo no job/origem e não são publicados como cartões. OCR e revisão de layout ficam para uma etapa posterior; não há geração de conteúdo por IA nesta conversão.
+- O índice é uma seleção semântica do catálogo local, não uma leitura atual do Drive. Arquivos novos ficam cobertos quando estão sob uma raiz configurada e têm `.pdf` com “flashcard” no nome ou caminho; para arquivos já catalogados que não correspondem ao nome/caminho, gere o índice após atualizar `acervo-manifest.json`.
 - Um arquivo removido da pasta deixa de aparecer no catálogo depois de uma varredura bem-sucedida. O progresso SRS pessoal permanece salvo, mas o conteúdo-fonte deixa de ser servido.
 
 ## Operação

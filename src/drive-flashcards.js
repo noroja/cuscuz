@@ -18,6 +18,7 @@ const MAX_UNPACKED_BYTES = positiveInt(process.env.FLASHCARD_MAX_UNPACKED_BYTES,
 const MAX_ARCHIVE_ENTRIES = positiveInt(process.env.FLASHCARD_MAX_ARCHIVE_ENTRIES, 50_000);
 const MAX_MEDIA_FILE_BYTES = positiveInt(process.env.FLASHCARD_MAX_MEDIA_FILE_BYTES, 25 * 1024 ** 2);
 const MAX_MEDIA_TOTAL_BYTES = positiveInt(process.env.FLASHCARD_MAX_MEDIA_TOTAL_BYTES, 250 * 1024 ** 2);
+const MAX_PDF_BYTES = positiveInt(process.env.FLASHCARD_MAX_PDF_BYTES, 18 * 1024 ** 2);
 const ROOTS = (() => {
   const configured = String(process.env.GOOGLE_DRIVE_FLASHCARDS_ROOTS || '').split(';').map(value => value.trim()).filter(Boolean);
   const roots = configured.map(value => {
@@ -236,12 +237,17 @@ async function listPackageFiles(roots) {
       for (const file of body.files || []) {
         const rel = folder.path ? `${folder.path}/${file.name}` : file.name;
         if (file.mimeType === 'application/vnd.google-apps.folder') folders.push({ id: file.id, path: rel });
-        else if (/\.(apkg|colpkg)$/i.test(file.name)) packages.push({ ...file, path: rel });
+        else if (/\.(apkg|colpkg)$/i.test(file.name) || (/\.pdf$/i.test(file.name) && isFlashcardPdf({ ...file, path: rel }))) packages.push({ ...file, path: rel });
       }
       pageToken = body.nextPageToken || '';
     } while (pageToken);
   }
   return packages;
+}
+
+function isFlashcardPdf(file) {
+  const pathText = `${file?.path || ''}/${file?.name || ''}`;
+  return /\.pdf$/i.test(String(file?.name || '')) && /(?:^|[\\/\s_-])flashcards?(?:[\\/(\s_-]|$)/i.test(pathText);
 }
 
 function readPackageCatalog() {
@@ -272,9 +278,28 @@ async function listCatalogPackageFiles() {
   }))).filter(Boolean);
 }
 
+async function listCatalogPdfFiles() {
+  const catalogPath = new URL('../data/flashcard-pdf-index.json', import.meta.url);
+  let catalog;
+  try { catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8')); }
+  catch (_) { return []; }
+  if (catalog?.schemaVersion !== 1 || !Array.isArray(catalog.files)) return [];
+  return (await Promise.all(catalog.files.map(async item => {
+    try {
+      const response = await driveFetchWithRetry(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(item.id)}?fields=id,name,mimeType,size,modifiedTime,md5Checksum,parents,webViewLink,trashed&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: await authHeaders(), signal: AbortSignal.timeout(30000) });
+      const file = await response.json();
+      if (file.trashed || !isFlashcardPdf({ ...item, ...file })) return null;
+      return { ...item, ...file, path: item.path || file.name };
+    } catch (error) {
+      console.warn(`[Flashcards] Metadados do PDF ${item.id} indisponíveis:`, error.message);
+      return null;
+    }
+  }))).filter(Boolean);
+}
+
 export async function packageFromChange(change) {
   let file = change?.file;
-  if (!file?.id || !/\.(apkg|colpkg)$/i.test(file.name || '') || file.trashed) return null;
+  if (!file?.id || (!/\.(apkg|colpkg)$/i.test(file.name || '') && !/\.pdf$/i.test(file.name || '')) || file.trashed) return null;
   if (!file.modifiedTime || file.size == null || !file.parents) {
     try {
       const response = await driveFetchWithRetry(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?fields=id,name,mimeType,size,modifiedTime,md5Checksum,parents,webViewLink,trashed&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: await authHeaders(), signal: AbortSignal.timeout(30000) });
@@ -293,7 +318,8 @@ export async function packageFromChange(change) {
     if (!parentId || visited.has(parentId)) continue;
     if (rootsById.has(parentId)) {
       const root = rootsById.get(parentId);
-      return { ...file, path: [root.path, ...names].filter(Boolean).join('/') };
+      const resolved = { ...file, path: [root.path, ...names].filter(Boolean).join('/') };
+      return /\.(apkg|colpkg)$/i.test(file.name || '') || isFlashcardPdf(resolved) ? resolved : null;
     }
     visited.add(parentId);
     const response = await driveFetchWithRetry(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(parentId)}?fields=id,name,parents,mimeType&supportsAllDrives=true&includeItemsFromAllDrives=true`, { signal: AbortSignal.timeout(30000) });
@@ -315,6 +341,83 @@ async function downloadPackage(file, destination) {
     callback(null, chunk);
   } });
   await pipeline(Readable.fromWeb(response.body), limit, fs.createWriteStream(destination));
+}
+
+async function downloadPdf(file, destination) {
+  const size = Number(file.size || 0);
+  if (size > MAX_PDF_BYTES) throw new Error(`PDF ${file.name} excede o limite de ${MAX_PDF_BYTES} bytes.`);
+  const response = await driveFetchWithRetry(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?alt=media&supportsAllDrives=true`, { signal: AbortSignal.timeout(120_000) });
+  if (!response.ok || !response.body) throw new Error(`Não foi possível baixar ${file.name} (${response.status}).`);
+  let received = 0;
+  const limit = new Transform({ transform(chunk, encoding, callback) {
+    received += chunk.length;
+    if (received > MAX_PDF_BYTES) return callback(new Error(`PDF ${file.name} excedeu o limite de download.`));
+    callback(null, chunk);
+  } });
+  await pipeline(Readable.fromWeb(response.body), limit, fs.createWriteStream(destination));
+}
+
+const htmlEscape = value => String(value || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+export function parseFlashcardPdfText(text, file) {
+  const normalized = String(text || '').replace(/\r/g, '').replace(/[\u00a0\t]+/g, ' ');
+  const blocks = normalized.split(/\f+/).map(block => block.trim()).filter(Boolean);
+  const cards = [];
+  const marker = /^(?:\s*)(frente|front|pergunta|question|q|verso|back|resposta|answer|a)\s*[:：-]\s*(.*)$/i;
+  for (const [pageIndex, block] of blocks.entries()) {
+    let side = null, front = [], back = [];
+    const save = () => {
+      const q = front.join('\n').trim(), a = back.join('\n').trim();
+      if (!q || !a) return;
+      const ordinal = cards.length + 1;
+      const id = hash(`${file.id}:pdf:${pageIndex + 1}:${ordinal}`);
+      cards.push({ schemaVersion: 1, id, type: 'basic', front: q, back: a, frontHtml: htmlEscape(q).replace(/\n/g, '<br>'), backHtml: htmlEscape(a).replace(/\n/g, '<br>'), subject: file.subject || file.course || 'Flashcards', topic: file.name.replace(/\.pdf$/i, ''), tags: ['pdf', 'flashcard', ...(file.course ? [file.course] : []), ...(file.subject ? [file.subject] : [])], media: [], source: { driveFileId: file.id, packageName: file.name, drivePath: file.path, noteId: String(ordinal), noteStableId: hash(`${file.id}:pdf:note:${ordinal}`), cardId: id, modelId: 'pdf', modelName: 'PDF Q&A', originalTags: [], fields: [], cardTemplate: 0 } });
+      front = []; back = []; side = null;
+    };
+    for (const line of block.split('\n')) {
+      const match = line.match(marker);
+      if (match) {
+        const label = match[1].toLowerCase();
+        const nextSide = /^(?:v|b|r|a)/.test(label) ? 'back' : 'front';
+        if (nextSide === 'front' && side === 'back' && front.length && back.length) save();
+        side = nextSide;
+        if (match[2].trim()) (side === 'front' ? front : back).push(match[2].trim());
+      } else if (side) {
+        (side === 'front' ? front : back).push(line.trim());
+      }
+    }
+    save();
+  }
+  return cards;
+}
+
+async function extractPdf(supabase, file, pdfPath) {
+  const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default;
+  const buffer = await fs.promises.readFile(pdfPath);
+  const parsed = await pdfParse(buffer, { pagerender: async page => {
+    const content = await page.getTextContent();
+    const lines = [];
+    let currentY = null, current = [];
+    for (const item of content.items || []) {
+      const y = Number(item.transform?.[5]);
+      if (current.length && Number.isFinite(y) && Number.isFinite(currentY) && Math.abs(y - currentY) > 2) {
+        lines.push(current.join(' ').trim()); current = [];
+      }
+      if (Number.isFinite(y)) currentY = y;
+      if (item.str) current.push(item.str);
+    }
+    if (current.length) lines.push(current.join(' ').trim());
+    return `${lines.join('\n')}\n\f`;
+  } });
+  const cards = parseFlashcardPdfText(parsed.text, file);
+  if (!cards.length) throw new Error('PDF sem pares frente/verso reconhecíveis por texto. Pode ser escaneado ou exigir OCR/revisão do layout.');
+  const deckId = hash(`${file.id}:pdf-deck`).slice(0, 24);
+  const deck = { id: deckId, name: file.name.replace(/\.pdf$/i, ''), sourceFileId: file.id, sourcePath: file.path, cards: [], chunks: [], cardCount: cards.length, subject: file.subject || file.course || null };
+  for (const card of cards) {
+    deck.cards.push(card);
+    if (deck.cards.length === PAGE_SIZE) await flushDeckChunk(supabase, deck);
+  }
+  await flushDeckChunk(supabase, deck);
+  return { decks: [{ ...deck, cards: undefined }].map(({ cards: _cards, ...item }) => item), rejected: 0, extracted: cards.length };
 }
 
 export async function extractPackage(supabase, file, archivePath, scratch) {
@@ -467,13 +570,13 @@ export async function syncDriveFlashcards(supabase, { force = false, changes } =
       const incremental = Array.isArray(changes);
       const changedIds = incremental ? new Set(changes.filter(change => {
         const id = String(change.fileId || change.file?.id || '');
-        return id && (next.files[id] || /\.(apkg|colpkg)$/i.test(change.file?.name || ''));
+        return id && (next.files[id] || /\.(apkg|colpkg)$/i.test(change.file?.name || '') || isFlashcardPdf(change.file));
       }).map(change => String(change.fileId || change.file?.id))) : null;
       const found = (incremental
         ? (await Promise.all(changes.map(packageFromChange))).filter(Boolean)
         : await (async () => {
-          const [listed, indexed] = await Promise.all([listPackageFiles(ROOTS), listCatalogPackageFiles()]);
-          const byId = new Map(listed.map(file => [file.id, file]));
+          const [listed, indexed, indexedPdfs] = await Promise.all([listPackageFiles(ROOTS), listCatalogPackageFiles(), listCatalogPdfFiles()]);
+          const byId = new Map([...listed, ...indexedPdfs].map(file => [file.id, file]));
           for (const file of indexed) if (!byId.has(file.id)) byId.set(file.id, file);
           return [...byId.values()];
         })()).sort((a, b) => Number(a.size || 0) - Number(b.size || 0));
@@ -485,7 +588,9 @@ export async function syncDriveFlashcards(supabase, { force = false, changes } =
       }
       for (const file of pending) {
         const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'cuscuz-anki-'));
-        const archive = path.join(scratch, 'source' + path.extname(file.name).toLowerCase());
+        const extension = path.extname(file.name).toLowerCase();
+        const isPdf = extension === '.pdf';
+        const archive = path.join(scratch, 'source' + extension);
         const jobId = crypto.randomUUID();
         let sourceSaved = false, jobSaved = false;
         try {
@@ -500,10 +605,11 @@ export async function syncDriveFlashcards(supabase, { force = false, changes } =
           const { error: jobError } = await supabase.from('flashcard_import_jobs').insert({ id: jobId, drive_file_id: file.id, status: 'downloading' });
           if (jobError) throw new Error(`Falha criando o job de importação: ${jobError.message}`);
           jobSaved = true;
-          await downloadPackage(file, archive);
+          if (isPdf) await downloadPdf(file, archive);
+          else await downloadPackage(file, archive);
           await supabase.from('flashcard_import_jobs').update({ status: 'extracting' }).eq('id', jobId);
           await supabase.from('flashcard_sources').update({ import_status: 'extracting', updated_at: new Date().toISOString() }).eq('drive_file_id', file.id);
-          const parsed = await extractPackage(supabase, file, archive, scratch);
+          const parsed = isPdf ? await extractPdf(supabase, file, archive) : await extractPackage(supabase, file, archive, scratch);
           await supabase.from('flashcard_import_jobs').update({ status: 'validating' }).eq('id', jobId);
           const oldDecks = next.decks.filter(deck => deck.sourceFileId === file.id);
           const newDecks = parsed.decks.map(deck => ({ ...deck, sourceFileId: file.id, sourceName: file.name, sourcePath: file.path, modifiedTime: file.modifiedTime }));
