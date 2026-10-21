@@ -34,6 +34,8 @@ export const diffDias = (a, b) => Math.round((parseIso(b) - parseIso(a)) / 86400
 const wdOf = iso => parseIso(iso).getUTCDay(); // 0=dom … 6=sáb
 const brDate = iso => iso.slice(8, 10) + '/' + iso.slice(5, 7);
 const DIAS_NOME = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+// parseData works on normalized text, so month names must be accent-free too.
+const MESES = ['janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 
 /* ───────────────────────── Disciplinas ───────────────────────── */
 // peso = incidência aproximada em provas de residência (ENARE/USP/UNIFESP etc.)
@@ -591,7 +593,7 @@ export function parseData(txt, hoje) {
     return addDias(hoje, un.startsWith('mes') ? q * 30 : un.startsWith('sem') ? q * 7 : q);
   }
   for (let i = 0; i < 12; i++) {
-    const re = new RegExp('(?:dia\\s*(\\d{1,2})\\s*(?:de)?\\s*)?' + MESES[i] + '(?:\\s*(?:de|\\/)?\\s*(\\d{4}))?');
+    const re = new RegExp('\\b(?:(?:dia\\s*)?(\\d{1,2})\\s*(?:de\\s*)?)?' + MESES[i] + '\\b(?:\\s*(?:de|\\/)?\\s*(\\d{4}))?');
     if ((r = n.match(re))) {
       const dia = r[1] ? +r[1] : 15;
       return mk(dia, i + 1, r[2] ? +r[2] : 0);
