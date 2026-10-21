@@ -1,0 +1,55 @@
+# E2E opcional (Playwright + Chromium): roda o pipeline da Aula do Dia no navegador contra uma IA FALSA.
+# Uso: python3 scripts/e2e/aula-pipeline.py paralelo|sequencial   (não chama nenhuma IA real)
+import json, sys, time, datetime, urllib.request, subprocess, os, signal
+from playwright.sync_api import sync_playwright
+MODO=sys.argv[1]; SP=3981; FP=3982; S=os.path.dirname(os.path.abspath(__file__)); ROOT=os.path.abspath(os.path.join(S,'..','..'))
+env=dict(os.environ, PORT=str(SP), AI_LOG='0', APP_PASSWORD='x')
+for k in ['GROQ_API_KEY','GEMINI_API_KEY','OPENROUTER_API_KEY','AI_PROVIDER','SUPABASE_URL','SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY']: env.pop(k,None)
+if MODO=='paralelo': env.update(AI_PROVIDER='openrouter', OPENROUTER_API_KEY='k', OPENROUTER_BASE_URL=f'http://127.0.0.1:{FP}/v1')
+else: env.update(AI_PROVIDER='groq', GROQ_API_KEY='k', GROQ_BASE_URL=f'http://127.0.0.1:{FP}/v1')
+fake=subprocess.Popen(['node',S+'/fakeai.mjs',str(FP)],stderr=subprocess.DEVNULL); srv=subprocess.Popen(['node','server.js'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+time.sleep(5)
+BASE=f'http://127.0.0.1:{SP}'
+def api(path, body=None, method='POST'):
+    req=urllib.request.Request(BASE+path, data=json.dumps(body).encode() if body is not None else None, method=method, headers={'Content-Type':'application/json'})
+    return json.loads(urllib.request.urlopen(req, timeout=60).read())
+res=[]
+def chk(n,ok,det=''): res.append((bool(ok),n,det))
+try:
+    u='aula'+datetime.datetime.now().strftime('%H%M%S')
+    api('/api/auth/signup',{'username':u,'password':'senha-teste-123','name':'A'})
+    tok=api('/api/auth/login',{'username':u,'password':'senha-teste-123'})['token']
+    st=json.loads(urllib.request.urlopen(urllib.request.Request(BASE+'/api/aula/status',headers={'Authorization':'Bearer '+tok})).read())
+    chk('status paralelo esperado', st['paralelo']==(3 if MODO=='paralelo' else 1), str(st))
+    texto='\n\n'.join(f'Parágrafo {i}: ' + ('o professor explicou o tema com detalhes clínicos e números exatos. '*12) for i in range(60))
+    sess={'id':'a1','data':'2026-10-21','inicio':1,'disciplina':'Clínica','tema':'Teste','parte':'Única','cor':'dourado','duracao':3600,'chunks':[{'i':0,'status':'ok','texto':texto}],'marcas':[],'texto':texto,'live':'','resultado':None}
+    with sync_playwright() as p:
+        b=p.chromium.launch(executable_path='/opt/pw-browsers/chromium')
+        ctx=b.new_context(viewport={'width':1280,'height':900}); ctx.add_init_script(f"localStorage.setItem('cuscuz_token','{tok}');localStorage.setItem('medplan_logged','1');localStorage.setItem('medplan_user','{u}');localStorage.setItem('hasSeenTour','1');")
+        pg=ctx.new_page(); errs=[]; pg.on('pageerror', lambda e: errs.append(str(e)[:200])); pg.on('dialog', lambda d: d.accept())
+        pg.goto(BASE+'/'); pg.wait_for_timeout(2500)
+        pg.evaluate("go('view-auladia')"); pg.wait_for_timeout(1500)
+        pg.evaluate("""async (s)=>{ await new Promise((ok,no)=>{const r=indexedDB.open('aulaDia',1);r.onupgradeneeded=()=>r.result.createObjectStore('audio');r.onsuccess=()=>{const t=r.result.transaction('audio','readwrite');t.objectStore('audio').put(s,'doc:'+s.id);t.oncomplete=ok;t.onerror=no};});
+          localStorage.setItem('aula-dia-sessoes', JSON.stringify([{id:s.id,data:s.data,inicio:1,disciplina:s.disciplina,tema:s.tema,parte:'Única',cor:'dourado',duracao:3600,marcas:[],palavras:100}])); }""", sess)
+        pg.evaluate("auladia.voltar && 0"); pg.reload(); pg.wait_for_timeout(2500); pg.evaluate("go('view-auladia')"); pg.wait_for_timeout(1500)
+        pg.evaluate("auladia.abrir('a1')"); pg.wait_for_timeout(800)
+        t0=time.time(); pg.evaluate("auladia.gerar()")
+        pg.wait_for_function("document.body.innerText.includes('Aula pronta') || document.body.innerText.includes('Parei por um erro')", timeout=60000)
+        dt=time.time()-t0
+        doc=pg.evaluate("""async()=>new Promise((ok,no)=>{const r=indexedDB.open('aulaDia',1);r.onsuccess=()=>{const q=r.result.transaction('audio').objectStore('audio').get('doc:a1');q.onsuccess=()=>ok(q.result)}})""")
+        chk('sem erro de pipeline', 'Parei por um erro' not in pg.inner_text('body'), pg.inner_text('#ad-proc')[:300])
+        chk('texto revisado gravado', doc.get('textoRevisado','').startswith('TEXTO REVISADO'))
+        nc=len(doc['caps']); chk('capítulos todos preenchidos, em ordem', nc>=4 and [str(c).split('\n')[0] for c in doc['caps']]==[f'## {i}.0 — Cap {i}' for i in range(1,nc+1)], str(doc.get('caps'))[:300])
+        chk('resumo montado com os 4 capítulos', all(f'Cap {i}' in doc['resumoMd'] for i in range(1,nc+1)) and 'Considerações Finais' in doc['resumoMd'])
+        chk('flashcards e cai na prova', len(doc['flashcards'])==2 and doc['resultado']['caiNaProva']==['cai isto'])
+        chk('sem erros de JS', not errs, str(errs))
+        print('tempo do pipeline: %.1fs'%dt)
+        b.close()
+    stt=json.loads(urllib.request.urlopen(f'http://127.0.0.1:{FP}/__stats').read())
+    print('chamadas por tipo:', {k:stt['log'].count(k) for k in set(stt['log'])}, 'máx em voo:', stt['max'])
+    chk('concorrência coerente com o modo', (2<=stt['max']<=3) if MODO=='paralelo' else (stt['max']==1), 'max=%d'%stt['max'])
+finally:
+    srv.terminate(); fake.terminate()
+    os.system(f'cd {ROOT} && git checkout -q -- data 2>/dev/null; rm -f data/users.json data/sessions.json')
+for ok,n,d in res: print(('OK   — ' if ok else 'FALHOU — ')+n+('' if ok else ' :: '+d))
+sys.exit(0 if all(r[0] for r in res) else 1)

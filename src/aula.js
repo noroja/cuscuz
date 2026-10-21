@@ -101,10 +101,26 @@ const recortePorPalavras = (t, capitulo, maxChars) => {
   return escolhidas.sort((a, b) => a.i - b.i).map(x => x.f.texto).join('\n\n');
 };
 
+// Prompt do Whisper (limite de 224 tokens ≈ 700 caracteres; o modelo dá mais peso ao FINAL do prompt):
+// contexto e glossário primeiro, e por último a ponta do trecho anterior — dá continuidade ao corte de 90 s.
+export function promptWhisper({ disciplina = '', tema = '', termos = [], anterior = '' } = {}) {
+  const cabeca = [disciplina && ('Aula de ' + disciplina + (tema ? ': ' + tema : '') + '.'), termos.length && ('Termos: ' + termos.join(', '))].filter(Boolean).join(' ').slice(0, 430);
+  let ponta = String(anterior || '').replace(/\s+/g, ' ').trim().slice(-220);
+  const sp = ponta.indexOf(' '); if (ponta.length >= 220 && sp > 0) ponta = ponta.slice(sp + 1); // não começa no meio de uma palavra
+  return [cabeca, ponta].filter(Boolean).join(' ').slice(-700);
+}
+
 export function registerAula(app, { generateAI, aiConfigured }) {
   const exigeIA = (res) => { if (!aiConfigured()) { res.status(503).json({ success: false, msg: 'GROQ_API_KEY não configurada.' }); return false; } return true; };
 
-  app.get('/api/aula/status', (_req, res) => { const st = aiStatus(); res.json({ success: true, gemini: !!aiConfigured(), ia: st }); });
+  // gemini = há IA de TEXTO (qualquer provedor; nome legado). transcricao = há Whisper (exige GROQ_API_KEY).
+  // paralelo = quantas chamadas de texto o cliente pode disparar juntas sem estourar o teto por minuto:
+  // só Groq (8000 TPM no free tier) → 1; com Gemini/OpenRouter na fila → 3.
+  app.get('/api/aula/status', (_req, res) => {
+    const st = aiStatus();
+    const soGroq = st.provider === 'groq' || (st.provider === 'auto' && st.groq && !st.gemini && !st.openrouter);
+    res.json({ success: true, gemini: !!aiConfigured(), texto: !!aiConfigured(), transcricao: !!st.groq, paralelo: soGroq ? 1 : 3, ia: st });
+  });
 
   // 1) Transcreve um trecho de áudio fielmente
   app.post('/api/aula/transcrever', async (req, res) => {
@@ -115,7 +131,7 @@ export function registerAula(app, { generateAI, aiConfigured }) {
       if (audio.length > 28 * 1024 * 1024) return res.status(413).json({ success: false, msg: 'Trecho de áudio grande demais.' });
       const mimeBase = String(mime).split(';')[0] || 'audio/webm';
       const termos = (Array.isArray(glossario) ? glossario : []).map(String).filter(Boolean).slice(0, 80);
-      const ria = await transcribeAudio({ audioBase64: audio, mime: mimeBase, language: 'pt', timestamps: true, prompt: [disciplina && ('Aula de ' + disciplina + (tema ? ': ' + tema : '') + '.'), termos.length && ('Termos: ' + termos.join(', '))].filter(Boolean).join(' ') });
+      const ria = await transcribeAudio({ audioBase64: audio, mime: mimeBase, language: 'pt', timestamps: true, prompt: promptWhisper({ disciplina, tema, termos, anterior }) });
       let texto = typeof ria === 'string' ? ria : ria.texto;
       const segmentos = (ria && typeof ria === 'object' && Array.isArray(ria.segmentos)) ? ria.segmentos : [];
       if (/^\[sem fala\]$/i.test(texto)) texto = '';
