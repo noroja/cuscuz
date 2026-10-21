@@ -59,6 +59,7 @@
   var root, mask, spot, dlg; // nós do DOM
   var isOpen = false;
   var rafPending = false;
+  var previousFocus = null;
 
   /* ── Utilidades ───────────────────────────────────────────────────────────── */
   function $(sel, r) { return (r || document).querySelector(sel); }
@@ -83,10 +84,10 @@
     root.innerHTML =
       '<div class="ct-mask"></div>' +
       '<div class="ct-spot ct-spot-hidden"></div>' +
-      '<div class="ct-dialog" role="dialog" aria-modal="true" aria-live="polite">' +
+      '<div class="ct-dialog" role="dialog" aria-modal="true" aria-labelledby="ct-tour-title" aria-describedby="ct-tour-description">' +
       '  <span class="ct-kicker">Tutor IA</span>' +
-      '  <h3 class="ct-title"></h3>' +
-      '  <p class="ct-text"></p>' +
+      '  <h3 class="ct-title" id="ct-tour-title"></h3>' +
+      '  <p class="ct-text" id="ct-tour-description"></p>' +
       '  <div class="ct-progress">' +
       '    <div class="ct-dots"></div>' +
       '    <span class="ct-step-counter"></span>' +
@@ -231,6 +232,7 @@
     opts = opts || {};
     if (!opts.force && seen()) return;   // já viu o tour
     build();
+    previousFocus = document.activeElement;
     steps = STEP_DEFAULTS;
     isOpen = true;
     idx = -1;
@@ -249,6 +251,8 @@
     if (root) root.style.display = 'none';
     document.body.classList.remove('ct-active');
     markSeen();
+    if (previousFocus && previousFocus.isConnected && typeof previousFocus.focus === 'function') previousFocus.focus({ preventScroll: true });
+    previousFocus = null;
     try { document.dispatchEvent(new CustomEvent('cuscuz-tour:ended')); } catch (e) {}
   }
 
@@ -277,9 +281,11 @@
       var scrollEl = $('.sidebar-scroll');
       if (!scrollEl || $('.nav-item[data-tour-trigger]')) return;
       var last = scrollEl.querySelector('.nav-item:last-of-type');
-      var item = document.createElement('div');
+      var item = document.createElement('button');
+      item.type = 'button';
       item.className = 'nav-item';
       item.setAttribute('data-tour-trigger', '');
+      item.setAttribute('aria-label', 'Tutorial da plataforma');
       item.setAttribute('data-tooltip', 'Tutorial da Plataforma');
       item.innerHTML = '<i class="ph ph-map-trifold"></i>' +
         '<span class="nav-text">Tutorial da Plataforma</span>' +
@@ -293,7 +299,14 @@
   /* ── Teclado: Esc pula · → próximo · ← volta ── */
   document.addEventListener('keydown', function (e) {
     if (!isOpen) return;
-    if (e.key === 'Escape') stop();
+    if (e.key === 'Tab') {
+      var controls = Array.from(dlg.querySelectorAll('button:not([disabled]),a[href],input,textarea,select,[tabindex="0"]')).filter(function(el) { return el.getClientRects().length; });
+      if (!controls.length) return;
+      var first=controls[0], last=controls[controls.length-1];
+      if (e.shiftKey && (document.activeElement === first || !dlg.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (document.activeElement === last || !dlg.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+    }
+    else if (e.key === 'Escape') { e.preventDefault(); stop(); }
     else if (e.key === 'ArrowRight') goStep(idx + 1);
     else if (e.key === 'ArrowLeft') goStep(idx - 1);
   });

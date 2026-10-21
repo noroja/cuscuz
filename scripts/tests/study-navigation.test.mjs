@@ -6,18 +6,22 @@ const planner = fs.readFileSync(new URL('../../planner-v2.js', import.meta.url),
 const viewIds = new Set([...html.matchAll(/id="(view-[^"]+)"/g)].map(m => m[1]));
 const nav = html.slice(html.indexOf('<nav class="mobile-bottom-nav"'), html.indexOf('</nav>', html.indexOf('<nav class="mobile-bottom-nav"')));
 for (const match of nav.matchAll(/data-view="([^"]+)"/g)) assert.ok(viewIds.has(match[1]), `Destino móvel inexistente: ${match[1]}`);
-assert.ok(nav.includes(`onclick="go('view-planneria')"`));
-assert.ok(nav.includes(`onclick="go('view-treino')"`));
-const start = html.indexOf('function go(id){');
+assert.ok(nav.includes(`href="#view-planneria"`));
+assert.ok(nav.includes(`href="#view-treino"`));
+assert.ok(nav.includes(`navigateStudy(event,'view-planneria')`));
+const start = html.indexOf('function go(id,');
 const end = html.indexOf('\nfunction refreshAll()', start);
 const goBody = html.slice(start,end);
 let hidden = false;
 const target = {classList:{contains:name=> name==='view-section',add:()=>{} }};
 const noop=()=>{};
-const ctx = { $:id=>id==='view-treino'?target:null,$$:selector=>selector==='.view-section'?[{classList:{remove:()=>{hidden=true}}}]:[], document:{querySelector:()=>null},renderHome:noop,renderCalendar:noop,renderSchedule:noop,renderWeek:noop,renderPrep:noop,renderAcervo:noop,renderDecks:()=>{ctx.rendered=true},renderSim:noop,renderPlannerIA:noop,updateSidebarProgress:noop,setupSidebarTooltips:noop };
+const title={textContent:''};
+const ctx = { $:id=>id==='view-treino'?target:id==='app-screen-title'?title:null,$$:selector=>selector==='.view-section'?[{classList:{remove:()=>{hidden=true}}}]:[], document:{querySelector:()=>null},renderHome:noop,renderCalendar:noop,renderSchedule:noop,renderWeek:noop,renderPrep:noop,renderAcervo:noop,renderDecks:()=>{ctx.rendered=true},renderSim:noop,renderPlannerIA:noop,updateSidebarProgress:noop,setupSidebarTooltips:noop,cuscuzRouteDidChange:id=>{ctx.route=id} };
 vm.createContext(ctx); vm.runInContext(goBody,ctx);
 ctx.go('view-inexistente'); assert.equal(hidden,false,'Rota inválida deve preservar a tela atual');
 ctx.go('view-treino-questoes'); assert.equal(ctx.rendered,true,'Link legado deve abrir o treino existente');
+assert.equal(ctx.route,'view-treino','Navegação real sincroniza o histórico');
+assert.equal(ctx.document.title,'Questões e revisão · Cuscuz-MED');
 // The guard accepts legacy bookmarks before starting navigation.
 assert.ok(goBody.indexOf("id = 'view-treino'") < goBody.indexOf("classList.remove('active')"));
 const summaryCode=html.slice(html.indexOf('function getProgressSummary()'), html.indexOf('function updateSidebarProgress()'));

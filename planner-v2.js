@@ -217,29 +217,38 @@
       : '<div class="study-week-empty"><i class="ph ph-calendar-blank" aria-hidden="true"></i><div><b>Sua semana começa com um plano.</b><p>' + (hasPlan ? 'Não há tarefas nos próximos sete dias. Ajuste o período no cronograma.' : 'Defina seu objetivo e os horários disponíveis. Seus blocos de estudo aparecem aqui.') + '</p></div></div>';
     const metric = (label, value, note) => '<div class="plv2-kpi"><span>' + label + '</span><b>' + value + '</b><small>' + note + '</small></div>';
     return '<section class="plv2-overview" aria-labelledby="plv2-overview-title">' +
-      '<header class="plv2-overview-head"><div><h2 id="plv2-overview-title">' + (nome ? 'Seu próximo passo, ' + E(nome) + '.' : 'Seu próximo passo.') + '</h2><p>' + E(hojeLongo) + ' <span aria-hidden="true">·</span> ' + E(objetivo) + '</p></div><button class="study-text-action" type="button" onclick="go(\'view-calendario\')">Ver calendário <i class="ph ph-arrow-up-right" aria-hidden="true"></i></button></header>' +
+      '<header class="plv2-overview-head"><div><h2 id="plv2-overview-title">' + (nome ? 'Seu próximo passo, ' + E(nome) + '.' : 'Seu próximo passo.') + '</h2><p>' + E(hojeLongo) + ' <span aria-hidden="true">·</span> ' + E(objetivo) + '</p></div><a class="study-text-action" href="#view-calendario" onclick="return navigateStudy(event,\'view-calendario\')">Ver calendário <i class="ph ph-arrow-up-right" aria-hidden="true"></i></a></header>' +
       '<div class="plv2-kpis"' + (hasPlan ? '' : ' hidden') + '>' + metric('Hoje', hasPlan ? doDia.filter(t => t.tipo !== 'prova').length : '—', hasPlan ? 'tarefas no seu ritmo' : 'a definir com você') + metric('Concluídas', hasPlan ? concluidas : '—', 'no cronograma completo') + metric('Revisões', hasPlan ? tarefas.filter(t => t.tipo === 'revisao').length : '—', 'programadas no plano') + metric('Próxima prova', E(dataProva), perfil.dataProva ? 'data cadastrada por você' : 'nenhuma data cadastrada') + '</div>' +
       '<div class="study-grid"><section class="plv2-today" aria-label="Seu próximo estudo"><div class="plv2-today-main"><div class="plv2-eyebrow"><span class="study-dot" aria-hidden="true"></span> ' + (hasPlan ? 'Seu plano de hoje' : 'Seu ponto de partida') + '</div><h3>' + E(titulo) + '</h3><p class="plv2-today-copy">' + copy + '</p><button type="button" class="plv2-start" ' + acao + '>' + cta + ' <i class="ph ph-arrow-right" aria-hidden="true"></i></button><div class="study-session-note">' + (hasPlan ? (doDia.length ? feitas + ' de ' + doDia.length + ' tarefas concluídas hoje' : 'Sem tarefas para hoje') : 'Comece pelo seu objetivo. O resto, organizamos juntos.') + '</div></div></section>' +
       '<aside class="study-cycle" aria-labelledby="study-cycle-title"><h3 id="study-cycle-title">Conhecer. Aplicar. Reter.</h3><p>Um ciclo completo de estudo.</p><ol><li><span>01</span><div><b>Entenda o tema</b><small>Aulas e materiais do acervo</small></div></li><li><span>02</span><div><b>Teste o raciocínio</b><small>Questões sobre o que estudou</small></div></li><li><span>03</span><div><b>Volte no momento certo</b><small>Revisão ativa no cronograma</small></div></li></ol></aside>' +
       '<section class="plv2-week" aria-labelledby="plv2-week-title"><div class="study-section-head"><h3 id="plv2-week-title">Próximos sete dias</h3><span>' + semana.length + ' tarefas</span></div>' + semanaHtml + '</section>' +
-      '<section class="study-shortcuts" aria-labelledby="study-shortcuts-title"><h3 id="study-shortcuts-title">Abra espaço para aprender</h3><button type="button" onclick="go(\'view-acervo\')"><i class="ph ph-books" aria-hidden="true"></i><span><b>Explorar meu acervo</b><small>Encontre uma aula ou um material</small></span><i class="ph ph-arrow-up-right" aria-hidden="true"></i></button><button type="button" onclick="go(\'view-treino\')"><i class="ph ph-exam" aria-hidden="true"></i><span><b>Praticar questões</b><small>Treine por tema ou revise seus erros</small></span><i class="ph ph-arrow-up-right" aria-hidden="true"></i></button></section></div></section>';
+      '<section class="study-shortcuts" aria-labelledby="study-shortcuts-title"><h3 id="study-shortcuts-title">Abra espaço para aprender</h3><a href="#view-acervo" onclick="return navigateStudy(event,\'view-acervo\')"><i class="ph ph-books" aria-hidden="true"></i><span><b>Explorar meu acervo</b><small>Encontre uma aula ou um material</small></span><i class="ph ph-arrow-up-right" aria-hidden="true"></i></a><a href="#view-treino" onclick="return navigateStudy(event,\'view-treino\')"><i class="ph ph-exam" aria-hidden="true"></i><span><b>Praticar questões</b><small>Treine por tema ou revise seus erros</small></span><i class="ph ph-arrow-up-right" aria-hidden="true"></i></a></section></div></section>';
   }
 
   function renderChat() {
     const st = chatState(); const r = root(); if (!r) return;
+    const previousComposer = document.getElementById('plv2-txt');
+    const draft = previousComposer ? previousComposer.value : '';
+    const hadFocus = previousComposer && document.activeElement === previousComposer;
+    const selection = hadFocus ? [previousComposer.selectionStart, previousComposer.selectionEnd] : null;
     const plano = get(K_PLAN, null);
     r.innerHTML = (window.plv3 && plano ? plv3.nav() : '') + renderOverview(st, plano) + `<div class="plv2"><div class="plv2-bar"><div><h2> ${plano ? 'Ajustar seu plano com o Mentor' : 'Vamos desenhar sua rotina'}</h2><div class="plv2-sub">Conte seu objetivo ao Mentor. Seu plano usa as aulas e os materiais do seu acervo.</div></div>
       <div class="plv2-btns">${plano ? '<button class="b" onclick="plv2.voltar()"><i class="ph ph-calendar"></i> Ver cronograma</button>' : ''}<button class="b" onclick="plv2.reiniciar()"><i class="ph ph-arrow-counter-clockwise"></i> Recomeçar</button></div></div>
-      <div class="plv2-chat"><div class="plv2-msgs" id="plv2-msgs">${st.msgs.map(m => `<div class="plv2-m ${m.role === 'user' ? 'me' : 'bot'}">${E(m.content)}</div>`).join('')}</div>
+      <div class="plv2-chat" aria-busy="${busy}"><div class="plv2-msgs" id="plv2-msgs" role="log" aria-live="polite" aria-relevant="additions text">${st.msgs.map(m => `<div class="plv2-m ${m.role === 'user' ? 'me' : 'bot'}">${E(m.content)}</div>`).join('')}</div>
       ${st.resumo.length > 1 ? `<div class="plv2-sum"><b>O que entendi de você:</b><ul style="margin:6px 0 0 16px;padding:0">${st.resumo.map(x => `<li>${E(x)}</li>`).join('')}</ul></div>` : ''}
       <div class="plv2-q" id="plv2-q">${(st.pronto ? ['Quero ajustar algo'] : []).concat(st.quick.filter(q => !st.pronto || !/gerar/i.test(q))).map(q => `<button onclick="plv2.enviar(${E(JSON.stringify(JSON.stringify(q)))})">${E(q)}</button>`).join('')}${st.pronto ? '<button class="b pri" style="border-radius:99px;background:var(--teal);color:var(--text-inverse);font-weight:700" onclick="plv2.gerar()"><i class="ph ph-magic-wand"></i> Gerar meu cronograma</button>' : ''}</div>
-      <div class="plv2-in"><input type="file" id="plv2-file" accept=".pdf,.txt,.md,application/pdf,text/plain" style="display:none" onchange="plv2.anexar(this)"><button class="b" title="Anexar manual do aluno / ementa (PDF)" onclick="document.getElementById('plv2-file').click()"><i class="ph ph-paperclip" aria-hidden="true"></i></button><textarea aria-label="Sua resposta para o Mentor" id="plv2-txt" rows="1" placeholder="Escreva sua resposta…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();plv2.enviar()}"></textarea><button class="b pri" aria-label="Enviar resposta" id="plv2-send" onclick="plv2.enviar()"><i class="ph ph-paper-plane-tilt"></i></button></div></div></div>`;
+      <div class="plv2-in"><input type="file" id="plv2-file" accept=".pdf,.txt,.md,application/pdf,text/plain" style="display:none" onchange="plv2.anexar(this)"><button class="b" aria-label="Anexar manual do aluno ou ementa em PDF" title="Anexar manual do aluno / ementa (PDF)" onclick="document.getElementById('plv2-file').click()"><i class="ph ph-paperclip" aria-hidden="true"></i></button><textarea aria-label="Sua resposta para o Mentor" id="plv2-txt" name="mentorResponse" autocomplete="off" rows="2" placeholder="Escreva sua resposta…" onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)&&!event.isComposing){event.preventDefault();plv2.enviar()}"></textarea><button class="b pri" aria-label="Enviar resposta" id="plv2-send" ${busy ? 'disabled' : ''} onclick="plv2.enviar()"><i class="ph ph-paper-plane-tilt" aria-hidden="true"></i><span class="plv2-send-label">${busy ? 'Enviando…' : 'Enviar'}</span></button></div></div></div>`;
     r.querySelectorAll('#plv2-start, #plv2-start-top').forEach(start => start.addEventListener('click', () => {
       const chat = r.querySelector('.plv2');
       if (chat) chat.scrollIntoView({ behavior: 'smooth', block: 'start' });
       const input = document.getElementById('plv2-txt');
-      if (input) setTimeout(() => input.focus(), 250);
+      if (input && matchMedia('(pointer: fine)').matches) input.focus({preventScroll:true});
     }));
+    const composer = document.getElementById('plv2-txt');
+    if (composer) {
+      composer.value = draft;
+      if (hadFocus) { composer.focus({ preventScroll: true }); composer.setSelectionRange(selection[0], selection[1]); }
+    }
     const box = document.getElementById('plv2-msgs'); if (box) box.scrollTop = box.scrollHeight;
   }
 
@@ -249,7 +258,7 @@
     if (texto) st.msgs.push({ role: 'user', content: texto });
     st.quick = []; set(K_CHAT, st); renderChat();
     const box = document.getElementById('plv2-msgs');
-    if (box) { const d = document.createElement('div'); d.className = 'plv2-m bot'; d.id = 'plv2-typing'; d.textContent = 'Pensando…'; box.appendChild(d); box.scrollTop = box.scrollHeight; }
+    if (box) { const d = document.createElement('div'); d.className = 'plv2-m bot'; d.id = 'plv2-typing'; d.setAttribute('role','status'); d.textContent = 'Pensando…'; box.appendChild(d); box.scrollTop = box.scrollHeight; }
     try {
       const j = await api('/api/planner/chat', Object.assign({ messages: st.msgs, perfil: st.perfil, asking: st.asking, jaExtras: st.jaExtras, hoje: hoje() }, extra || {}));
       st.perfil = j.perfil; st.asking = j.asking || ''; st.jaExtras = !!j.jaExtras; st.quick = j.quickReplies || []; st.pronto = !!j.pronto; st.resumo = j.resumo || [];
@@ -394,7 +403,7 @@
 
   /* ───────────── API pública ───────────── */
   window.plv2 = {
-    enviar(txt) { const el = document.getElementById('plv2-txt'); let v = txt !== undefined ? JSON.parse(txt) : (el ? el.value.trim() : ''); if (!v) return; if (/^gerar meu cronograma$/i.test(v)) return gerar(); turno(v); },
+    enviar(txt) { if (busy) return; const el = document.getElementById('plv2-txt'); let v = txt !== undefined ? JSON.parse(txt) : (el ? el.value.trim() : ''); if (!v) return; if (txt === undefined && el) el.value = ''; if (/^gerar meu cronograma$/i.test(v)) return gerar(); turno(v); },
     gerar() { gerar(); },
     exportar() {
       const p = get(K_PLAN, null); if (!p || !(p.tarefas || []).length) return toast && toast('Gere o cronograma primeiro.', 'warning');
