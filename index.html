@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-theme="dark">
+<html lang="pt-BR" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
-<meta name="theme-color" content="#080c14">
+<meta name="theme-color" content="#f3f4f0">
 <!-- <link rel="stylesheet" href="/css/redesign-correcoes.css"> -->
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/css/medreader.css">
@@ -16,7 +16,7 @@
 <meta name="description" content="Planejador de estudos médicos, cronograma inteligente, acervo completo de videoaulas, flashcards SRS e simulados.">
 <meta property="og:title" content="Cuscuz-MED">
 <meta property="og:description" content="Planejador de estudos médicos, cronograma inteligente, acervo completo de videoaulas, flashcards SRS e simulados.">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif&display=swap" rel="stylesheet">
 <script>
 /* Auth da API: anexa o token em /api/* e volta ao login se o servidor responder 401 */
 (function(){
@@ -1872,7 +1872,7 @@ mark.exam-highlight {
     </div>
     <div class="login-head">
       <h1 id="login-title" class="login-reveal">Cuscuz-MED</h1>
-      <p class="login-lead login-reveal">Planejador, acervo e questões para a residência médica.</p>
+      <p class="login-lead login-reveal">Seu estudo, com direção. Da graduação à residência.</p>
     </div>
     <div class="login-plates login-reveal">
       <img src="assets/login/skeleton.jpg" alt="Gravura anatômica de um esqueleto humano visto de frente" loading="eager" decoding="async">
@@ -1881,12 +1881,12 @@ mark.exam-highlight {
       <video src="assets/login/zygomatic.webm" poster="assets/login/zygomatic-poster.jpg" aria-label="Animação de ossos zigomáticos" muted loop playsinline autoplay></video>
     </div>
     <div class="login-meta login-reveal">
-      <p class="login-facts">Brasil · residência médica<br>10.532 aulas · 19.239 materiais</p>
+      <p class="login-facts">Brasil · residência médica<br>Aulas, questões e revisão em uma só rotina</p>
       <p class="login-credits">Imagens: A. J. Defehrt / Encyclopédie (CC0, Art Institute of Chicago); John Lizars (CC0, The Met); Wellcome Collection (CC BY 4.0); Anatomy Standard (CC BY 3.0).</p>
     </div>
   </section>
   <div class="login-panel">
-    <h2 class="login-panel-title login-reveal">Sua conta</h2>
+    <h2 class="login-panel-title login-reveal">Seu próximo passo<br>começa aqui.</h2><p class="study-login-sub">Entre para continuar seus estudos.</p>
     <!-- Login Form -->
       <div id="login-form">
         <div style="margin-bottom:18px;text-align:left">
@@ -2004,7 +2004,7 @@ mark.exam-highlight {
 
     <!-- Campo de pesquisa global: vídeo, PDF, apostila -->
     <div class="busca-global-wrap" style="flex:1;max-width:460px;margin:0 16px;position:relative">
-      <input type="search" id="busca-global" name="globalSearch" aria-label="Pesquisar vídeos, PDFs, apostilas e disciplinas" placeholder="Pesquisar vídeo, PDF, apostila, disciplina…" autocomplete="off" style="width:100%;padding:9px 12px 9px 36px;border-radius:20px;border:1px solid var(--border-default);background:var(--bg-surface);color:var(--text);font-size:13px;outline:none">
+      <input type="search" id="busca-global" name="globalSearch" aria-label="Pesquisar vídeos, PDFs, apostilas e disciplinas" placeholder="Buscar no seu acervo…" autocomplete="off" style="width:100%;padding:9px 12px 9px 36px;border-radius:20px;border:1px solid var(--border-default);background:var(--bg-surface);color:var(--text);font-size:13px;outline:none">
       <i class="ph ph-magnifying-glass" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:14px;pointer-events:none"></i>
       <button type="button" id="busca-global-clear" aria-label="Limpar busca" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;display:none" onclick="limparBuscaGlobal()">×</button>
       <div id="resultado-busca-global" style="position:absolute;top:100%;left:0;right:0;background:var(--bg-surface);border:1px solid var(--border-default);border-radius:12px;box-shadow:var(--shadow-lg);z-index:60;display:none;max-height:420px;overflow-y:auto;margin-top:6px"></div>
@@ -2019,7 +2019,7 @@ mark.exam-highlight {
       <button class="btn-outline btn-sm glass-shimmer" onclick="goToLobby()"><i class="ph ph-game-controller"></i> Lobby</button>
       <button class="theme-toggle" onclick="toggleTheme()" title="Alternar tema"><span class="theme-toggle__track"><span class="theme-toggle__thumb"></span></span></button>
       <button class="btn-icon" id="dash-header-btn" onclick="toggleDashboardCollapse()" title="Alternar Painel Lateral de Métricas (Recolher / Expandir)" aria-label="Recolher ou expandir painel de métricas" aria-expanded="true"><i class="ph ph-chart-donut"></i></button>
-      <button class="btn-primary btn-sm glass-shimmer" onclick="openPlanModal()">&#9889; Planejar</button>
+      <button class="btn-primary btn-sm glass-shimmer" onclick="go('view-planneria')"><i class="ph ph-calendar-check" aria-hidden="true"></i> Meu plano</button>
       <button class="btn-icon" onclick="logout()" title="Sair" style="color:var(--rose)" aria-label="Sair da conta"><i class="ph ph-sign-out"></i></button>
     </div>
   </header>
@@ -2027,7 +2027,7 @@ mark.exam-highlight {
   <aside class="sidebar">
     <!-- Topo da Barra: Foto/Perfil & Botão Retrátil (Chevron / Menu) -->
     <div class="sidebar-header">
-      <div class="sidebar-brand-group" onclick="go('view-inicio')" title="Cuscuz-MED · Perfil do Estudante">
+      <div class="sidebar-brand-group" onclick="openEditProfile()" title="Cuscuz-MED · Perfil do Estudante">
         <div class="sidebar-avatar">
           <span>AL</span>
           <span class="avatar-status-dot" title="Online"></span>
@@ -2075,22 +2075,22 @@ mark.exam-highlight {
       <div class="nav-section">
         <div class="nav-label">Principal</div>
 
-        <button type="button" class="nav-item active" data-view="view-planneria" onclick="go('view-planneria')" data-tooltip="Dashboard/Cronograma" aria-current="page">
+        <button type="button" class="nav-item active" data-view="view-planneria" onclick="go('view-planneria')" data-tooltip="Meu plano" aria-current="page">
           <i class="ph ph-calendar-check"></i>
-          <span class="nav-text">Dashboard/Cronograma</span>
-          <span class="nav-tooltip">Dashboard/Cronograma</span>
+          <span class="nav-text">Meu plano</span>
+          <span class="nav-tooltip">Meu plano</span>
         </button>
 
-        <button type="button" class="nav-item" data-view="view-acervo" onclick="go('view-acervo')" data-tooltip="Aulas Teóricas">
+        <button type="button" class="nav-item" data-view="view-acervo" onclick="go('view-acervo')" data-tooltip="Acervo">
           <i class="ph ph-chalkboard-teacher"></i>
-          <span class="nav-text" id="drive-btn-label">Aulas Teóricas</span>
-          <span class="nav-tooltip">Aulas Teóricas</span>
+          <span class="nav-text" id="drive-btn-label">Acervo</span>
+          <span class="nav-tooltip">Acervo</span>
         </button>
 
-        <button type="button" class="nav-item" data-view="view-treino" onclick="go('view-treino')" data-tooltip="Treino Livre (Questões)">
+        <button type="button" class="nav-item" data-view="view-treino" onclick="go('view-treino')" data-tooltip="Questões e revisão">
           <i class="ph ph-exam"></i>
-          <span class="nav-text">Treino Livre (Questões)</span>
-          <span class="nav-tooltip">Treino Livre (Questões)</span>
+          <span class="nav-text">Questões e revisão</span>
+          <span class="nav-tooltip">Questões e revisão</span>
         </button>
 
         <button type="button" class="nav-item" data-view="view-preparatorio" onclick="go('view-preparatorio')" data-tooltip="Desempenho">
@@ -2105,7 +2105,7 @@ mark.exam-highlight {
         <div class="nav-label">Recursos</div>
         <button type="button" class="nav-item" data-view="view-inicio" onclick="go('view-inicio')" data-tooltip="Início">
           <i class="ph ph-house"></i>
-          <span class="nav-text">Início</span>
+          <span class="nav-text">Explorar</span>
           <span class="nav-tooltip">Início</span>
         </button>
         <button type="button" class="nav-item" data-view="view-calendario" onclick="go('view-calendario')" data-tooltip="Calendário">
@@ -2703,8 +2703,8 @@ mark.exam-highlight {
       <div id="treino-main-screen" style="padding-top:20px">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin:8px 20px 16px">
           <div>
-            <h2 class="section-title" style="margin:0">Treino Livre</h2>
-            <div style="font-size:13px;color:var(--text-secondary);margin-top:2px">Simulador avançado de provas médicas com tutor IA integrado</div>
+            <h2 class="section-title" style="margin:0">Questões e revisão</h2>
+            <div style="font-size:13px;color:var(--text-secondary);margin-top:2px">Pratique por tema. Aprenda com os seus erros.</div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn-primary btn-sm glass-shimmer" onclick="startTreinoLivreFiltered()"><i class="ph ph-play-circle"></i> Iniciar Simulado</button>
@@ -2716,13 +2716,13 @@ mark.exam-highlight {
         <!-- SISTEMA DE ABAS -->
         <div class="treino-tabs-bar">
           <button class="treino-tab-btn active" id="tab-btn-prontas" onclick="switchTreinoTab('prontas')">
-            <i class="ph ph-list-checks"></i> 1. Questões Prontas (<span id="prontas-badge-count">0</span>)
+            <i class="ph ph-list-checks" aria-hidden="true"></i> Questões <span id="prontas-badge-count">0</span>
           </button>
           <button class="treino-tab-btn" id="tab-btn-gemini" onclick="switchTreinoTab('gemini')">
-            <i class="ph ph-sparkle" style="color:var(--cyan)"></i> 2. Gerador Gemini IA
+            <i class="ph ph-sparkle" aria-hidden="true"></i> Criar com IA
           </button>
           <button class="treino-tab-btn" id="tab-btn-flashcards" onclick="switchTreinoTab('flashcards')">
-            <i class="ph ph-cards"></i> 3. Flashcards SRS (<span id="fc-due">0</span>)
+            <i class="ph ph-cards" aria-hidden="true"></i> Flashcards <span id="fc-due">0</span>
           </button>
         </div>
 
@@ -2732,8 +2732,8 @@ mark.exam-highlight {
           <div class="imp-box" style="margin-bottom:16px;padding:16px 20px">
             <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
               <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;flex:1;min-width:280px">
-                <input type="text" id="bank-search-input" placeholder="🔎 Buscar por tema, doença ou sinal clínico..." style="flex:1;min-width:200px;padding:9px 14px;border-radius:10px;background:var(--bg-elevated);border:1px solid var(--border-muted);color:var(--text-primary);font-size:13px" oninput="onBankSearchInput()" onkeydown="if(event.key==='Enter'){bankCurrentPage=1;filterBankQuestions();}">
-                <select id="bank-spec-filter" class="sim-select" style="width:auto;min-width:160px;padding:8px 12px;font-size:13px" onchange="bankCurrentPage=1;filterBankQuestions()">
+                <input type="search" id="bank-search-input" aria-label="Buscar questões por tema" placeholder="Buscar por tema ou palavra-chave…" style="flex:1;min-width:200px;padding:9px 14px;border-radius:10px;background:var(--bg-elevated);border:1px solid var(--border-muted);color:var(--text-primary);font-size:13px" oninput="onBankSearchInput()" onkeydown="if(event.key==='Enter'){bankCurrentPage=1;filterBankQuestions();}">
+                <select id="bank-spec-filter" aria-label="Especialidade das questões" class="sim-select" style="width:auto;min-width:160px;padding:8px 12px;font-size:13px" onchange="bankCurrentPage=1;filterBankQuestions()">
                   <option value="">Todas Especialidades</option>
                   <option value="Clínica Médica">Clínica Médica</option>
                   <option value="Cirurgia Geral">Cirurgia Geral</option>
@@ -2742,7 +2742,7 @@ mark.exam-highlight {
                   <option value="Medicina Preventiva e Social">Preventiva / SUS</option>
                   <option value="Perito Médico Federal">Perito Médico Federal</option>
                 </select>
-                <select id="bank-status-filter" class="sim-select" style="width:auto;min-width:140px;padding:8px 12px;font-size:13px" onchange="bankCurrentPage=1;filterBankQuestions()">
+                <select id="bank-status-filter" aria-label="Situação das questões" class="sim-select" style="width:auto;min-width:140px;padding:8px 12px;font-size:13px" onchange="bankCurrentPage=1;filterBankQuestions()">
                   <option value="all">Todos os Status</option>
                   <option value="unanswered">Não resolvidas</option>
                   <option value="correct">Acertadas</option>
@@ -3073,27 +3073,12 @@ Sintomas de pneumonia\tFebre, tosse, dispneia\tPneumologia"></textarea>
   <button class="dash-floating-edge-btn" id="dash-floating-edge-btn" onclick="toggleDashboardCollapse()" title="Expandir Painel Lateral de Métricas & Gamificação"><i class="ph ph-caret-left"></i><span>Métricas</span></button>
 
   <!-- ═══ BARRA DE NAVEGAÇÃO INFERIOR MOBILE (NATIVE APP TAB BAR) ═══ -->
-  <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Navegação Principal Mobile">
-    <button class="mobile-nav-btn active" data-view="view-inicio" onclick="go('view-inicio')">
-      <i class="ph ph-house"></i>
-      <span>Início</span>
-    </button>
-    <button class="mobile-nav-btn" data-view="view-acervo" onclick="go('view-acervo')">
-      <i class="ph ph-video"></i>
-      <span>Aulas</span>
-    </button>
-    <button class="mobile-nav-btn" data-view="view-simulados" onclick="go('view-simulados')">
-      <i class="ph ph-certificate"></i>
-      <span>Simulados</span>
-    </button>
-    <button class="mobile-nav-btn" data-view="view-calendario" onclick="go('view-calendario')">
-      <i class="ph ph-calendar"></i>
-      <span>Plano</span>
-    </button>
-    <button class="mobile-nav-btn" data-view="view-treino-questoes" onclick="go('view-treino-questoes')">
-      <i class="ph ph-cards"></i>
-      <span>Treino</span>
-    </button>
+  <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Navegação principal">
+    <button class="mobile-nav-btn active" data-view="view-planneria" onclick="go('view-planneria')" aria-current="page"><i class="ph ph-calendar-check" aria-hidden="true"></i><span>Meu plano</span></button>
+    <button class="mobile-nav-btn" data-view="view-acervo" onclick="go('view-acervo')"><i class="ph ph-books" aria-hidden="true"></i><span>Acervo</span></button>
+    <button class="mobile-nav-btn" data-view="view-treino" onclick="go('view-treino')"><i class="ph ph-exam" aria-hidden="true"></i><span>Questões</span></button>
+    <button class="mobile-nav-btn" data-view="view-simulados" onclick="go('view-simulados')"><i class="ph ph-timer" aria-hidden="true"></i><span>Simulados</span></button>
+    <button class="mobile-nav-btn" data-view="view-calendario" onclick="go('view-calendario')"><i class="ph ph-calendar-blank" aria-hidden="true"></i><span>Calendário</span></button>
   </nav>
 </div>
 
@@ -4056,7 +4041,7 @@ function saveDB(sync=true){lsSet(LS,DB);if(sync)saveCloud()}
 const addDay=dk=>{const s=new Set(lsGet('acv_days',[]));s.add(dk);lsSet('acv_days',[...s])};
 
 /* ═══ TEMA ═══ */
-function applyTheme(){document.documentElement.dataset.theme=lsGet('cuscuz_theme','dark')}
+function applyTheme(){document.documentElement.dataset.theme=lsGet('cuscuz_theme','light')}
 function toggleTheme(){const t=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=t;lsSet('cuscuz_theme',t)}
 
 /* ═══ MÚSICA DE FUNDO / LOBBY & PLAYER DE ÁUDIO ═══ */
@@ -4449,6 +4434,12 @@ function initDashboardState() {
 }
 
 function getProgressSummary() {
+  const currentPlan = lsGet('planner-v2-plan', null);
+  if (currentPlan && Array.isArray(currentPlan.tarefas)) {
+    const tasks = currentPlan.tarefas.filter(task => task && !['cancelado', 'reagendada'].includes(task.status) && task.tipo !== 'prova');
+    const done = tasks.filter(task => task.status === 'feito').length;
+    return { done, total: tasks.length, pct: tasks.length ? pct(done, tasks.length) : 0, label: 'tarefas do plano' };
+  }
   const planIA = lsGet('planner-ia-plan', null);
   const blocks = planIA && Array.isArray(planIA.dias)
     ? planIA.dias.flatMap(day => day.blocos || []).filter(block => block.tipo !== 'prova')
@@ -4507,6 +4498,9 @@ function enterApp(viewId){
 }
 
 function go(id){
+  if (id === 'view-treino-questoes') id = 'view-treino';
+  // Resolve the destination before hiding the current screen.
+  if (!$(id) || !$(id).classList.contains('view-section')) return;
   $$('.view-section').forEach(v=>v.classList.remove('active'));
   const target = $(id);
   if (target) target.classList.add('active');
@@ -4518,9 +4512,9 @@ function go(id){
       'view-cronograma': 'Cronograma',
       'view-planneria': 'Plano de estudos',
       'view-semana': 'Semana',
-      'view-preparatorio': 'Preparatório',
+      'view-preparatorio': 'Desempenho',
       'view-acervo': 'Acervo',
-      'view-treino': 'Treino Livre',
+      'view-treino': 'Questões e revisão',
       'view-simulados': 'Simulados'
     })[id] || 'Cuscuz-MED';
   }
@@ -4532,7 +4526,10 @@ function go(id){
     else n.removeAttribute('aria-current');
   });
   $$('.mobile-nav-btn[data-view]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.view === id);
+    const active = btn.dataset.view === id;
+    btn.classList.toggle('active', active);
+    if (active) btn.setAttribute('aria-current', 'page');
+    else btn.removeAttribute('aria-current');
   });
   const sb = document.querySelector('.sidebar');
   if (sb) sb.classList.remove('open');
@@ -4540,14 +4537,14 @@ function go(id){
   if (bd) bd.classList.remove('open');
   const main = document.querySelector('.main');
   if (main) main.scrollTop = 0;
-  const appEl = $('app-main'); if (appEl) appEl.classList.toggle('in-acervo', id === 'view-acervo');
+  const appEl = $('app-main'); if (appEl) { appEl.classList.toggle('in-acervo', id === 'view-acervo'); appEl.dataset.view = id; }
   ({'view-inicio':renderHome,'view-calendario':renderCalendar,'view-cronograma':renderSchedule,'view-semana':renderWeek,
     'view-preparatorio':renderPrep,'view-acervo':renderAcervo,'view-treino':renderDecks,'view-simulados':renderSim,'view-planneria':renderPlannerIA}[id]||(()=>{}))();
   updateSidebarProgress();
   setupSidebarTooltips();
 }
 function refreshAll(){renderHome();renderCalendar();renderSchedule();renderWeek();renderPrep();renderAcervo();renderDecks();renderSim();renderDash();updateBadges();updateSidebarProgress();
- const lbl=$('drive-btn-label');if(lbl)lbl.textContent='Aulas Teóricas'}
+ const lbl=$('drive-btn-label');if(lbl)lbl.textContent='Acervo'}
 function refreshLight(){renderDash();renderCalendar();renderSchedule();renderWeek();renderHome();updateBadges();updateSidebarProgress()}
 
 /* ═══ LOGIN / FIREBASE / AUTO SYNC ═══ */
@@ -11676,7 +11673,7 @@ async function abrirResultadoBuscaGlobal(item) {
   bgResult.style.display = 'none';
   bgResult.innerHTML = '';
 
-  // Sempre navega para o acervo (Aulas Teóricas) primeiro
+  // Sempre navega para o acervo (Acervo) primeiro
   go('view-acervo');
 
   if (item.tipo === 'video') {
@@ -12157,5 +12154,6 @@ function enterDriveCourse(id, name) {
 </script>
   <!-- <script defer src="/js/aplicar-redesign.js"></script> -->
 <link rel="stylesheet" href="/css/cuscuz-brand.css">
+<link rel="stylesheet" href="/css/cuscuz-study.css">
 </body>
 </html>

@@ -46,9 +46,9 @@
       go: 'view-acervo'
     },
     {
-      title: 'Gamificação',
-      text: 'Mantenha sua ofensiva (streak), ganhe XP por aula concluída e suba de nível! O painel de Métricas fica sempre ao lado.',
-      target: '#dash-floating-edge-btn',
+      title: 'Sua rotina de estudos',
+      text: 'Volte ao Meu plano para continuar seu próximo estudo. No calendário, acompanhe suas provas e os blocos da semana.',
+      target: '.sidebar [data-view="view-planneria"]',
       placement: 'left'
     }
   ];
