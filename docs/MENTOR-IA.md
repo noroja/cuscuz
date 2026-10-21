@@ -5,6 +5,7 @@ Evolução da área de planejamento existente (`planner-v2.js` + `src/planner-en
 ## Provedor de IA
 Groq (API compatível com OpenAI) por `src/ai-provider.js`. Variáveis: `GROQ_API_KEY`, `GROQ_MODEL` (padrão `openai/gpt-oss-120b`), `GROQ_STT_MODEL` (`whisper-large-v3-turbo`), `GROQ_TIMEOUT_MS`, `GROQ_MAX_RETRIES`, `GROQ_BASE_URL`, `AI_PROVIDER`.
 Sem a chave o app funciona com o motor determinístico; só o que depende de IA retorna mensagem clara. O `main` agora tem um provedor híbrido (commit 21712fe): com `AI_PROVIDER=auto` e as duas chaves, há roteamento e fallback mútuo Groq↔Gemini; `AI_PROVIDER=groq` ou `gemini` fixa um só. Veja os comentários no topo de `src/ai-provider.js`.
+O OpenRouter (`OPENROUTER_API_KEY`, padrão Nemotron `nvidia/nemotron-3-super-120b-a12b:free`) é um 3º provedor: no modo `auto` é o último recurso; com `AI_PROVIDER=openrouter` é o único. Atenção: modelos `:free` têm cota diária baixa e, conforme a política do provedor, podem registrar prompts; a transcrição de áudio continua exigindo `GROQ_API_KEY`.
 
 ## Fluxo
 1. **Conferir** (`POST /api/planner/v3/conferir`): lê texto colado, `.txt`/`.md` ou PDF com texto selecionável (regras primeiro; IA só se as regras não reconhecerem o formato). Devolve um **rascunho**, ambiguidades e itens faltando. Não altera nada.
