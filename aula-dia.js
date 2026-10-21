@@ -10,7 +10,17 @@
   const mmss = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(Math.floor(s % 60)).padStart(2, '0');
   const hms = s => (s >= 3600 ? Math.floor(s / 3600) + 'h' : '') + String(Math.floor((s % 3600) / 60)).padStart(2, '0') + 'min';
 
-  let geminiOk = null, iniciando = false;
+  // geminiOk = há IA de texto (revisão/resumo); transcOk = há Whisper no servidor; paralelo = chamadas de texto simultâneas permitidas
+  let geminiOk = null, transcOk = false, paralelo = 1, iniciando = false;
+  async function carregarStatus() {
+    if (geminiOk !== null) return;
+    try {
+      const j = await (await fetch('/api/aula/status')).json();
+      geminiOk = !!(j.texto != null ? j.texto : j.gemini);
+      transcOk = j.transcricao != null ? !!j.transcricao : geminiOk; // servidores antigos: sem o campo, assume o comportamento anterior
+      paralelo = Math.max(1, Math.min(3, parseInt(j.paralelo, 10) || 1));
+    } catch (_) { geminiOk = false; transcOk = false; paralelo = 1; }
+  }
   let rec = null;       // estado da gravação em andamento
   let sessAtual = null; // sessão exibida (em gravação ou aberta do histórico)
   let abaRes = 'transcricao';
@@ -165,7 +175,7 @@
   async function render() {
     css(); garantirView();
     const r = $('ad-root'); if (!r) return;
-    if (geminiOk === null) { try { geminiOk = !!(await (await fetch('/api/aula/status')).json()).gemini; } catch (_) { geminiOk = false; } }
+    await carregarStatus();
     if (rec) return desenharGravando();
     if (sessAtual && !rec) return desenharResultado();
     const opts = opcoesDisciplina();
@@ -179,7 +189,7 @@
     <div class="row3"><div><label>Parte</label><select id="ad-parte" onchange="this.dataset.manual=1">${partes.map(p => `<option${p === sugerirParte(d0, t0) ? ' selected' : ''}>${p}</option>`).join('')}</select></div>
     <div><label>Cor de magia do resumo</label><select id="ad-cor">${['dourado', 'turquesa', 'âmbar', 'violeta', 'esmeralda', 'coral'].map(c => `<option>${c}</option>`).join('')}</select></div><div></div></div>
     <div class="ad-big"><button class="b rec" id="ad-start" onclick="auladia.iniciar()"><i class="ph ph-record"></i> Iniciar gravação</button>
-    <span class="sub" style="margin:0">${geminiOk ? 'Transcrição por IA (a cada ~1,5 min), revisão e resumo automáticos no fim.' : 'Sem chave de IA (Gemini/Groq) no servidor: usarei a legenda ao vivo do navegador (Chrome/Safari), sem revisão nem resumo por IA.'}</span></div>
+    <span class="sub" style="margin:0">${transcOk ? 'Transcrição por IA (a cada ~1,5 min)' + (geminiOk ? ', revisão e resumo automáticos no fim.' : '; sem IA de texto para revisar e resumir.') : (geminiOk ? 'Sem GROQ_API_KEY no servidor (transcrição por Whisper): usarei a legenda ao vivo do navegador e guardarei o áudio para transcrever depois; resumo e flashcards saem do texto da legenda.' : 'Sem chave de IA no servidor: usarei a legenda ao vivo do navegador (Chrome/Safari), sem revisão nem resumo por IA.')}</span></div>
     <div class="aviso">Deixe a tela ligada e o navegador aberto durante a aula — no iPhone, bloquear a tela ou trocar de app pausa a gravação. Posicione o aparelho perto de quem fala e use o botão ⭐ quando o professor disser "isso cai na prova". Grave apenas se a faculdade/professor permitirem.</div></div>
     <div class="card"><b>Aulas gravadas</b> <small class="sub">(por Área › Conteúdo › Parte)</small>${historicoAgrupado()}</div></div>`;
   }
@@ -199,7 +209,7 @@
     const stTxt = est === 'pausada' ? '⏸ Pausado — o microfone ficou em espera; o trecho atual foi guardado junto com o áudio.'
       : est === 'parada' ? '⏹ Gravação parada — toque em "Continuar gravação" para somar mais um trecho, ou "Finalizar e revisar" para gerar o material de estudo.'
       : est === 'finalizando' ? 'Finalizando e transcrevendo o último trecho…'
-      : (geminiOk ? 'Gravando · trechos enviados à IA a cada ~1,5 min' : 'Gravando · legenda ao vivo do navegador');
+      : (transcOk ? 'Gravando · trechos enviados à IA a cada ~1,5 min' : 'Gravando · legenda ao vivo do navegador');
     r.innerHTML = `<div class="ad"><h2><span class="ad-dot" style="display:inline-block;margin-right:8px;${est === 'gravando' ? '' : 'animation:none;background:var(--amber)'}"></span>${est === 'gravando' ? 'Gravando' : est === 'pausada' ? 'Pausado' : est === 'parada' ? 'Gravação parada' : 'Finalizando'} — ${E(rec.sess.disciplina || 'aula')}</h2><div class="sub">${E(rec.sess.tema || '')}</div>
     <div class="card"><div class="ad-big" style="margin-top:0"><span class="ad-timer" id="ad-timer">${mmss(decorridoMs() / 1000)}</span><div class="ad-meter"><i id="ad-meter"></i></div>
     <button class="b" onclick="auladia.marcar()">⭐ Marcar momento</button>${bPausa}${bParada}${est !== 'finalizando' ? `<button class="b pri" onclick="auladia.finalizar()"><i class="ph ph-check-circle"></i> Finalizar</button>` : ''}</div>
@@ -252,7 +262,7 @@
       const stream = await pedirMicrofone();
       if (!stream) return;
       garantirView(); css();
-      if (geminiOk === null) { try { geminiOk = !!(await (await fetch('/api/aula/status')).json()).gemini; } catch (_) { geminiOk = false; } }
+      await carregarStatus();
       if ($('view-auladia') && !$('view-auladia').classList.contains('active')) { go(VIEW); await new Promise(r => setTimeout(r, 200)); }
       await comecar(stream, disc, tema, parte, cor);
     } finally { iniciando = false; }
@@ -282,7 +292,7 @@
     document.addEventListener('visibilitychange', aoMudarVisibilidade);
     desenharGravando();
     iniciarTrecho();
-    if (!geminiOk) iniciarLegendaAoVivo();
+    if (!transcOk) iniciarLegendaAoVivo();
     toast('Gravação iniciada', 'success');
   }
 
@@ -303,7 +313,7 @@
     mr.ondataavailable = ev => { if (ev.data && ev.data.size) parts.push(ev.data); };
     mr.onstop = () => {
       const blob = new Blob(parts, { type: mr.mimeType || rec.mime || 'audio/webm' });
-      if (blob.size > 2000) { const sess = sessAtual; sess.chunks.push({ i: idx, status: 'pendente', texto: '', mime: blob.type }); salvarSess(sess); idbPut(sess.id + ':' + idx, blob); if (geminiOk) { rec.fila.push({ sess, idx, blob }); bombear(); } }
+      if (blob.size > 2000) { const sess = sessAtual; sess.chunks.push({ i: idx, status: 'pendente', texto: '', mime: blob.type }); salvarSess(sess); idbPut(sess.id + ':' + idx, blob); if (transcOk) { rec.fila.push({ sess, idx, blob }); bombear(); } }
       // a bola volta a rolar só se a gravação segue ativa (pausa/parada mantêm tudo congelado até a retomada)
       if (rec && rec.parar) finalizarDepois();
       else if (rec && !rec.pausado && !rec.parado) iniciarTrecho();
@@ -336,7 +346,7 @@
     const t = mmss(decorridoMs() / 1000);
     sessAtual.marcas.push(t);
     // insere a marca no ponto atual da transcrição ao vivo / entre trechos
-    if (!geminiOk) sessAtual.live = (sessAtual.live ? sessAtual.live + '\n' : '') + '⭐ [' + t + ']\n';
+    if (!transcOk) sessAtual.live = (sessAtual.live ? sessAtual.live + '\n' : '') + '⭐ [' + t + ']\n';
     else sessAtual.chunks.push({ i: rec.chunkIdx - 0.5 + sessAtual.marcas.length * 0.001, status: 'ok', texto: '⭐ [' + t + ']' });
     atualizarTexto(); toast('Momento marcado em ' + t, 'success');
   }
@@ -366,7 +376,7 @@
       const restante = Math.max(5000, CHUNK_MS - (Date.now() - (rec.tChunkStart || Date.now())));
       rec.tChunk = setTimeout(() => { try { if (rec.mr && rec.mr.state !== 'inactive') rec.mr.stop(); } catch (_) {} }, restante);
     }
-    if (!geminiOk) iniciarLegendaAoVivo();
+    if (!transcOk) iniciarLegendaAoVivo();
     desenharGravando();
     toast('Gravação retomada.', 'success');
   }
@@ -387,7 +397,7 @@
     if (!rec || !rec.parado || rec.parar) return;
     rec.parado = false; rec.refer = Date.now(); rec.mr = null;
     iniciarTrecho();
-    if (!geminiOk) iniciarLegendaAoVivo();
+    if (!transcOk) iniciarLegendaAoVivo();
     desenharGravando();
     toast('Gravação retomada — o novo trecho entra no fim da aula.', 'success');
   }
@@ -511,6 +521,23 @@
   const slug = t => String(t).toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').trim().replace(/\s/g, '-');
   const nomeCompleto = s => [s.disciplina || 'Aula', s.tema, s.parte && s.parte !== 'Única' ? s.parte : ''].filter(Boolean).join(' — ');
 
+  // Executa fn(item) com no máximo n em voo. Em erro, para de iniciar novos itens, espera os em voo e relança o primeiro erro.
+  async function pool(n, itens, fn) {
+    let prox = 0, erro = null;
+    const ws = Array.from({ length: Math.max(1, Math.min(n, itens.length)) }, async () => {
+      while (prox < itens.length && !erro) { const it = itens[prox++]; try { await fn(it); } catch (e) { erro = erro || e; } }
+    });
+    await Promise.all(ws);
+    if (erro) throw erro;
+  }
+
+  // Limitador global: no máximo n tarefas em execução ao mesmo tempo, as demais esperam na fila (ordem de chegada).
+  function limitador(n) {
+    let ativos = 0; const fila = [];
+    const solta = () => { while (ativos < n && fila.length) { ativos++; fila.shift()(); } };
+    return (fn) => new Promise((ok, no) => { fila.push(() => { Promise.resolve().then(fn).then(ok, no).finally(() => { ativos--; solta(); }); }); solta(); });
+  }
+
   function passos(s, estado) {
     const L = [['rev', 'Revisando a transcrição (termos médicos, emendas, parágrafos)'], ['res', 'Escrevendo o resumo completo (Crônicas de Residência)'], ['fc', 'Criando os flashcards de revisão'], ['mat', 'Montando "cai na prova" e assuntos do plano']];
     const html = L.map(([k, n]) => { const e = estado[k] || ''; return `<div class="ad-step ${e === 'ok' ? 'ok' : e === 'go' ? 'go' : e === 'er' ? 'er' : ''}">${e === 'ok' ? '✔' : e === 'go' ? '⏳' : e === 'er' ? '✖' : '○'} ${n}${estado[k + 'Info'] ? ' — ' + E(estado[k + 'Info']) : ''}</div>`; }).join('');
@@ -526,43 +553,58 @@
     const ctx = { area: s.disciplina, conteudo: [s.tema, s.parte && s.parte !== 'Única' ? s.parte : ''].filter(Boolean).join(' — '), glossario: assuntosPlano(s.disciplina).slice(0, 60) };
     try {
       s.texto = textoPuro(s) || s.texto;
-      // 1) Revisão da transcrição, pedaço a pedaço
+      const N = Math.max(1, paralelo);
+      const gate = limitador(N); const postL = (u, c, t) => gate(() => post(u, c, t)); // teto GLOBAL de chamadas simultâneas, somando todas as frentes
+      // 1) Revisão da transcrição, pedaço a pedaço (blocos independentes → em paralelo quando o servidor permite)
       if (!s.textoRevisado) {
         est.rev = 'go'; passos(s, est);
-        const blocos = dividirTexto(s.texto); const saida = [];
-        for (let i = 0; i < blocos.length; i++) {
-          est.revInfo = (i + 1) + '/' + blocos.length; passos(s, est);
-          try { saida.push((await post('/api/aula/revisar', Object.assign({ texto: blocos[i] }, ctx))).texto); } catch (_) { saida.push(blocos[i]); }
-        }
+        const blocos = dividirTexto(s.texto); const saida = new Array(blocos.length); let feitos = 0;
+        est.revInfo = '0/' + blocos.length; passos(s, est);
+        await pool(N, blocos.map((_, i) => i), async (i) => {
+          try { saida[i] = (await postL('/api/aula/revisar', Object.assign({ texto: blocos[i] }, ctx))).texto; } catch (_) { saida[i] = blocos[i]; }
+          est.revInfo = (++feitos) + '/' + blocos.length; passos(s, est);
+        });
         s.textoRevisado = saida.join('\n\n'); est.rev = 'ok'; est.revInfo = ''; await salvarAgora(s); passos(s, est);
         if (abaRes === 'transcricao') { const el = document.querySelector('#ad-root .ad-tr'); if (el) el.innerHTML = E(s.textoRevisado); }
       }
       const fonte = s.textoRevisado || s.texto;
-      // 2) Resumo Crônicas: mapa → capítulos → fechamento
+      // 2) O mapa vem primeiro (os flashcards usam os capítulos como "tema"); depois as três frentes são independentes:
+      //    A) capítulos Crônicas + fechamento, B) flashcards, C) "cai na prova"/assuntos. Em paralelo quando N > 1.
       if (!s.resumoMd) {
         est.res = 'go'; est.resInfo = 'mapeando tópicos'; passos(s, est);
-        if (!s.mapa) { s.mapa = (await post('/api/aula/mapa', Object.assign({ transcricao: fonte, parte: s.parte }, ctx))).mapa; await salvarAgora(s); }
-        const caps = s.mapa.capitulos || []; s.caps = s.caps || [];
-        for (let i = s.caps.length; i < caps.length; i++) {
-          est.resInfo = 'capítulo ' + (i + 1) + '/' + caps.length + ' — ' + caps[i].titulo; passos(s, est);
-          const j = await post('/api/aula/capitulo', Object.assign({ transcricao: fonte, capitulo: caps[i], numero: i + 1, total: caps.length, cor: s.cor || 'dourado' }, ctx), 3);
-          s.caps.push(j.markdown); await salvarAgora(s);
-        }
-        if (!s.fechamento) { est.resInfo = 'considerações finais e revisão'; passos(s, est); s.fechamento = (await post('/api/aula/fechamento', Object.assign({ transcricao: fonte, capitulos: caps, temQuestoes: !!s.mapa.temQuestoes }, ctx))).markdown; await salvarAgora(s); }
+        if (!s.mapa) { s.mapa = (await postL('/api/aula/mapa', Object.assign({ transcricao: fonte, parte: s.parte }, ctx))).mapa; await salvarAgora(s); }
+      }
+      const frenteResumo = async () => {
+        if (s.resumoMd) return;
+        const caps = (s.mapa && s.mapa.capitulos) || []; s.caps = Array.isArray(s.caps) ? s.caps : [];
+        const faltam = caps.map((_, i) => i).filter(i => !s.caps[i]); let prontos = caps.length - faltam.length;
+        est.resInfo = prontos + '/' + caps.length + ' capítulos'; passos(s, est);
+        await pool(N, faltam, async (i) => {
+          const j = await postL('/api/aula/capitulo', Object.assign({ transcricao: fonte, capitulo: caps[i], numero: i + 1, total: caps.length, cor: s.cor || 'dourado' }, ctx), 3);
+          s.caps[i] = j.markdown; await salvarAgora(s);
+          est.resInfo = (++prontos) + '/' + caps.length + ' capítulos'; passos(s, est);
+        });
+        if (!s.fechamento) { est.resInfo = 'considerações finais e revisão'; passos(s, est); s.fechamento = (await postL('/api/aula/fechamento', Object.assign({ transcricao: fonte, capitulos: caps, temQuestoes: !!s.mapa.temQuestoes }, ctx))).markdown; await salvarAgora(s); }
         s.resumoMd = montarResumoMd(s); est.res = 'ok'; est.resInfo = ''; await salvarAgora(s); passos(s, est);
-      }
-      // 3) Flashcards
-      if (!s.flashcards) {
+      };
+      const frenteFlash = async () => {
+        if (s.flashcards) return;
         est.fc = 'go'; passos(s, est);
-        s.flashcards = (await post('/api/aula/flashcards', Object.assign({ transcricao: fonte, capitulos: (s.mapa && s.mapa.capitulos) || [] }, ctx))).flashcards || [];
+        s.flashcards = (await postL('/api/aula/flashcards', Object.assign({ transcricao: fonte, capitulos: (s.mapa && s.mapa.capitulos) || [] }, ctx))).flashcards || [];
         est.fc = 'ok'; est.fcInfo = s.flashcards.length + ' cartões'; await salvarAgora(s); passos(s, est);
-      }
-      // 4) Material complementar (cai na prova, assuntos do manual)
-      if (!s.resultado) {
+      };
+      const frenteMaterial = async () => {
+        if (s.resultado) return;
         est.mat = 'go'; passos(s, est);
-        try { s.resultado = (await post('/api/aula/processar', { transcricao: fonte, disciplina: s.disciplina, tema: ctx.conteudo, assuntosPlano: assuntosPlano(s.disciplina), marcas: s.marcas })).resultado; } catch (_) { s.resultado = { caiNaProva: [], assuntosCobertos: [] }; }
+        try { s.resultado = (await postL('/api/aula/processar', { transcricao: fonte, disciplina: s.disciplina, tema: ctx.conteudo, assuntosPlano: assuntosPlano(s.disciplina), marcas: s.marcas })).resultado; } catch (_) { s.resultado = { caiNaProva: [], assuntosCobertos: [] }; }
         est.mat = 'ok'; await salvarAgora(s); passos(s, est);
-      }
+      };
+      const frentes = [frenteResumo, frenteFlash, frenteMaterial];
+      if (N > 1) {
+        // allSettled: uma frente que falha não interrompe as outras (o que ficou pronto é salvo); o primeiro erro é relançado no fim
+        const rs = await Promise.allSettled(frentes.map(f => f()));
+        const falha = rs.find(r => r.status === 'rejected'); if (falha) throw falha.reason;
+      } else { for (const f of frentes) await f(); }
       if (sessAtual === s) { abaRes = 'resumo'; desenharResultado(); }
       toast('Aula pronta: transcrição revisada, resumo e ' + (s.flashcards || []).length + ' flashcards.', 'success');
     } catch (e) {
@@ -901,6 +943,7 @@
     pausar, continuar, parar, retomar, finalizar,
     gerar() { if (sessAtual) pipeline(sessAtual); }, reenviar: reenviarFalhas, parteAuto: atualizarParteSugerida,
     kVai,
+    _pool: pool, _limitador: limitador,
     gerarRQ: gerarResumoGeral,
     mmGerar, mmToggle: mmClique, mmZoom, mmFit, mmTudo, mmPNG,
     ancora(id) { const el = document.getElementById('adh-' + id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
