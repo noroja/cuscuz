@@ -153,9 +153,17 @@ Perfil atual (JSON, sem o material): ${JSON.stringify({ ...perfil, materiais: un
           // Mensagens longas viram um aviso curto no histórico da IA, mas o
           // interpretador determinístico precisa receber o texto original.
           const textoResposta = String((brutoUlt && brutoUlt.content) || ultima.content || '').slice(0, 60000);
-          const patch = PE.interpretarResposta(asking, textoResposta, hoje, perfil.provasFaculdade, perfil.disciplinasConfirmadas);
+          const patch = PE.interpretarResposta(asking, textoResposta, hoje, perfil.provasFaculdade, perfil.disciplinasConfirmadas, perfil.conteudosPendentes);
+          const semProva = Array.isArray(patch._conteudosSemProva) ? patch._conteudosSemProva : [];
+          delete patch._conteudosSemProva;
           if (asking === 'extras') extrasPerguntado = true;
           perfil = PE.sanePerfil(perfil, patch);
+          if (semProva.length) {
+            const nomesProvas = [...new Set((perfil.provasFaculdade || []).map(p => p.disciplina))];
+            return res.json({ success: true, ia: false, perfil, asking: 'conteudo', jaExtras: extrasPerguntado,
+              reply: `Consegui associar os blocos que correspondem aos nomes das provas. Ainda não associei: ${semProva.join(', ')}. As provas cadastradas são ${nomesProvas.join(', ')}. Para eu não colocar esses tópicos na prova errada, responda no formato «Nome da prova: ${semProva.join(', ')}». Os tópicos desses blocos continuam guardados enquanto você confirma a associação.`,
+              quickReplies: [], pronto: false, resumo: PE.resumoPerfil(perfil) });
+          }
           if (!Object.keys(patch).length && asking !== 'extras') {
             const q = PE.proximaPergunta(perfil, extrasPerguntado, hoje);
             return res.json({ success: true, ia: false, perfil, asking: q ? q.campo : '', jaExtras: extrasPerguntado, reply: 'Não consegui entender essa resposta. ' + (q ? q.reply : ''), quickReplies: q ? q.quick : [], pronto: false, resumo: PE.resumoPerfil(perfil) });

@@ -211,7 +211,7 @@ export const PERFIL_VAZIO = () => ({
   objetivo: '', alvo: '', dataProva: '', semData: false,
   provasFaculdade: [], semProvas: false, aulasFaculdade: [], manualNome: '', semConteudo: false,
   horas: null, dificuldades: [], fortes: [], semDificuldades: false,
-  metodo: '', cursos: [], anseios: '', materiais: [], conteudoConfirmado: false, disciplinasConfirmadas: [],
+  metodo: '', cursos: [], anseios: '', materiais: [], conteudoConfirmado: false, disciplinasConfirmadas: [], conteudosPendentes: [],
   cronogramaResidencia: []
 });
 
@@ -331,6 +331,11 @@ export function sanePerfil(atual, patch) {
       assuntos: Array.isArray(o && o.assuntos) ? limparAssuntos(o.assuntos.map(a => str(a, 160)), o && o.disciplina).slice(0, 60) : []
     })).filter(o => o.disciplina && o.data).sort((a, b) => a.data.localeCompare(b.data)).slice(0, 40);
     if (novas.length) { p.provasFaculdade = novas; p.semProvas = false; }
+  }
+  if (Array.isArray(x.conteudosPendentes)) {
+    p.conteudosPendentes = x.conteudosPendentes.map(o => ({
+      disciplina: str(o && o.disciplina, 80), assuntos: Array.isArray(o && o.assuntos) ? limparAssuntos(o.assuntos.map(a => str(a, 160)), '').slice(0, 80) : []
+    })).filter(o => o.disciplina && o.assuntos.length).slice(0, 80);
   }
   if (Array.isArray(x.aulasFaculdade)) {
     const au = x.aulasFaculdade.map(o => ({ disciplina: str(o && o.disciplina, 60), data: /^\d{4}-\d{2}-\d{2}$/.test(o && o.data) ? o.data : '', tema: str(o && o.tema, 140), detalhe: str(o && o.detalhe, 600) })).filter(o => o.disciplina && o.data && o.tema).slice(0, 500);
@@ -663,7 +668,7 @@ export function parseFaculdade(txt, hoje) {
 const NEGA = /^(nao|não|nenhum[a]?|nada|sem|n\/a|ainda nao|nao sei|nao tenho|pular|pula)\b/;
 
 // Interpreta a resposta do aluno para o campo que foi perguntado e devolve o patch do perfil
-export function interpretarResposta(campo, texto, hoje, provasAtuais) {
+export function interpretarResposta(campo, texto, hoje, provasAtuais, disciplinasConfirmadas, conteudosPendentesAtuais = []) {
   const n = norm(texto).trim();
   const patch = {};
   if (campo === 'objetivo') {
@@ -691,14 +696,28 @@ export function interpretarResposta(campo, texto, hoje, provasAtuais) {
       const provas = (provasAtuais || []).map(x => ({ ...x }));
       const linhas = String(texto).replace(/[«»]/g, '').split(/\n/).map(l => l.trim()).filter(Boolean);
       const lista = a => a.split(/[,;]|\s+e\s+/).map(x => x.trim()).filter(x => x.length > 2);
-      let mudou = false;
+      let mudou = false; const semProva = []; const pendentes = (conteudosPendentesAtuais || []).map(x => ({ ...x, assuntos: [...(x.assuntos || [])] }));
       for (const l of linhas) {
         const segs = l.split(/;\s*(?=[^;:]{3,60}:)/);
         for (const sg of segs) {
           const m = sg.match(/^([^:\-–]{3,60})\s*[:\-–]\s*(.+)$/);
           if (m) {
             const alvo = provas.find(pr => norm(pr.disciplina).includes(norm(m[1]).trim()) || norm(m[1]).includes(norm(pr.disciplina)));
-            if (alvo) { alvo.assuntos = [...new Set([...(alvo.assuntos || []), ...lista(m[2])])]; mudou = true; }
+            if (alvo) {
+              const assuntos = [];
+              for (const item of lista(m[2])) {
+                const sec = pendentes.find(x => mesmaDisc(x.disciplina, item));
+                if (sec) { assuntos.push(...sec.assuntos); pendentes.splice(pendentes.indexOf(sec), 1); }
+                else assuntos.push(item);
+              }
+              alvo.assuntos = [...new Set([...(alvo.assuntos || []), ...assuntos])]; mudou = true;
+            } else {
+              const assuntos = lista(m[2]);
+              const existente = pendentes.find(x => mesmaDisc(x.disciplina, m[1]));
+              if (existente) existente.assuntos = [...new Set([...existente.assuntos, ...assuntos])];
+              else pendentes.push({ disciplina: m[1].trim(), assuntos });
+              semProva.push(m[1].trim());
+            }
           } else {
             const vazias = provas.filter(pr => !(pr.assuntos || []).length);
             if (vazias.length === 1) { vazias[0].assuntos = lista(sg); mudou = true; }
@@ -706,6 +725,8 @@ export function interpretarResposta(campo, texto, hoje, provasAtuais) {
         }
       }
       if (mudou) patch.provasFaculdade = provas;
+      if (semProva.length || pendentes.length || (conteudosPendentesAtuais || []).length) patch.conteudosPendentes = pendentes;
+      if (semProva.length) patch._conteudosSemProva = [...new Set(semProva)];
     }
   } else if (campo === 'conteudoOk') {
     const d = proximaConferencia({ provasFaculdade: provasAtuais || [], disciplinasConfirmadas: arguments[4] || [] }, hoje);

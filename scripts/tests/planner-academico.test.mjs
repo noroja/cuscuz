@@ -110,6 +110,15 @@ await teste('9i. resposta longa com conteúdos por disciplina não cai no fallba
   assert.ok(j.perfil.provasFaculdade.find(p => p.disciplina === 'Doenças Infectoparasitárias').assuntos.some(a => /Protozooses/.test(a)));
   assert.ok(j.perfil.provasFaculdade.find(p => p.disciplina === 'IESC VIII').assuntos.some(a => /Todo o conteúdo/.test(a)));
   assert.ok(j.perfil.provasFaculdade.find(p => p.disciplina === 'Emergência e Terapia Intensiva').assuntos.some(a => /Hipoglicemia/.test(a)));
+  assert.deepEqual(j.perfil.conteudosPendentes.map(x => x.disciplina), ['Imagenologia', 'Saúde Mental', 'HMP VIII']);
+  assert.match(j.reply, /Para eu não colocar esses tópicos na prova errada/);
+  const confirm = await fetch('http://127.0.0.1:' + srv.address().port + '/api/planner/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ hoje, asking: 'conteudo', perfil: j.perfil, messages: [{ role: 'user', content: 'Emergência e Terapia Intensiva: Imagenologia, Saúde Mental, HMP VIII' }] }) });
+  const k = await confirm.json();
+  const prova = k.perfil.provasFaculdade.find(p => p.disciplina === 'Emergência e Terapia Intensiva');
+  assert.equal(k.success, true); assert.equal(k.perfil.conteudosPendentes.length, 0);
+  assert.ok(prova.assuntos.some(a => /Imagens radiológicas no trauma/.test(a)));
+  assert.ok(prova.assuntos.some(a => /Transtornos de ansiedade/.test(a)));
+  assert.ok(prova.assuntos.some(a => /esquecimento/.test(a)));
 });
 
 // 10 / 11 ── planos por trilha
