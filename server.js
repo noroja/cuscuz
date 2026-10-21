@@ -4028,14 +4028,30 @@ app.get('/acervo-manifest.json', async (req, res, next) => {
 // Varredura das pastas extras do Drive (em segundo plano; refaz a cada 6h)
 async function rodarExtras() { try { const r = await varrerExtras(); if (r) { resetCatalogo(); console.log(`📂 [Extras] ${r.videos} vídeos e ${r.materials} materiais das pastas extras.`); } return r; } catch (e) { console.warn('⚠️ [Extras]', e.message); return null; } }
 async function processDriveUpdate() {
-  const result = await rodarExtras();
   const flashcardStatus = getFlashcardSyncStatus();
   const flashcardsConfigured = flashcardStatus.configured && flashcardStatus.enabled;
   let flashcardsChanged = false;
-  if (flashcardsConfigured && result?.modo === 'delta' && Array.isArray(result.changes) && result.changes.length) {
+  let initialFlashcardSyncAttempted = false;
+  if (flashcardsConfigured) {
+    const manifest = await readFlashcardManifest(supabase).catch(error => {
+      console.warn('[Flashcards] Não foi possível conferir o manifesto inicial:', error.message);
+      return null;
+    });
+    if (!manifest?.generatedAt) {
+      initialFlashcardSyncAttempted = true;
+      const outcome = await syncDriveFlashcards(supabase).catch(error => {
+        console.warn('[Flashcards] Carga inicial automática falhou:', error.message);
+        return null;
+      });
+      flashcardsChanged = !!outcome && !outcome.disabled;
+    }
+  }
+
+  const result = await rodarExtras();
+  if (!initialFlashcardSyncAttempted && flashcardsConfigured && result?.modo === 'delta' && Array.isArray(result.changes) && result.changes.length) {
     const outcome = await syncDriveFlashcards(supabase, { changes: result.changes }).catch(error => { console.warn('[Flashcards] Delta por evento falhou:', error.message); return null; });
     flashcardsChanged = !!outcome && !outcome.unchanged && !outcome.disabled;
-  } else if (flashcardsConfigured && result?.modo === 'full') {
+  } else if (!initialFlashcardSyncAttempted && flashcardsConfigured && result?.modo === 'full') {
     const outcome = await syncDriveFlashcards(supabase).catch(error => { console.warn('[Flashcards] Reconciliação após full sync falhou:', error.message); return null; });
     flashcardsChanged = !!outcome && !outcome.disabled;
   }
