@@ -45,10 +45,10 @@ const osrv = http.createServer((req, res) => {
     ocalls.push({ url: req.url, auth: req.headers.authorization, title: req.headers['x-title'], body });
     const j = (st, o, h = {}) => { res.writeHead(st, { 'content-type': 'application/json', ...h }); res.end(JSON.stringify(o)); };
     if (omode === 'dia') return j(429, { error: { message: 'Rate limit exceeded: free-models-per-day. Add credits' } }, { 'retry-after': '1' });
-    if (omode === 'think') return j(200, { choices: [{ message: { content: '<think>hmm</think>' + JSON.stringify({ ok: true, itens: [2] }) }, finish_reason: 'stop' }], model: 'nvidia/nemotron-3-super-120b-a12b:free' });
+    if (omode === 'think') return j(200, { choices: [{ message: { content: '<think>hmm</think>' + JSON.stringify({ ok: true, itens: [2] }) }, finish_reason: 'stop' }], model: 'nvidia/nemotron-3.5-super-vl:free' });
     if (omode === 'vazio') return j(200, { choices: [{ message: { content: null }, finish_reason: 'length' }] });
     if (omode === 'schema400' && body.response_format?.type === 'json_schema') return j(400, { error: { message: 'response_format unsupported' } });
-    j(200, { choices: [{ message: { content: JSON.stringify({ ok: true, itens: [1] }) }, finish_reason: 'stop' }], usage: { total_tokens: 5 }, model: 'nvidia/nemotron-3-super-120b-a12b:free' });
+    j(200, { choices: [{ message: { content: JSON.stringify({ ok: true, itens: [1] }) }, finish_reason: 'stop' }], usage: { total_tokens: 5 }, model: 'nvidia/nemotron-3.5-super-vl:free' });
   });
 });
 await new Promise(r => osrv.listen(0, r));
@@ -167,7 +167,7 @@ const comOR = async (fn) => { process.env.OPENROUTER_API_KEY = 'sk-or-segredo'; 
 const resetOR = (m) => { reset('ok'); omode = m; ocalls.length = 0; };
 await teste('openrouter fixado: usa Nemotron :free, json_schema, chave só no header', async () => comOR(async () => {
   process.env.AI_PROVIDER = 'openrouter'; resetOR('ok');
-  assert.equal(P.aiConfigured(), true); assert.equal(P.aiStatus().model, 'nvidia/nemotron-3-super-120b-a12b:free');
+  assert.equal(P.aiConfigured(), true); assert.equal(P.aiStatus().model, 'nvidia/nemotron-3.5-super-vl:free');
   const r = await P.generateAI({ contents: 'oi', config: { systemInstruction: 'sys', responseSchema: schema } });
   assert.equal(r.provider, 'openrouter'); assert.equal(JSON.parse(r.text).ok, true);
   assert.equal(ocalls[0].auth, 'Bearer sk-or-segredo'); assert.equal(ocalls[0].url, '/api/v1/chat/completions');

@@ -25,7 +25,7 @@
 //   GEMINI_MAX_PROMPT_CHARS  teto de caracteres de prompt enviado ao Gemini (padrão 300000)
 //   OPENROUTER_API_KEY chave da OpenRouter (3º provedor, compatível com OpenAI). No modo auto entra como
 //                      ÚLTIMO recurso (depois de Groq/Gemini); com AI_PROVIDER=openrouter vira o único.
-//   OPENROUTER_MODEL   padrão nvidia/nemotron-3-super-120b-a12b:free (modelos ":free" têm cotas diárias baixas
+//   OPENROUTER_MODEL   padrão nvidia/nemotron-3.5-super-vl:free (modelos ":free" têm cotas diárias baixas
 //                      e podem registrar prompts — veja docs/MENTOR-IA.md)
 //   OPENROUTER_BASE_URL padrão https://openrouter.ai/api/v1
 //   OPENROUTER_TIMEOUT_MS / OPENROUTER_MAX_RETRIES / OPENROUTER_MAX_OUTPUT_TOKENS (padrões 90000 / 2 / 8192)
@@ -57,7 +57,7 @@ const cfg = () => ({
   },
   openrouter: {
     key: process.env.OPENROUTER_API_KEY || '',
-    model: process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free',
+    model: process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3.5-super-vl:free',
     base: (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/+$/, ''),
     timeout: Math.max(5000, parseInt(process.env.OPENROUTER_TIMEOUT_MS, 10) || 90000),
     retries: Math.min(4, Math.max(0, process.env.OPENROUTER_MAX_RETRIES == null || process.env.OPENROUTER_MAX_RETRIES === '' ? 2 : parseInt(process.env.OPENROUTER_MAX_RETRIES, 10) || 0)),

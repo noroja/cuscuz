@@ -44,7 +44,7 @@ Variáveis que podem ser configuradas no Railway (aba Variables):
 | `HARDWORQ_SENHA` | Senha do Hardworq | Sim (para banco de questões) |
 | `GROQ_API_KEY` | Chave da API da Groq (console.groq.com) | Não (ativa recursos de IA) |
 | `GEMINI_API_KEY` | Chave do Google AI Studio (aistudio.google.com). Com as duas chaves, `AI_PROVIDER=auto` por padrão: prompts pequenos vão à Groq e os grandes (aula inteira, PDFs) ao Gemini, com fallback mútuo | Não |
-| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | Chave da OpenRouter (openrouter.ai) e modelo (padrão `nvidia/nemotron-3-super-120b-a12b:free`). No modo `auto` é o último recurso, depois de Groq/Gemini; `AI_PROVIDER=openrouter` fixa só ele. Modelos `:free` têm cota diária baixa | Não |
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | Chave da OpenRouter (openrouter.ai) e modelo (padrão `nvidia/nemotron-3.5-super-vl:free`). No modo `auto` é o último recurso, depois de Groq/Gemini; `AI_PROVIDER=openrouter` fixa só ele. Modelos `:free` têm cota diária baixa | Não |
 | `GROQ_MODEL` | Modelo de texto (padrão `openai/gpt-oss-120b`) | Não |
 | `GROQ_STT_MODEL` | Transcrição de aulas (padrão `whisper-large-v3-turbo`) | Não |
 | `GROQ_TIMEOUT_MS` / `GROQ_MAX_RETRIES` | Timeout por tentativa (45000) e tentativas extras em 429/5xx (2) | Não |

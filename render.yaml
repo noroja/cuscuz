@@ -64,7 +64,7 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: nvidia/nemotron-3-super-120b-a12b:free
+        value: nvidia/nemotron-3.5-super-vl:free
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
       - key: GROQ_TPM
