@@ -48,6 +48,7 @@ const osrv = http.createServer((req, res) => {
     if (omode === 'think') return j(200, { choices: [{ message: { content: '<think>hmm</think>' + JSON.stringify({ ok: true, itens: [2] }) }, finish_reason: 'stop' }], model: 'nvidia/nemotron-3.5-super-vl:free' });
     if (omode === 'vazio') return j(200, { choices: [{ message: { content: null }, finish_reason: 'length' }] });
     if (omode === 'schema400' && body.response_format?.type === 'json_schema') return j(400, { error: { message: 'response_format unsupported' } });
+    if (omode === 'fallback') return j(200, { choices: [{ message: { content: '{"ok":true}' }, finish_reason: 'stop' }], model: body.models?.[1] || body.model });
     j(200, { choices: [{ message: { content: JSON.stringify({ ok: true, itens: [1] }) }, finish_reason: 'stop' }], usage: { total_tokens: 5 }, model: 'nvidia/nemotron-3.5-super-vl:free' });
   });
 });
@@ -181,6 +182,43 @@ await teste('openrouter: remove <think> e cai para json_object se o modelo recus
   resetOR('schema400');
   const r = await P.generateAI({ contents: 'x', config: { responseSchema: schema } });
   assert.equal(ocalls.length, 2); assert.equal(ocalls[1].body.response_format.type, 'json_object'); assert.equal(JSON.parse(r.text).ok, true);
+}));
+await teste('openrouter: lista prioritária sem duplicados e modelo efetivamente usado na resposta', async () => comOR(async () => {
+  process.env.AI_PROVIDER = 'openrouter';
+  process.env.OPENROUTER_MODELS = ' modelo/primeiro:free, modelo/reserva:free,modelo/primeiro:free ';
+  try {
+    resetOR('fallback');
+    const r = await P.generateAI({ contents: 'teste', config: { responseSchema: schema } });
+    assert.deepEqual(ocalls[0].body.models, ['modelo/primeiro:free', 'modelo/reserva:free']);
+    assert.equal(ocalls[0].body.model, undefined);
+    assert.equal(r.model, 'modelo/reserva:free');
+    assert.deepEqual(P.aiStatus().provedores.openrouter.modelos, ['modelo/primeiro:free', 'modelo/reserva:free']);
+    assert.equal(calls.length, 0); assert.equal(gcalls.length, 0);
+  } finally { delete process.env.OPENROUTER_MODELS; }
+}));
+await teste('openrouter: lista permanece na tentativa json_object; modelo explícito restringe a seleção', async () => comOR(async () => {
+  process.env.AI_PROVIDER = 'openrouter'; process.env.OPENROUTER_MODELS = 'modelo/a:free,modelo/b:free';
+  try {
+    resetOR('schema400');
+    await P.generateAI({ contents: 'teste', config: { responseSchema: schema } });
+    assert.equal(ocalls.length, 2); assert.deepEqual(ocalls[1].body.models, ['modelo/a:free', 'modelo/b:free']);
+    assert.equal(ocalls[1].body.response_format.type, 'json_object');
+    resetOR('ok'); await P.generateAI({ contents: 'teste', model: 'modelo/explicito:free' });
+    assert.equal(ocalls[0].body.model, 'modelo/explicito:free'); assert.equal(ocalls[0].body.models, undefined);
+  } finally { delete process.env.OPENROUTER_MODELS; }
+}));
+await teste('openrouter: lista vazia preserva a configuração singular e o limite é tratado no provedor', async () => comOR(async () => {
+  process.env.AI_PROVIDER = 'openrouter'; process.env.OPENROUTER_MODELS = ' , '; process.env.OPENROUTER_MODEL = 'modelo/legado:free';
+  try {
+    resetOR('ok'); await P.generateAI({ contents: 'teste' });
+    assert.equal(ocalls[0].body.model, 'modelo/legado:free');
+    process.env.OPENROUTER_MODELS = 'modelo/a:free,modelo/b:free'; resetOR('dia');
+    await assert.rejects(() => P.generateAI({ contents: 'teste' }), e => e.code === 'rate_limit');
+    assert.deepEqual(ocalls[0].body.models, ['modelo/a:free', 'modelo/b:free']);
+    const total = ocalls.length;
+    await assert.rejects(() => P.generateAI({ contents: 'teste' }), e => e.code === 'rate_limit');
+    assert.equal(ocalls.length, total);
+  } finally { delete process.env.OPENROUTER_MODELS; delete process.env.OPENROUTER_MODEL; }
 }));
 await teste('openrouter: resposta vazia (limite de raciocínio) vira erro explícito', async () => comOR(async () => {
   process.env.AI_PROVIDER = 'openrouter'; resetOR('vazio');

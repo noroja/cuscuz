@@ -29,12 +29,21 @@
 //                      ÚLTIMO recurso (depois de Groq/Gemini); com AI_PROVIDER=openrouter vira o único.
 //   OPENROUTER_MODEL   padrão nvidia/nemotron-3.5-super-vl:free (modelos ":free" têm cotas diárias baixas
 //                      e podem registrar prompts — veja docs/MENTOR-IA.md)
+//   OPENROUTER_MODELS  lista em prioridade (vírgulas); prevalece sobre OPENROUTER_MODEL e usa fallback nativo.
 //   OPENROUTER_BASE_URL padrão https://openrouter.ai/api/v1
 //   OPENROUTER_TIMEOUT_MS / OPENROUTER_MAX_RETRIES / OPENROUTER_MAX_OUTPUT_TOKENS (padrões 90000 / 2 / 8192)
 //   OPENROUTER_MAX_PROMPT_CHARS teto de caracteres de prompt enviado à OpenRouter (padrão 120000)
 //   OPENROUTER_SITE_URL / OPENROUTER_APP_NAME cabeçalhos opcionais de atribuição (HTTP-Referer / X-Title)
 
 export const Type = { OBJECT: 'object', ARRAY: 'array', STRING: 'string', NUMBER: 'number', INTEGER: 'integer', BOOLEAN: 'boolean' };
+
+const openrouterModels = () => {
+  const parse = value => [...new Set(String(value || '').split(/[,\s]+/).filter(Boolean))];
+  const models = parse(process.env.OPENROUTER_MODELS);
+  if (models.length) return models;
+  const legacy = parse(process.env.OPENROUTER_MODEL);
+  return legacy.length ? legacy : ['nvidia/nemotron-3.5-super-vl:free'];
+};
 
 const cfg = () => ({
   provider: String(process.env.AI_PROVIDER || '').toLowerCase(), // '' → resolve pelas chaves
@@ -59,7 +68,8 @@ const cfg = () => ({
   },
   openrouter: {
     key: process.env.OPENROUTER_API_KEY || '',
-    model: process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3.5-super-vl:free',
+    model: openrouterModels()[0],
+    models: openrouterModels(),
     base: (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/+$/, ''),
     timeout: Math.max(5000, parseInt(process.env.OPENROUTER_TIMEOUT_MS, 10) || 90000),
     retries: Math.min(4, Math.max(0, process.env.OPENROUTER_MAX_RETRIES == null || process.env.OPENROUTER_MAX_RETRIES === '' ? 2 : parseInt(process.env.OPENROUTER_MAX_RETRIES, 10) || 0)),
@@ -111,10 +121,11 @@ export function aiStatus() {
     tpm: r.c.groq.tpm,
     gemini: !!r.c.gemini.key, groq: !!r.c.groq.key,
     geminiModel: r.c.gemini.model,
-    openrouter: !!r.c.openrouter.key, openrouterModel: r.c.openrouter.model,
+    openrouter: !!r.c.openrouter.key, openrouterModel: r.c.openrouter.model, openrouterModels: r.c.openrouter.models,
     provedores: Object.fromEntries(['groq', 'gemini', 'openrouter'].map(n => [n, {
       configurado: n === 'groq' ? r.temGroq : n === 'gemini' ? r.temGem : r.temOR,
       modelo: r.c[n].model,
+      ...(n === 'openrouter' ? { modelos: r.c.openrouter.models } : {}),
       limiteAte: disponivel(n) ? null : bloqueadoAte[n],
       rebaixado: rebaixado(n),
       ...saude[n]
@@ -373,8 +384,10 @@ async function rodarGemini(messages, conf, schema, querJson, c, params) {
 // ── PROVEDOR OPENROUTER (OpenAI-compatível; ex.: NVIDIA Nemotron) ──
 // Modelos de raciocínio podem devolver <think>…</think> ou content nulo; limpamos e validamos como nos demais.
 async function rodarOpenRouter(messages, conf, schema, querJson, c, params) {
-  const model = params.model || c.model;
-  const base = { model, messages, temperature: conf.temperature ?? 0.4, max_tokens: Math.min(conf.maxOutputTokens || c.maxOut, c.maxOut), reasoning: { effort: 'low' } };
+  const models = params.model ? [params.model] : c.models;
+  const model = models[0];
+  const selection = models.length > 1 ? { models } : { model };
+  const base = { ...selection, messages, temperature: conf.temperature ?? 0.4, max_tokens: Math.min(conf.maxOutputTokens || c.maxOut, c.maxOut), reasoning: { effort: 'low' } };
   const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + c.key, 'X-Title': c.app, ...(c.site ? { 'HTTP-Referer': c.site } : {}) };
   const url = c.base + '/chat/completions';
   const limpar = (t) => String(t || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
