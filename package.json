@@ -13,7 +13,7 @@
     "local:midia": "node scripts/media-host.mjs",
     "build": "node scripts/build-public.js",
     "lint": "echo 'Lint passed'",
-    "test": "node scripts/tests/ai-provider.test.mjs && node scripts/tests/planner-academico.test.mjs && node scripts/tests/study-navigation.test.mjs && node scripts/tests/study-interface.test.mjs && node scripts/tests/acervo-interface.test.mjs && node scripts/tests/media-origin.test.mjs && node scripts/tests/mentor-content.test.mjs && node scripts/tests/planner-manual.test.mjs && node scripts/tests/aula-dia.test.mjs"
+    "test": "node scripts/tests/ai-provider.test.mjs && node scripts/tests/planner-academico.test.mjs && node scripts/tests/study-navigation.test.mjs && node scripts/tests/study-interface.test.mjs && node scripts/tests/acervo-interface.test.mjs && node scripts/tests/media-origin.test.mjs && node scripts/tests/mentor-content.test.mjs && node scripts/tests/planner-manual.test.mjs && node scripts/tests/aula-dia.test.mjs && node scripts/tests/ai-workflow.test.mjs && node scripts/tests/aula-workflow.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",

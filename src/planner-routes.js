@@ -112,7 +112,7 @@ MATERIAL ENVIADO PELO ALUNO (é a fonte de verdade: cronogramas, ementas, conte�
 ${(perfil.materiais || []).map(m => '### ' + m.nome + '\n' + m.texto).join('\n\n').slice(0, 90000) || '(nenhum material enviado ainda)'}
 
 Perfil atual (JSON, sem o material): ${JSON.stringify({ ...perfil, materiais: undefined })}`;
-          const r = await generateAI({
+          const r = await generateAI({ task: "mentor_chat",
             contents: msgs.map(m => ({ role: m.role, parts: [{ text: m.content }] })),
             config: {
               systemInstruction: sistema, temperature: 0.6, responseMimeType: 'application/json',
@@ -194,7 +194,7 @@ Para cada disciplina/módulo informe: provas/avaliações (data, tipo como P1/P2
       if (!ext && aiConfigured() && (bytes || txt)) {
         try {
           const partes = (bytes && ehPdf) ? [{ inlineData: { mimeType: 'application/pdf', data: base64 } }, { text: prompt }] : [{ text: prompt + '\n\nDOCUMENTO:\n' + txt.slice(0, 180000) }];
-          const r = await generateAI({ contents: [{ role: 'user', parts: partes }], config: { temperature: 0.1, responseMimeType: 'application/json', responseSchema: { type: Type.OBJECT, properties: { disciplinas: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { nome: { type: Type.STRING }, provas: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { data: { type: Type.STRING }, tipo: { type: Type.STRING }, assuntos: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['data'] } }, aulas: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { data: { type: Type.STRING }, tema: { type: Type.STRING } }, required: ['data', 'tema'] } } }, required: ['nome'] } } }, required: ['disciplinas'] } } });
+          const r = await generateAI({ task: "documento", contents: [{ role: 'user', parts: partes }], config: { temperature: 0.1, responseMimeType: 'application/json', responseSchema: { type: Type.OBJECT, properties: { disciplinas: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { nome: { type: Type.STRING }, provas: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { data: { type: Type.STRING }, tipo: { type: Type.STRING }, assuntos: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['data'] } }, aulas: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { data: { type: Type.STRING }, tema: { type: Type.STRING } }, required: ['data', 'tema'] } } }, required: ['nome'] } } }, required: ['disciplinas'] } } });
           ext = JSON.parse(r.text.trim()); usouIA = true;
         } catch (e) { console.warn('[Planner manual] IA falhou:', e.message); }
       }
@@ -269,7 +269,7 @@ Para cada disciplina/módulo informe: provas/avaliações (data, tipo como P1/P2
       const p = PE.sanePerfil(null, req.body.perfil || {});
       if (!tarefas.length) return res.json({ success: true, ia: true, itens: {} });
       const entrada = tarefas.map(t => ({ id: t.id, disciplina: t.materia, tema: t.tema, titulo: t.titulo, contexto_da_faculdade: String(t.contexto || '').slice(0, 900), trechos_do_material_do_aluno: PE.trechosDoMaterial(p, String(t.tema || '').replace(/\([^)]*\)/g, ' '), 1800), passos: (t.passos || []).map(s => ({ acao: s.acao, minutos: s.minutos })) }));
-      const r = await generateAI({
+      const r = await generateAI({ task: "planner_enrich",
         contents: `Você é o mentor de estudos de um aluno de medicina (${p.objetivo === 'graduacao' ? 'prova da faculdade' : 'residência'}). Preferências/anseios do aluno: ${JSON.stringify({ metodo: p.metodo, dificuldades: p.dificuldades, fortes: p.fortes, anseios: p.anseios })}. Pedidos recentes dele no chat (respeite-os): ${JSON.stringify((Array.isArray(req.body.pedidos) ? req.body.pedidos : []).slice(-6).map(x => String(x).slice(0, 400)))}.
 Reescreva o texto de cada passo (mesma ordem e mesmo "acao") de forma ESPECÍFICA e ACIONÁVEL para o tema, usando o "contexto_da_faculdade" (roteiro real da aula e assuntos da prova) e os "trechos_do_material_do_aluno" (o que ele mesmo enviou — cite os itens que aparecem lá, com as palavras dele):
 - aula/resumo: liste os 3–5 pontos CONCRETOS do tema que precisam sair dominados (nomes de doenças, classificações, critérios, condutas de 1ª linha, sinais de alarme — só o que você tem certeza que é padrão), em ordem de cobrança provável; diga o que comparar com o quê.

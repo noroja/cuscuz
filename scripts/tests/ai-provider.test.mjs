@@ -270,6 +270,32 @@ await teste('fluxo: status expõe saúde por provedor sem vazar chaves', async (
   const st = P.aiStatus(); assert.equal(st.provedores.groq.ok, 1); assert.equal(st.provedores.openrouter.configurado, true);
   assert.ok(!JSON.stringify(st).includes('sk-or-segredo') && !JSON.stringify(st).includes('gsk_teste_segredo'));
 }));
+await teste('tarefas: mapa usa Gemini e conversa usa Groq; modelo fixo continua respeitado', async () => comOR(async () => {
+  resetOR('ok');
+  const mapa = await P.generateAI({ task: 'aula_mapa', contents: 'trecho fictício' });
+  assert.equal(mapa.provider, 'gemini'); assert.equal(mapa.task, 'aula_mapa'); assert.equal(calls.length, 0);
+  resetOR('ok'); assert.equal((await P.generateAI({ task: 'mentor_chat', contents: 'oi' })).provider, 'groq');
+  resetOR('ok'); process.env.AI_PROVIDER = 'groq';
+  assert.equal((await P.generateAI({ task: 'aula_mapa', contents: 'oi' })).provider, 'groq');
+}));
+await teste('tarefas: modelos do OpenRouter mudam por função e mantêm os candidatos configurados', async () => comOR(async () => {
+  process.env.OPENROUTER_MODELS = 'nvidia/teste:free,minimax/teste:free,google/gemma-teste:free';
+  try {
+    for (const [task, expected] of [['aula_capitulo','nvidia/teste:free'],['aula_fechamento','minimax/teste:free'],['aula_flashcards','google/gemma-teste:free']]) {
+      resetOR('ok'); const r = await P.generateAI({ task, contents: 'trecho fictício' });
+      assert.equal(r.provider, 'openrouter'); assert.equal(ocalls[0].body.models[0], expected);
+      assert.equal(ocalls[0].body.models.length, 3);
+    }
+  } finally { delete process.env.OPENROUTER_MODELS; }
+}));
+await teste('tarefas: falha mantém fallback, contexto grande pula Groq e ordem específica pode ser configurada', async () => comOR(async () => {
+  resetOR('ok'); gmode = '403key';
+  assert.equal((await P.generateAI({ task: 'documento', contents: 'trecho fictício' })).provider, 'openrouter');
+  resetOR('ok'); assert.equal((await P.generateAI({ task: 'mentor_chat', contents: 'x'.repeat(26000) })).provider, 'gemini');
+  resetOR('ok'); process.env.AI_ORDER_MENTOR_CHAT = 'OPENROUTER,groq';
+  try { assert.equal((await P.generateAI({ task: 'mentor_chat', contents: 'oi' })).provider, 'openrouter'); }
+  finally { delete process.env.AI_ORDER_MENTOR_CHAT; }
+}));
 osrv.closeAllConnections?.(); osrv.close();
 gsrv.closeAllConnections?.(); gsrv.close();
 srv.closeAllConnections?.(); srv.close();

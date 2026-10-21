@@ -119,7 +119,7 @@ export function registerAula(app, { generateAI, aiConfigured }) {
   app.get('/api/aula/status', (_req, res) => {
     const st = aiStatus();
     const soGroq = st.provider === 'groq' || (st.provider === 'auto' && st.groq && !st.gemini && !st.openrouter);
-    res.json({ success: true, gemini: !!aiConfigured(), texto: !!aiConfigured(), transcricao: !!st.groq, paralelo: soGroq ? 1 : 3, ia: st });
+    res.json({ success: true, gemini: !!aiConfigured(), texto: !!aiConfigured(), transcricao: !!st.groq, paralelo: soGroq ? 1 : st.workflow.fila.limites.total, ia: st });
   });
 
   // 1) Transcreve um trecho de áudio fielmente
@@ -151,7 +151,7 @@ export function registerAula(app, { generateAI, aiConfigured }) {
       const t = String(texto).trim();
       if (t.length < 20) return res.json({ success: true, texto: t });
       if (t.length > 14000) return res.status(413).json({ success: false, msg: 'Pedaço grande demais para revisar.' });
-      const r = await generateAI({
+      const r = await generateAI({ task: "aula_revisar",
         contents: `Você revisa transcrições de aulas de Medicina (área: ${area || 'não informada'}; conteúdo: ${conteudo || 'não informado'}).
 Revise o texto abaixo SEM mudar o significado nem remover informação:
 - corrija erros de reconhecimento de fala e a grafia de termos médicos, siglas e fármacos (use o contexto da aula);
@@ -185,7 +185,7 @@ ${t}`,
       const frgs = []; let temQuestoes = false;
       for (let i = 0; i < partes.length; i++) {
         const f = partes[i];
-        const r = await generateAI({
+        const r = await generateAI({ task: "aula_mapa",
           contents: `Inventarie os tópicos deste TRECHO de uma aula de Medicina (trecho ${i + 1} de ${partes.length}; área: ${area || 'n/i'}; conteúdo: ${conteudo || 'n/i'}${parte ? '; ' + parte : ''}).
 Agrupe os tópicos, na ordem em que aparecem, em capítulos coerentes (1 a 6 para este trecho). Para cada capítulo informe:
 - "titulo": nome curto do tema;
@@ -217,7 +217,7 @@ Diga também se no trecho o professor leu/comentou alguma questão real de prova
       //    Com janela única (Gemini no fluxo), o modelo já entregou os capítulos finais — nada a fundir.
       if (partes.length > 1 && frgs.length > 1) {
         try {
-          const r = await generateAI({
+          const r = await generateAI({ task: "aula_mapa_consolidar",
             contents: `Abaixo está o inventário, em ordem de aparição na transcrição de uma aula de Medicina, de fragmentos de capítulos. Cada fragmento tem "de" e "ate" (limites em CARACTERES da transcrição).
 Junta em um único capítulo os fragmentos CONSECUTIVOS que claramente tratam do MESMO tema (mantenha o MENOR "de" e o MAIOR "ate" e una os "pontos", sem duplicar). Devolve de 1 a 12 capítulos finais, NA ORDEM da aula, sem deixar nenhum fragmento fora e sem fragmento aparecer em dois capítulos.
 FRAGMENTOS:
@@ -267,7 +267,7 @@ ${JSON.stringify(frgs.map(f => ({ titulo: f.titulo, de: f.de, ate: f.ate, pontos
       } else {
         fonte = recortePorPalavras(t, capitulo, maxFonte);
       }
-      const r = await generateAI({
+      const r = await generateAI({ task: "aula_capitulo",
         contents: `${REGRAS_CRONICAS}
 
 TAREFA: escreva SOMENTE o capítulo ${numero} de ${total} do volume (área: ${area || 'n/i'}; conteúdo da aula: ${conteudo || 'n/i'}). Comece direto por:
@@ -299,7 +299,7 @@ ${fonte}`,
       const separa = (md) => { const cons = [], rev = []; let alvo = null; for (const l of String(md).split('\n')) { if (/^#{1,4}.*(considera|síntese|sintese)/i.test(l)) alvo = cons; else if (/^#{1,4}.*(revis|fatos|memoriz)/i.test(l)) alvo = rev; else if (alvo) alvo.push(l); } return { cons, rev }; };
       const cons = [], rev = [];
       for (let i = 0; i < partes.length; i++) {
-        const r = await generateAI({
+        const r = await generateAI({ task: "aula_fechamento",
           contents: `TRECHO ${i + 1} de ${partes.length} de uma aula de Medicina (área: ${area || 'n/i'}; conteúdo: ${conteudo || 'n/i'}). Extraia DESTE TRECHO, em Markdown, exatamente duas seções:
 ### Síntese do trecho
 (3 a 6 bullets "-" amarrando os conceitos centrais do trecho ENTRE SI — relações e lógica clínica, sem repetição mecânica do roteiro)
@@ -338,7 +338,7 @@ ${partes[i].texto}`,
       const porParte = Math.max(6, Math.round(alvo / partes.length));
       const cartoes = []; const vistos = new Set();
       for (let i = 0; i < partes.length; i++) {
-        const r = await generateAI({
+        const r = await generateAI({ task: "aula_flashcards",
           contents: `Crie flashcards de REVISÃO para residência médica a partir EXCLUSIVAMENTE deste TRECHO de aula (trecho ${i + 1} de ${partes.length}; área: ${area || 'n/i'}; conteúdo: ${conteudo || 'n/i'}).
 Regras: cerca de ${porParte} cartões cobrindo os pontos importantes NA ORDEM do trecho; um fato por cartão (pergunta direta na frente, resposta curta e completa no verso); inclua números, doses, critérios, classificações, condutas de escolha e pegadinhas ditas pelo professor; use "____" (lacuna) quando for melhor para memorizar; sem duplicar; sem conhecimento externo; português do Brasil. Em "tema" coloque o capítulo/tópico ao qual o cartão pertence${nomeCaps.length ? ' (preferir um destes: ' + JSON.stringify(nomeCaps) + ')' : ''}.
 TRECHO:
@@ -380,7 +380,7 @@ ${partes[i].texto}`,
       const out = { titulo: '', resumo: '', topicos: [], termos: [], caiNaProva: [], duvidas: [], assuntosCobertos: [] };
       const vistos = { termo: new Set(), prova: new Set(), assunto: new Set() };
       for (let i = 0; i < partes.length; i++) {
-        const r = await generateAI({
+        const r = await generateAI({ task: "aula_processar",
           contents: `${ctx}${ctxAss}${ctxMarcas}
 TRECHO ${i + 1} de ${partes.length}:
 ${partes[i].texto}`,
@@ -443,7 +443,7 @@ NÃO gere quiz. Comece direto pelo título do resumo.`;
         const adicional = partes.length > 1
           ? `\n\nObs.: este é o TRECHO ${i + 1} de ${partes.length} da transcrição. Redija SOMENTE as seções correspondentes ao que o trecho traz${i === 0 ? ' (comece pelo título e pelo índice)' : ' (sem repetir índice/título; continue a hierarquia)'};\n`
           : '';
-        const r = await generateAI({
+        const r = await generateAI({ task: "aula_resumo",
           contents: `${ctx}${REGRAS_RESUMO_GERAL}${adicional}
 FONTE (transcrição da aula):
 ${partes[i].texto}`,
@@ -466,7 +466,7 @@ ${partes[i].texto}`,
       const t = String(transcricao).trim();
       if (t.length < 80) return res.status(400).json({ success: false, msg: 'Transcrição curta demais.' });
       const roteiro = (capitulos || []).length ? `Concentre a estrutura nos capítulos já mapeados (nada pode faltar, nada inventado): ${JSON.stringify((capitulos || []).map(c => ({ titulo: c.titulo, pontos: (c.pontos || []).slice(0, 8) })))}\n` : '';
-      const r = await generateAI({
+      const r = await generateAI({ task: "aula_mapa_mental",
         contents: `Monte o MAPA MENTAL hierárquico desta aula de Medicina (área: ${area || 'n/i'}; conteúdo: ${conteudo || 'n/i'}).
 Estrutura: "t" do nó raiz (tema central da aula, 2-5 palavras); filhos (2 a 7): temas grandes da aula; cada tema tem filhos (2 a 7): subtemas; cada subtema tem filhos (1 a 6 FOLHAS): pontos curtos e memoráveis (máx. 8 palavras; cite números/doses/nomes EXATAMENTE como ditos quando foram ditos).
 Fidelidade: só o que está na fonte; sem jargão vago ("outros assuntos"); sem repetir o mesmo nó em ramos diferentes.

@@ -95,6 +95,7 @@ app.get('/api/health', async (req, res) => {
     aiProvider: aiStatus().provider,
     aiModel: aiStatus().model,
     aiProvedores: aiStatus().provedores,
+    aiFluxo: aiStatus().workflow,
     geminiConfigured: false, // legado: o Gemini foi substituído pela Groq
     authConfigured: true,
     drive: driveStatus
@@ -1227,7 +1228,7 @@ MATÉRIAS:
 ${JSON.stringify(materias)}`;
 
       try {
-        const aiRes = await generateAI({
+        const aiRes = await generateAI({ task: "resumo_rapido",
           contents: prompt,
           config: {
             temperature: 0.2,
@@ -1800,7 +1801,7 @@ app.get('/api/questions/match', async (req, res) => {
         try {
           const falta = Math.min(10, MIN + 2 - questions.length);
           const aiRes = await Promise.race([
-            generateAI({
+            generateAI({ task: "questoes",
               contents: `Você é preceptor de residência médica (ENARE, USP, UNIFESP, AMRIGS, Revalida).
 Crie ${falta} questões de múltipla escolha inéditas, estritamente sobre o tema desta videoaula: "${assunto}"${disciplina ? ` (área: ${disciplina})` : ''}.
 Regras: caso clínico objetivo, 4 alternativas ("A) ...", "B) ..."), apenas UMA correta, comentário técnico curto que explique por que a correta está certa e as demais erradas. Não saia do tema. Varie o foco (diagnóstico, conduta, fisiopatologia, exames).`,
@@ -2703,7 +2704,7 @@ ${specialty ? `Especialidade prioritária: ${specialty}` : ''}
 ${institution ? `Estilo de banca / Instituição: ${institution}` : ''}
 Nível de dificuldade: ${difficulty}`;
 
-    const geminiRes = await generateAI({
+    const geminiRes = await generateAI({ task: "questoes",
       contents: userPrompt,
       config: {
         systemInstruction,
@@ -2843,7 +2844,7 @@ DIRETRIZES DO TUTOR:
       parts: [{ text: userQuestion || 'Olá tutor, pode me orientar sobre este caso clínico?' }]
     });
 
-    const tutorRes = await generateAI({
+    const tutorRes = await generateAI({ task: "tutor",
       contents,
       config: {
         systemInstruction,
@@ -2896,7 +2897,7 @@ async function autoFeedQuestions() {
     const systemInstruction = `Você é um preceptor médico. Crie exatamente 2 questões inéditas de múltipla escolha com casos clínicos profundos.`;
     const prompt = `Gere 2 questões de alto rendimento sobre: ${topic.prompt}. Retorne em JSON array.`;
 
-    const res = await generateAI({
+    const res = await generateAI({ task: "auto_feed",
       contents: prompt,
       config: {
         systemInstruction,
@@ -3094,7 +3095,7 @@ async function plGerarDeck(materia, tema) {
   let deck = null;
   if (aiConfigured()) {
     try {
-      const res = await generateAI({
+      const res = await generateAI({ task: "aula_flashcards",
         contents: `Crie 10 flashcards curtos e diretos (frente e verso) e 3 questões de múltipla escolha baseados no tema "${tema}" (matéria: ${materia}), focando nos conceitos mais cobrados em provas.`,
         config: {
           responseMimeType: 'application/json',
@@ -3189,7 +3190,7 @@ app.post('/api/planner/generate', async (req, res) => {
     if (aiConfigured() && pdfTexto && String(pdfTexto).length > 400) {
       try {
         const listaMaterias = config.materias.map(m => `${m.nome} (${m.dificuldade || 'Médio'})`).join('; ');
-        const g = await generateAI({
+        const g = await generateAI({ task: "documento",
           contents: `Analise o material de estudo abaixo (edital/cronograma/ementa) e extraia os temas mais cobrados para cada matéria desta lista: [${listaMaterias}].\nResponda JSON com temasPorMateria (objeto matéria → array de 4 a 8 temas curtos) e resumos (objeto tema → array de 3 a 5 tópicos de estudo).\n\nMATERIAL:\n${String(pdfTexto).slice(0, 12000)}`,
           config: {
             responseMimeType: 'application/json',
@@ -3524,7 +3525,7 @@ Responda SOMENTE em JSON puro e válido nesta estrutura:
 }`;
 
         console.log('🤖 Chamando Groq para gerar cronograma completo e sinérgico...');
-        const g = await generateAI({
+        const g = await generateAI({ task: "planner_enrich",
           contents: prompt,
           config: {
             responseMimeType: 'application/json',

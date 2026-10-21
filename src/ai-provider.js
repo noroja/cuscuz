@@ -35,6 +35,8 @@
 //   OPENROUTER_MAX_PROMPT_CHARS teto de caracteres de prompt enviado à OpenRouter (padrão 120000)
 //   OPENROUTER_SITE_URL / OPENROUTER_APP_NAME cabeçalhos opcionais de atribuição (HTTP-Referer / X-Title)
 
+import { taskOrder, taskModels, runAiJob, workflowStatus } from './ai-workflow.js';
+
 export const Type = { OBJECT: 'object', ARRAY: 'array', STRING: 'string', NUMBER: 'number', INTEGER: 'integer', BOOLEAN: 'boolean' };
 
 const openrouterModels = () => {
@@ -88,11 +90,11 @@ const disponivel = (nome) => Date.now() >= bloqueadoAte[nome];
 // ── saúde por provedor: alimenta a ordem da fila e o /api/health (sem guardar conteúdo de prompt) ──
 const novaSaude = () => ({ chamadas: 0, ok: 0, falhas: 0, seguidas: 0, ultimaFalha: 0, ultimoErro: '', latMs: 0 });
 const saude = { groq: novaSaude(), gemini: novaSaude(), openrouter: novaSaude() };
-function registrar(nome, ok, ms, err, modelo) {
+function registrar(nome, ok, ms, err, modelo, task) {
   const h = saude[nome]; h.chamadas++;
   if (ok) { h.ok++; h.seguidas = 0; h.latMs = h.latMs ? Math.round(h.latMs * 0.7 + ms * 0.3) : ms; }
   else { h.falhas++; h.seguidas++; h.ultimaFalha = Date.now(); h.ultimoErro = String((err && err.code) || 'erro'); }
-  if (process.env.AI_LOG !== '0') console.log(`[ia] ${nome} ${modelo || ''} ${ok ? 'ok' : 'falhou(' + h.ultimoErro + ')'} ${ms}ms`);
+  if (process.env.AI_LOG !== '0') console.log(`[ia] ${task || 'geral'} ${nome} ${modelo || ''} ${ok ? 'ok' : 'falhou(' + h.ultimoErro + ')'} ${ms}ms`);
 }
 // Rebaixa (não exclui) quem falhou 2x seguidas no último minuto: dá chance ao próximo sem esperar timeout de novo.
 const rebaixado = (nome) => saude[nome].seguidas >= 2 && Date.now() - saude[nome].ultimaFalha < 60000;
@@ -116,6 +118,7 @@ export function aiStatus() {
   return {
     provider: r.modo || 'desligado',
     configured: aiConfigured(),
+    workflow: workflowStatus(),
     model: r.modo === 'gemini' ? r.c.gemini.model : r.modo === 'openrouter' ? r.c.openrouter.model : r.c.groq.model,
     sttModel: r.c.groq.stt,
     tpm: r.c.groq.tpm,
@@ -384,7 +387,7 @@ async function rodarGemini(messages, conf, schema, querJson, c, params) {
 // ── PROVEDOR OPENROUTER (OpenAI-compatível; ex.: NVIDIA Nemotron) ──
 // Modelos de raciocínio podem devolver <think>…</think> ou content nulo; limpamos e validamos como nos demais.
 async function rodarOpenRouter(messages, conf, schema, querJson, c, params) {
-  const models = params.model ? [params.model] : c.models;
+  const models = params.model ? [params.model] : taskModels(params.task, c.models);
   const model = models[0];
   const selection = models.length > 1 ? { models } : { model };
   const base = { ...selection, messages, temperature: conf.temperature ?? 0.4, max_tokens: Math.min(conf.maxOutputTokens || c.maxOut, c.maxOut), reasoning: { effort: 'low' } };
@@ -426,7 +429,7 @@ async function rodarOpenRouter(messages, conf, schema, querJson, c, params) {
 }
 
 // Erros que VALEM a troca de provedor (fallback no roteador).
-const TROCA_DE_PROVEDOR = new Set(['rate_limit', 'upstream', 'timeout', 'network', 'auth', 'truncated', 'invalid_json', 'bad_request']);
+const TROCA_DE_PROVEDOR = new Set(['rate_limit', 'upstream', 'timeout', 'network', 'auth', 'truncated', 'invalid_json', 'bad_request', 'busy']);
 
 // Estimativa de tokens (heurística: ~4 caracteres por token) para decidir Groq × Gemini no modo auto.
 const tokensEst = (obj) => Math.max(1, Math.round(JSON.stringify(obj).length / 4));
@@ -451,7 +454,7 @@ export async function generateAI(params) {
   let fila = [];
   if (r.modo === 'auto') {
     const tem = { groq: r.temGroq, gemini: r.temGem, openrouter: r.temOR };
-    const env = String(process.env.AI_ORDER || '').toLowerCase().split(/[\s,>]+/).filter(n => n in tem);
+    const env = taskOrder(params.task);
     const base = [...new Set([...env, 'groq', 'gemini', 'openrouter'])].filter(n => tem[n]);
     const cabe = (n) => n === 'groq' ? tokens <= r.c.groq.tpm * 0.72 : chars <= r.c[n].janelaMax;
     const ordenar = (lista) => [...lista.filter(n => !rebaixado(n)), ...lista.filter(n => rebaixado(n))];
@@ -472,16 +475,20 @@ export async function generateAI(params) {
     const cc = temProximo ? { ...base, retries: Math.min(base.retries, 1) } : base;
     const t0 = Date.now();
     try {
-      const out = nome === 'gemini'
-        ? await rodarGemini(messages, conf, schema, querJson, cc, params)
-        : nome === 'openrouter'
-          ? await rodarOpenRouter(messages, conf, schema, querJson, cc, params)
-          : await rodarGroq(messages, conf, schema, querJson, cc, params);
-      registrar(nome, true, Date.now() - t0, null, out.model);
+      const out = await runAiJob(nome, async () => {
+        if (!disponivel(nome)) throw new AIError('Provedor temporariamente em limite.', { status: 429, code: 'rate_limit', provider: nome });
+        return nome === 'gemini'
+          ? rodarGemini(messages, conf, schema, querJson, cc, params)
+          : nome === 'openrouter'
+            ? rodarOpenRouter(messages, conf, schema, querJson, cc, params)
+            : rodarGroq(messages, conf, schema, querJson, cc, params);
+      }, { background: params.task === 'auto_feed' });
+      registrar(nome, true, Date.now() - t0, null, out.model, params.task);
       trilha.push({ provider: nome, ok: true });
-      return { ...out, tentativas: trilha };
-    } catch (err) {
-      ultimo = err; registrar(nome, false, Date.now() - t0, err, base.model); trilha.push({ provider: nome, ok: false, code: err.code });
+      return { ...out, task: params.task || null, tentativas: trilha };
+    } catch (failure) {
+      const err = failure.code === 'ai_queue_busy' ? new AIError(failure.message, { status: 503, code: 'busy', provider: nome }) : failure;
+      ultimo = err; if (err.code !== 'busy') registrar(nome, false, Date.now() - t0, err, base.model, params.task); trilha.push({ provider: nome, ok: false, code: err.code });
       if (err.code === 'unsupported_media' || err.code === 'pdf_unavailable' || err.code === 'pdf_sem_texto') throw err; // independe do provedor
       if (!(err instanceof AIError) || !TROCA_DE_PROVEDOR.has(err.code)) throw err;
     }

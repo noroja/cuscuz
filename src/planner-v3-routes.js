@@ -105,7 +105,7 @@ export function registerPlannerV3(app, { generateAI, aiConfigured, getBank, getS
       const documento = { nome: fonte, texto };
       const ano = hoje.slice(0, 4);
       const comIA = async (esquema, instrucao) => {
-        const r = await generateAI({ contents: `${instrucao}\n\nREGRAS: extraia SOMENTE o que está escrito no texto. Não invente datas, disciplinas, temas nem provas. Datas sem ano usam ${ano}. Deixe vazio o que não constar. Datas no formato YYYY-MM-DD.\n\nTEXTO:\n${texto.slice(0, 60000)}`, config: { temperature: 0, responseMimeType: 'application/json', responseSchema: esquema } });
+        const r = await generateAI({ task: "documento", contents: `${instrucao}\n\nREGRAS: extraia SOMENTE o que está escrito no texto. Não invente datas, disciplinas, temas nem provas. Datas sem ano usam ${ano}. Deixe vazio o que não constar. Datas no formato YYYY-MM-DD.\n\nTEXTO:\n${texto.slice(0, 60000)}`, config: { temperature: 0, responseMimeType: 'application/json', responseSchema: esquema } });
         return JSON.parse(String(r.text).trim());
       };
       if (trilha === 'faculdade') {
@@ -228,7 +228,7 @@ export function registerPlannerV3(app, { generateAI, aiConfigured, getBank, getS
       if (!pares.length) return res.json({ success: true, ia: true, veredictos: {} });
       const ids = new Set(pares.map(a => a.id));
       const lista = pares.map(a => `- id=${a.id} | faculdade (${String(a.fac.materia).slice(0, 60)}): ${String(a.fac.tema).slice(0, 140)} | residência (${String(a.res.materia).slice(0, 60)}): ${String(a.res.tema).slice(0, 140)}`).join('\n');
-      const r = await generateAI({
+      const r = await generateAI({ task: "planner_associacoes",
         contents: `Para cada par, decida se o tema da faculdade e o da residência exigem estudar essencialmente o MESMO conteúdo (mesma doença/conceito, profundidade compatível). Palavras parecidas não bastam. Em caso de dúvida, responda false.\n${lista}`,
         config: { temperature: 0, responseMimeType: 'application/json', responseSchema: { type: Type.OBJECT, required: ['veredictos'], properties: { veredictos: { type: Type.ARRAY, items: { type: Type.OBJECT, required: ['id', 'equivalente'], properties: { id: { type: S }, equivalente: { type: Type.BOOLEAN }, motivo: { type: S } } } } } } }
       });
