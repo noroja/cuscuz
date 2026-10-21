@@ -28,7 +28,7 @@ import { temConta, emailConta, erroConta, driveFetch, authHeaders, driveFetchWit
 import { downloadCatalogFromSupabase, downloadQuestionsBankFromSupabase, uploadQuestionsBankToSupabase, supabaseCatalogReady, ensureSupabaseBucket } from './src/supabase-catalog.js';
 import { IS_SERVERLESS, TMP_DIR, writableDir, safeReadJson, safeWriteJson } from './src/fs-safe.js';
 import { getSystemConfig, setSystemConfig, systemConfigHealth } from './src/system-config.js';
-import { getFlashcardSyncStatus, readFlashcardManifest, readFlashcardPage, startFlashcardSyncScheduler, syncDriveFlashcards } from './src/drive-flashcards.js';
+import { getFlashcardSyncStatus, readFlashcardManifest, readFlashcardPage, readFlashcardMedia, startFlashcardSyncScheduler, syncDriveFlashcards } from './src/drive-flashcards.js';
 import { acceptDriveNotification, queueDriveChange, renewDrivePushChannel, startDrivePushRenewal } from './src/drive-push.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -3921,9 +3921,56 @@ app.get('/api/flashcards/library/decks/:deckId/cards', async (req, res) => {
   try {
     const page = await readFlashcardPage(supabase, String(req.params.deckId || '').slice(0, 64), req.query.offset, req.query.limit);
     if (!page) return res.status(404).json({ success: false, error: 'Deck não encontrado' });
-    res.set('Cache-Control', 'private, max-age=300');
-    res.json({ success: true, ...page });
+    let reviews = {};
+    if (supabase && page.cards.length) {
+      try {
+        const ids = page.cards.map(card => card.id);
+        const { data, error } = await supabase.from('flashcard_reviews').select('card_id,due_at,interval_days,ease,repetitions,lapses,last_grade,last_reviewed_at').eq('username', req.user.username).in('card_id', ids);
+        if (error) throw error;
+        reviews = Object.fromEntries((data || []).map(row => [row.card_id, row]));
+      } catch (error) { console.warn('[Flashcards] Revisões SQL indisponíveis; usando estado da conta:', error.message); }
+    }
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ success: true, ...page, reviews });
   } catch (error) { res.status(503).json({ success: false, error: error.message }); }
+});
+app.post('/api/flashcards/library/reviews', async (req, res) => {
+  if (!supabase) return res.status(503).json({ success: false, error: 'Progresso compartilhado indisponível.' });
+  const body = req.body || {};
+  const cardId = String(body.cardId || '');
+  const dueDate = String(body.dueDate || '');
+  const grade = Number(body.grade);
+  const eventId = String(body.eventId || '');
+  const intervalDays = Number(body.intervalDays), ease = Number(body.ease);
+  const repetitions = Number(body.repetitions), lapses = Number(body.lapses);
+  if (!/^[a-f0-9]{64}$/.test(cardId) || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || !Number.isInteger(grade) || grade < 0 || grade > 3 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(eventId) || !Number.isFinite(intervalDays) || intervalDays < 0 || intervalDays > 3650 || !Number.isFinite(ease) || ease < 1.3 || ease > 3.5 || !Number.isSafeInteger(repetitions) || repetitions < 0 || !Number.isSafeInteger(lapses) || lapses < 0) {
+    return res.status(400).json({ success: false, error: 'Dados de revisão inválidos.' });
+  }
+  try {
+    const { data: card, error: cardError } = await supabase.from('flashcards').select('id').eq('id', cardId).maybeSingle();
+    if (cardError) throw cardError;
+    if (!card) return res.status(404).json({ success: false, error: 'Cartão não encontrado.' });
+    const reviewedAt = new Date().toISOString();
+    const { error: stateError } = await supabase.from('flashcard_reviews').upsert({
+      username: req.user.username, card_id: cardId, due_at: `${dueDate}T12:00:00.000Z`, interval_days: intervalDays,
+      ease, repetitions, lapses, last_grade: grade, last_reviewed_at: reviewedAt, updated_at: reviewedAt
+    }, { onConflict: 'username,card_id' });
+    if (stateError) throw stateError;
+    const { error: eventError } = await supabase.from('flashcard_review_events').upsert({
+      event_id: eventId, username: req.user.username, card_id: cardId, grade, reviewed_at: reviewedAt,
+      schedule_after: { dueDate, intervalDays, ease, repetitions, lapses }
+    }, { onConflict: 'event_id', ignoreDuplicates: true });
+    if (eventError) throw eventError;
+    return res.json({ success: true, reviewedAt });
+  } catch (error) { return res.status(503).json({ success: false, error: error.message }); }
+});
+app.get('/api/flashcards/library/media/:assetName', async (req, res) => {
+  try {
+    const asset = await readFlashcardMedia(supabase, req.params.assetName);
+    if (!asset) return res.status(404).json({ success: false, error: 'Mídia não encontrada.' });
+    res.set({ 'Content-Type': asset.contentType, 'Content-Length': String(asset.data.length), 'Cache-Control': 'private, max-age=86400, immutable', 'X-Content-Type-Options': 'nosniff' });
+    return res.send(asset.data);
+  } catch (error) { return res.status(503).json({ success: false, error: error.message }); }
 });
 app.post('/api/flashcards/library/sync', async (req, res) => {
   try {

@@ -689,7 +689,7 @@ export function interpretarResposta(campo, texto, hoje, provasAtuais) {
     if (NEGA.test(n)) patch.semConteudo = true;
     else {
       const provas = (provasAtuais || []).map(x => ({ ...x }));
-      const linhas = String(texto).split(/\n/).map(l => l.trim()).filter(Boolean);
+      const linhas = String(texto).replace(/[«»]/g, '').split(/\n/).map(l => l.trim()).filter(Boolean);
       const lista = a => a.split(/[,;]|\s+e\s+/).map(x => x.trim()).filter(x => x.length > 2);
       let mudou = false;
       for (const l of linhas) {
@@ -728,7 +728,7 @@ export function interpretarResposta(campo, texto, hoje, provasAtuais) {
         }
         conf.push(prs[0].disciplina);
       }
-      if (conf.length >= 2) { patch.provasFaculdade = provas; patch.disciplinasConfirmadas = [...new Set(conf)]; patch.anseios = 'Conteúdo conferido em bloco pelo aluno.'; return patch; }
+      if (new Set(conf.map(norm)).size >= 2) { patch.provasFaculdade = provas; patch.disciplinasConfirmadas = [...new Set(conf)]; patch.anseios = 'Conteúdo conferido em bloco pelo aluno.'; return patch; }
     }
     for (const ln of String(texto).split(/\n|;\s*(?=(?:incluir|tirar|remover|adicionar|falta)\b)/i)) {
       const m = ln.match(/^\s*(incluir|adicionar|falta(?:m)?|tirar|remover|nao cai|não cai)\s*[:\-–]?\s*(.+)$/i);

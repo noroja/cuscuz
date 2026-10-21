@@ -13,7 +13,7 @@
     "local:midia": "node scripts/media-host.mjs",
     "build": "node scripts/build-public.js",
     "lint": "echo 'Lint passed'",
-    "test": "node scripts/tests/ai-provider.test.mjs && node scripts/tests/planner-academico.test.mjs && node scripts/tests/study-navigation.test.mjs && node scripts/tests/study-interface.test.mjs && node scripts/tests/acervo-interface.test.mjs && node scripts/tests/media-origin.test.mjs && node scripts/tests/mentor-content.test.mjs && node scripts/tests/planner-manual.test.mjs && node scripts/tests/aula-dia.test.mjs && node scripts/tests/ai-workflow.test.mjs && node scripts/tests/aula-workflow.test.mjs"
+    "test": "node scripts/tests/ai-provider.test.mjs && node scripts/tests/planner-academico.test.mjs && node scripts/tests/study-navigation.test.mjs && node scripts/tests/study-interface.test.mjs && node scripts/tests/acervo-interface.test.mjs && node scripts/tests/media-origin.test.mjs && node scripts/tests/mentor-content.test.mjs && node scripts/tests/planner-manual.test.mjs && node scripts/tests/aula-dia.test.mjs && node scripts/tests/ai-workflow.test.mjs && node scripts/tests/aula-workflow.test.mjs && node --test scripts/*.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
@@ -23,6 +23,7 @@
     "express": "^4.21.2",
     "markdown-it": "^15.0.3",
     "openai": "^7.23.0",
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^1.1.1",
+    "yauzl": "^3.4.0"
   }
 }

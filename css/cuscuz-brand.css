@@ -1402,3 +1402,7 @@ textarea { font-variant-numeric: tabular-nums; }
 .plv2-sum,
 .plv2-in textarea { border-radius: 0 !important; }
 .plv2-sum { border-style: solid !important; }
+.quiz-question-text img,
+.fc-answer-content img { display: block; max-width: min(100%, 640px); max-height: 55vh; height: auto; object-fit: contain; margin: 12px auto; border-radius: 10px; }
+.quiz-question-text table,
+.fc-answer-content table { display: block; max-width: 100%; overflow-x: auto; }

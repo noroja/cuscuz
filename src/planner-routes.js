@@ -139,7 +139,10 @@ Perfil atual (JSON, sem o material): ${JSON.stringify({ ...perfil, materiais: un
           }
         } catch (e) { console.warn('[Planner chat] IA indisponível, usando roteiro:', e.message); }
       }
-      if (!usouIA && brutoUlt && String(brutoUlt.content || '').length > 500 && !(det && det.provas.length)) {
+      // Uma resposta longa a "conteudo/conteudoOk" é conteúdo de prova, não um
+      // cronograma novo. Deixe o interpretador do campo atual processá-la.
+      const respondendoConteudo = ['conteudo', 'conteudoOk'].includes(asking);
+      if (!usouIA && brutoUlt && String(brutoUlt.content || '').length > 500 && !(det && det.provas.length) && !respondendoConteudo) {
         // texto longo que não consegui entender com segurança: guardo como material, mas não invento provas a partir dele
         const q0 = PE.proximaPergunta(perfil, extrasPerguntado, hoje);
         return res.json({ success: true, ia: false, perfil, asking: q0 ? q0.campo : '', jaExtras: extrasPerguntado, reply: `Guardei o seu texto (${String(brutoUlt.content).length} caracteres), mas não consegui identificar com segurança as disciplinas, datas e aulas nesse formato — e prefiro não chutar. Formatos que eu leio: "1. Disciplina" com itens "* 04/08/26 (hora): conteúdo", ou calendário por data ("* **16/09**" com "* **07:50 às 10:30:** Disciplina - Tema"). Se puder, reenvie num deles.`, quickReplies: q0 ? q0.quick : [], pronto: false, resumo: PE.resumoPerfil(perfil) });
@@ -147,7 +150,10 @@ Perfil atual (JSON, sem o material): ${JSON.stringify({ ...perfil, materiais: un
       if (!usouIA) {
         const nota = String(req.body.nota || '').slice(0, 600);
         if (ultima && asking && !req.body.anexo) {
-          const patch = PE.interpretarResposta(asking, ultima.content, hoje, perfil.provasFaculdade, perfil.disciplinasConfirmadas);
+          // Mensagens longas viram um aviso curto no histórico da IA, mas o
+          // interpretador determinístico precisa receber o texto original.
+          const textoResposta = String((brutoUlt && brutoUlt.content) || ultima.content || '').slice(0, 60000);
+          const patch = PE.interpretarResposta(asking, textoResposta, hoje, perfil.provasFaculdade, perfil.disciplinasConfirmadas);
           if (asking === 'extras') extrasPerguntado = true;
           perfil = PE.sanePerfil(perfil, patch);
           if (!Object.keys(patch).length && asking !== 'extras') {

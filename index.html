@@ -7600,33 +7600,56 @@ window.openDriveFlashcardLibrary=async function(){
 };
 window.startDriveFlashcards=async function(deckId){
  try{
-  const token=localStorage.getItem('cuscuz_token')||'',limit=500;let offset=0,all=[],deck=null;
-  do{const r=await fetch('/api/flashcards/library/decks/'+encodeURIComponent(deckId)+'/cards?offset='+offset+'&limit='+limit,{headers:{Authorization:'Bearer '+token}});const page=await r.json();if(!r.ok)throw new Error(page.error||'Falha ao carregar cartões.');deck=page.deck;all=all.concat(page.cards||[]);offset+=limit}while(deck&&offset<deck.cardCount);
-  const list=all.map(c=>({id:c.id,f:c.front,b:c.back,s:c.subject||deck?.name||'Drive',tags:c.tags||[],source:c.source})).filter(c=>c.f&&c.b);
-  if(!list.length)throw new Error('Este deck não contém cartões válidos.');
-  closeModals();FCR={list:shuffle(list),i:0,shown:false};$('quiz-list-screen').style.display='none';$('quiz-runner-screen').style.display='block';renderFC();
- }catch(e){toast(esc(e.message),'error')}
+   const limit=200,r={list:[],i:0,shown:false,sourceDeckId:deckId,deckCardCount:0,offset:0,pageSize:limit,reviewLimit:50,loading:false,deckName:'Drive'};
+   closeModals();FCR=r;$('quiz-list-screen').style.display='none';$('quiz-runner-screen').style.display='block';
+   await loadDriveDueBatch(r);
+   if(!r.list.length){FCR=null;$('quiz-runner-screen').style.display='none';$('quiz-list-screen').style.display='block';toast('Nenhum cartão vencido neste deck hoje.','success');return}
+   r.list=shuffle(r.list);renderFC();
+ }catch(e){if(FCR&&FCR.sourceDeckId){FCR=null;$('quiz-runner-screen').style.display='none';$('quiz-list-screen').style.display='block'}toast(esc(e.message),'error')}
 };
-function renderFC(){const r=FCR;if(!r||r.i>=r.list.length)return finishFC();
+ async function loadDriveDueBatch(r){
+  if(!r||r.loading)return;
+  r.loading=true;
+  try{
+   while((!r.deckCardCount||r.offset<r.deckCardCount)&&r.list.length<r.reviewLimit){
+    const url='/api/flashcards/library/decks/'+encodeURIComponent(r.sourceDeckId)+'/cards?offset='+r.offset+'&limit='+r.pageSize;
+    const response=await fetch(url),page=await response.json();
+    if(!response.ok)throw new Error(page.error||'Falha ao carregar cartões.');
+    r.deckCardCount=Number(page.deck?.cardCount||r.deckCardCount);r.deckName=page.deck?.name||r.deckName;
+    const cards=page.cards||[];if(!cards.length)break;r.offset+=cards.length;
+    Object.entries(page.reviews||{}).forEach(([id,v])=>{const due=String(v.due_at||'').slice(0,10);if(/^\d{4}-\d{2}-\d{2}$/.test(due))FCSRS['fc:id:'+id]={d:due,iv:Number(v.interval_days)||0,e:Number(v.ease)||2.5,repetitions:Number(v.repetitions)||0,lapses:Number(v.lapses)||0}});if(Object.keys(page.reviews||{}).length)lsSet('acv_fc_srs',FCSRS);
+    for(const c of cards){
+     const card={id:c.id,f:c.front,b:c.back,frontHtml:c.frontHtml,backHtml:c.backHtml,type:c.type||'basic',cloze:c.cloze||null,media:c.media||[],s:c.subject||r.deckName,tags:c.tags||[],source:c.source};
+     if(card.f&&card.b&&fcState(fcKey(card)).d<=todayKey())r.list.push(card);
+     if(r.list.length>=r.reviewLimit)break;
+    }
+   }
+  }finally{r.loading=false}
+ }
+ function renderDriveFlashcardHtml(html,fallback){
+  const value=html||esc(fallback||'');
+  return String(value).replace(/src=(['"])(\/api\/flashcards\/library\/media\/[a-f0-9]{64}\.(?:png|jpe?g|gif|webp|bmp))\1/gi,(_,q,url)=>{let src=window.cuscuzMediaUrl?window.cuscuzMediaUrl(url):url;src=src.replace(/([?&])t=/,'$1token=');return 'src="'+esc(src)+'"'});
+ }
+function renderFC(){const r=FCR;if(!r)return;if(r.i>=r.list.length){if(r.sourceDeckId&&r.list.length<r.reviewLimit&&r.offset<r.deckCardCount&&!r.loading){loadDriveDueBatch(r).then(()=>{r.list=shuffle(r.list);renderFC()}).catch(e=>{toast(esc(e.message),'error');finishFC()});return}return finishFC()}
  const c=r.list[r.i],st=fcState(fcKey(c));
  $('quiz-runner').innerHTML='<div><div class="quiz-progress-label"><span>Card '+(r.i+1)+' / '+r.list.length+'</span><span>revisão espaçada</span></div>'
  +'<div class="quiz-progress-track"><div class="quiz-progress-fill" style="width:'+pct(r.i,r.list.length)+'%"></div></div></div>'
  +'<div class="quiz-question-card"><div class="fc-meta">'+esc(MOD(c.s)?MOD(c.s).n:'Card personalizado')+' · voltar em: '+st.iv+'d · facilidade: '+st.e.toFixed(2)+'</div>'
- +'<div class="quiz-question-text">'+esc(c.f)+'</div>'
- +(r.shown?'<div class="quiz-explanation show" style="white-space:pre-wrap">'+esc(c.b)+'</div>'
+  +'<div class="quiz-question-text">'+renderDriveFlashcardHtml(c.frontHtml,c.f)+'</div>'
+  +(r.shown?'<div class="quiz-explanation show fc-answer-content">'+renderDriveFlashcardHtml(c.backHtml,c.b)+'</div>'
    +'<div class="srs-btns"><button class="fc-btn" style="color:var(--rose)" onclick="gradeFC(0)">Errei</button>'
    +'<button class="fc-btn" style="color:var(--amber)" onclick="gradeFC(1)">Difícil</button>'
    +'<button class="fc-btn" style="color:var(--green)" onclick="gradeFC(2)">Boa</button>'
    +'<button class="fc-btn" style="color:var(--teal)" onclick="gradeFC(3)">Fácil</button></div>'
   :'<button class="btn-primary" style="margin-top:14px" onclick="FCR.shown=true;renderFC()"><i class="ph ph-eye"></i> Mostrar resposta</button>')
  +'</div><div class="quiz-nav-row"><button class="btn-outline" onclick="quitFC()">Sair</button></div>'}
-function gradeFC(g){const r=FCR,c=r.list[r.i],st=fcState(fcKey(c));r.i++;
+function gradeFC(g){const r=FCR,c=r.list[r.i],st=fcState(fcKey(c));r.i++;st.repetitions=(st.repetitions||0)+1;if(g===0){st.lapses=(st.lapses||0)+1}
  if(g===0){st.iv=0;st.e=Math.max(1.3,st.e-.2);st.d=todayKey();r.list.push(c)}
  else if(g===1){st.iv=Math.max(1,Math.round((st.iv||1)*1.2));st.e=Math.max(1.3,st.e-.15)}
  else if(g===2){st.iv=st.iv<1?1:Math.round(st.iv*st.e)}
  else{st.iv=st.iv<1?2:Math.round(st.iv*st.e*1.3);st.e=Math.min(3.2,st.e+.05)}
  if(g>0){st.iv=Math.min(st.iv,365);st.d=addD(todayKey(),st.iv)}
- addXP(g===3?2:1,'revisão espaçada');touchStreak();saveFC();renderFC()}
+ addXP(g===3?2:1,'revisão espaçada');touchStreak();saveFC();if(c.id&&c.source&&c.source.driveFileId){fetch('/api/flashcards/library/reviews',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({eventId:crypto.randomUUID(),cardId:c.id,grade:g,dueDate:st.d,intervalDays:st.iv,ease:st.e,repetitions:st.repetitions,lapses:st.lapses||0})}).then(r=>{if(!r.ok)console.warn('[Flashcards] Progresso não foi gravado no banco:',r.status)}).catch(e=>console.warn('[Flashcards] Progresso segue salvo no estado da conta; sincronização SQL falhou:',e.message))}renderFC()}
 function finishFC(){const n=FCR?FCR.list.length:0;FCR=null;confetti();
  $('quiz-runner').innerHTML='<div class="quiz-result-card"><i class="ph ph-stack" style="font-size:40px;color:var(--teal)"></i>'
  +'<div class="quiz-result-score">Sessão concluída</div>'

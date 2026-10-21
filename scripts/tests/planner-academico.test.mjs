@@ -21,6 +21,7 @@ process.env.GROQ_API_KEY = 'gsk_fake'; process.env.GROQ_MAX_RETRIES = '0';
 const PE = await import('../../src/planner-engine.js');
 const PA = await import('../../src/planner-academico.js');
 const { registerPlannerV3 } = await import('../../src/planner-v3-routes.js');
+const { registerPlanner } = await import('../../src/planner-routes.js');
 const AI = await import('../../src/ai-provider.js');
 
 // ── Supabase falso (em memória) ──────────────────────────────────────────────
@@ -34,6 +35,7 @@ const app = express(); app.use(express.json({ limit: '20mb' }));
 app.use((req, _res, next) => { req.user = { username: req.headers['x-user'] || 'ana' }; next(); });
 let comIA = true;
 registerPlannerV3(app, { generateAI: AI.generateAI, aiConfigured: () => comIA, getBank: () => null, getSupabase: () => fakeSb, listarCronogramasAcervo: () => [{ id: 'x', nome: 'Cronograma Extensivo', curso: 'MED', pasta: 'p' }], baixarArquivoDrive: async () => { throw new Error('sem drive no teste'); } });
+registerPlanner(app, { generateAI: AI.generateAI, aiConfigured: () => comIA, getBank: () => null });
 const srv = await new Promise(r => { const s = app.listen(0, () => r(s)); });
 const base = `http://127.0.0.1:${srv.address().port}/api/planner/v3`;
 const post = async (rota, body, user = 'ana', method = 'POST') => { const r = await fetch(base + rota, { method, headers: { 'content-type': 'application/json', 'x-user': user }, body: body ? JSON.stringify(body) : undefined }); return { status: r.status, j: await r.json().catch(() => ({})) }; };
@@ -92,6 +94,22 @@ await teste('9h. residência: linhas "dd/mm: tema" + semanas distribuídas nos d
   const ok = await post('/confirmar-residencia', { perfil: { objetivo: 'residencia', horas: [0, 120, 120, 120, 120, 120, 0] }, itens: [{ semana: 1, tema: 'Sepse' }, { semana: 1, tema: 'ICC' }, { semana: 2, tema: 'DPOC' }], inicioSemana1: '2026-10-19' });
   assert.equal(ok.j.perfil.cronogramaResidencia.length, 3);
   const dias = ok.j.perfil.cronogramaResidencia.map(i => PE.parseIso(i.data).getUTCDay()); assert.ok(dias.every(d => d >= 1 && d <= 5), 'só dias com disponibilidade');
+});
+await teste('9i. resposta longa com conteúdos por disciplina não cai no fallback de cronograma', async () => {
+  comIA = false;
+  const perfil = PE.sanePerfil(null, { objetivo: 'graduacao', provasFaculdade: [
+    { disciplina: 'Doenças Infectoparasitárias', data: '2026-11-10', assuntos: [] },
+    { disciplina: 'IESC VIII', data: '2026-11-11', assuntos: [] },
+    { disciplina: 'Emergência e Terapia Intensiva', data: '2026-11-12', assuntos: [] }
+  ] });
+  const texto = '«Emergência: CAD, EHH e Hipoglicemia, Atendimento Inicial ao Trauma, TCE, Paciente queimado, Afogamento, Intoxicações exógenas; Terapia Intensiva: Distúrbios Hidroeletrolíticos e ácido base, Injúria renal e prescrição de diluições, Aspectos éticos e cuidados paliativos, Sedação e analgesia, POCUS em terapia intensiva; Imagenologia: Imagens radiológicas no trauma, Imagens em patologias abdominais, geniturinárias e mamárias, Imagens radiológicas em obstetrícia; Saúde Mental: Transtornos de ansiedade, TOC, TEPT, Emergências psiquiátricas, agitação e contenção, Transtornos alimentares, Transtornos relacionados ao uso de substâncias psicoativas, Psiquiatria da infância e da adolescência; HMP VIII: esquecimento, delirium, depressão e demência, dispneia, Asma, DPOC, IC, dor crônica, Atenção domiciliar e complicações em idosos domiciliados; Doenças Infectoparasitárias: IST, Protozooses, Helmintíases, Acidentes por animais peçonhentos, infecção em contextos de imunossupressão, Infecções relacionadas aos cuidados à saúde; IESC VIII: Todo o conteúdo até a data»';
+  const r = await fetch('http://127.0.0.1:' + srv.address().port + '/api/planner/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ hoje, asking: 'conteudo', perfil, messages: [{ role: 'user', content: texto }] }) });
+  const j = await r.json(); comIA = true;
+  assert.equal(j.success, true); assert.equal(j.ia, false);
+  assert.ok(!j.reply.includes('não consegui identificar com segurança'));
+  assert.ok(j.perfil.provasFaculdade.find(p => p.disciplina === 'Doenças Infectoparasitárias').assuntos.some(a => /Protozooses/.test(a)));
+  assert.ok(j.perfil.provasFaculdade.find(p => p.disciplina === 'IESC VIII').assuntos.some(a => /Todo o conteúdo/.test(a)));
+  assert.ok(j.perfil.provasFaculdade.find(p => p.disciplina === 'Emergência e Terapia Intensiva').assuntos.some(a => /Hipoglicemia/.test(a)));
 });
 
 // 10 / 11 ── planos por trilha

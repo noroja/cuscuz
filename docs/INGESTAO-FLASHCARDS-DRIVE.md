@@ -2,13 +2,15 @@
 
 ## O que entrou no Cuscuz-MED
 
-- O servidor percorre a pasta configurada e subpastas, localiza `.apkg` e `.colpkg` e lê somente arquivos novos ou alterados.
-- Um processo sequencial baixa cada pacote para uma pasta temporária, extrai notas, modelos, cartões e tags e converte cada cartão para JSON canônico (`id`, `front`, `back`, `subject`, `topic`, `tags`, `source`).
+- O servidor usa `data/flashcard-drive-index.json` como índice inicial, atualiza os metadados dos IDs no Drive e combina o resultado com a varredura das raízes configuradas. A varredura seleciona `.apkg` e `.colpkg`; o índice gerado a partir do catálogo local contém os oito `.apkg` conhecidos.
+- A sincronização compara `modifiedTime`, `size` e `md5Checksum` antes de transferir; um processo sequencial transmite cada pacote para uma pasta temporária, valida nomes e limites do ZIP, extrai notas, modelos, cartões e tags e converte cada cartão para JSON versionado.
 - Os cartões são publicados em blocos de 500 no bucket privado `flashcards-library`; o manifesto só é atualizado depois do processamento do pacote.
+- A migração `supabase/migrations/20261021_flashcard_library.sql` cria as tabelas normalizadas de origens, jobs, decks, notas, cartões, mídia, estado SRS por usuário e eventos de revisão. O worker registra metadados/cartões; a UI lê e grava revisões identificadas pela sessão do Cuscuz-MED.
 - O ID do cartão é estável por arquivo Drive, nota e modelo. Reprocessamentos substituem os mesmos blocos e não criam cartões repetidos.
-- A área SRS mostra a biblioteca compartilhada por deck. O histórico de revisão fica no `FCSRS` pessoal, sincronizado com a conta; o catálogo inteiro não é copiado para cada usuário.
+- A área SRS mostra a biblioteca compartilhada por deck. O estado SRS e os eventos ficam no Supabase associados ao usuário da sessão; `FCSRS` continua como espelho compatível com o estado da conta existente. IDs estáveis fazem o progresso sobreviver a correções de conteúdo.
 - Na inicialização, faz uma carga inicial ou retoma pelo cursor persistido. Depois, usa notificações push do Google Drive para consultar apenas o feed incremental e processar os pacotes alterados. Uma reconciliação incremental diária recupera notificações perdidas; não há consulta periódica ao Supabase. Sem webhook configurado, a recuperação diária continua disponível.
-- O conteúdo Anki é convertido para texto seguro. Imagens e áudios são indicados como placeholders; a mídia ainda não é hospedada pelo leitor de flashcards.
+- HTML Anki passa por uma lista de elementos/atributos permitidos. Imagens raster referenciadas são extraídas, deduplicadas por SHA-256 e guardadas no Storage privado; cartões usam uma rota autenticada do Cuscuz-MED. SVG, áudio, vídeo e arquivos acima dos limites viram placeholders e não são publicados nesta fase.
+- Cloze permanece marcado como `type: cloze`, conserva a lacuna no enunciado, registra respostas e revela a resposta ao virar o cartão.
 
 ## Configuração do servidor
 
@@ -16,8 +18,13 @@ Configure no ambiente de execução:
 
 ```env
 GOOGLE_DRIVE_FLASHCARDS_ROOTS=ID|CAMINHO_DA_PASTA;ID|OUTRO_CAMINHO
+GOOGLE_DRIVE_FLASHCARDS_CATALOG_PATH=
 GOOGLE_DRIVE_FLASHCARDS_SYNC=true
-FLASHCARD_MAX_PACKAGE_BYTES=6442450944
+FLASHCARD_MAX_PACKAGE_BYTES=104857600
+FLASHCARD_MAX_UNPACKED_BYTES=536870912
+FLASHCARD_MAX_ARCHIVE_ENTRIES=50000
+FLASHCARD_MAX_MEDIA_FILE_BYTES=26214400
+FLASHCARD_MAX_MEDIA_TOTAL_BYTES=262144000
 DRIVE_PUSH_WEBHOOK_URL=https://seu-dominio.com/webhooks/google-drive
 DRIVE_PUSH_WEBHOOK_TOKEN=segredo-aleatorio-longo
 GOOGLE_SERVICE_ACCOUNT_JSON=JSON_DA_CONTA_DE_SERVICO
@@ -27,7 +34,7 @@ SUPABASE_SERVICE_ROLE_KEY=COLE_A_CHAVE_NO_SECRETO_DA_VERCEL
 
 Compartilhe cada pasta configurada com o e-mail da conta de serviço com permissão de leitor. Cada item em `GOOGLE_DRIVE_FLASHCARDS_ROOTS` é `ID|caminho`, separado por ponto e vírgula. Acrescente raízes para cada diretório que venha a receber decks; as pastas que já contêm pacotes constam em `flashcards-drive-candidates.json` no catálogo local. Também é aceito `GOOGLE_DRIVE_FLASHCARDS_ROOT_ID` para uma raiz única.
 
-A chave de serviço do Supabase deve ficar somente no servidor. O servidor cria o bucket privado de armazenamento quando a chave tiver permissão administrativa. Use um servidor Node contínuo (Node 22.13 ou superior), um domínio HTTPS público e a conta de serviço autorizada no Drive. O webhook é autenticado pelo ID do canal e por `DRIVE_PUSH_WEBHOOK_TOKEN`; os canais são renovados antes de expirar. As notificações do Google só avisam que o feed mudou, então o servidor lê a Changes API desde o cursor salvo no bucket `acervo`. O cursor é persistido para sobreviver a reinícios. A reconciliação diária é uma proteção para indisponibilidade prolongada, não o caminho normal.
+A chave `SUPABASE_SERVICE_ROLE_KEY` é obrigatória para o worker e deve ficar somente no servidor. Antes de habilitar a ingestão, aplique a migração SQL acima no Supabase; ela bloqueia acesso direto a usuários anon/autenticados e permite acesso apenas à service role. O servidor cria o bucket privado de armazenamento quando a chave tiver permissão administrativa. Use Node 22.13 ou superior e a conta de serviço autorizada no Drive. O arquivo índice padrão já vem no repositório; `GOOGLE_DRIVE_FLASHCARDS_CATALOG_PATH` pode apontar para outro catálogo compatível. O webhook é autenticado pelo ID do canal e por `DRIVE_PUSH_WEBHOOK_TOKEN`; a reconciliação diária recupera notificações perdidas.
 
 O scanner procura recursivamente qualquer `.apkg`/`.colpkg` abaixo das raízes configuradas. Prefira as pastas que contêm decks, não a raiz inteira do Drive.
 
@@ -36,15 +43,18 @@ O scanner procura recursivamente qualquer `.apkg`/`.colpkg` abaixo das raízes c
 - `GET /api/flashcards/library/status` — estado da rotina.
 - `GET /api/flashcards/library/decks` — decks e quantidades disponíveis para estudo.
 - `GET /api/flashcards/library/decks/:deckId/cards?offset=0&limit=100` — página de cartões.
+- `POST /api/flashcards/library/reviews` — salva estado e evento de uma resposta (grau 0–3).
+- A rota paginada de cartões inclui o estado SRS do usuário somente para os IDs daquela página e não permite cache compartilhado.
 - `POST /api/flashcards/library/sync` — sincronização imediata, somente usuário com papel `admin`; corpo opcional `{ "force": true }` para reprocessar arquivos sem alteração aparente.
+- `GET /api/flashcards/library/media/:assetName` — serve imagens raster deduplicadas do bucket privado, com autenticação de sessão.
 - `POST /webhooks/google-drive` — callback HTTPS do Google Drive; não requer sessão de usuário, mas valida canal e segredo antes de enfileirar o delta.
 
 ## Limites e segurança
 
 - `.colpkg` é lido como pacote de coleção; o processo não o importa numa coleção Anki ativa nem altera dados do Anki.
-- Arquivos individuais acima do limite configurado são marcados como erro. O inventário apontou um pacote de vários GB; confirme espaço temporário e tempo de execução no host antes de habilitar essa fonte.
-- Pacotes com modelos incomuns podem produzir frente/verso incompletos; cartões vazios são omitidos e registrados no manifesto como rejeitados.
-- Mídia Anki, HTML avançado, CSS dos modelos, fórmulas e cloze complexo não são preservados integralmente; o texto fica disponível na revisão com placeholders para mídia.
+- O limite inicial é 100 MiB comprimidos e 512 MiB expandidos para proteger a função serverless. Pacotes maiores do catálogo ficam registrados como erro até serem processados por um worker com mais disco/tempo e limites explicitamente revistos.
+- Pacotes com modelos incomuns podem produzir frente/verso incompletos; cartões vazios são omitidos e registrados no job/manifesto.
+- Os testes usam um APKG sintético local com dois templates, Cloze e imagem; nenhum pacote do Drive foi baixado ou importado para Supabase durante esta implementação.
 - PDFs ainda não são convertidos por esta rotina. Eles precisam de extração de texto/OCR e classificação específica; este worker não os transforma silenciosamente em cartões inventados.
 - Um arquivo removido da pasta deixa de aparecer no catálogo depois de uma varredura bem-sucedida. O progresso SRS pessoal permanece salvo, mas o conteúdo-fonte deixa de ser servido.
 
