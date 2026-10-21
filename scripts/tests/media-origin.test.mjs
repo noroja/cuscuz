@@ -2,13 +2,14 @@
 // Sobe 2 processos reais do server.js (sem Google Drive: o que se verifica é roteamento, não o conteúdo).
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-const root = new URL('../../', import.meta.url).pathname;
+const root = fileURLToPath(new URL('../../', import.meta.url));
 const antes = new Set(['data/users.json', 'data/sessions.json'].filter(f => fs.existsSync(root + f)));
 const PA = 3971, PB = 3972; const base = (p) => `http://127.0.0.1:${p}`;
 const env = { ...process.env, APP_PASSWORD: 'segredo-de-teste', AI_LOG: '0' };
 for (const k of ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'GOOGLE_DRIVE_API_KEY', 'GOOGLE_DRIVE_FOLDER_ID']) delete env[k];
-const sobe = (port, extra) => spawn('node', ['server.js'], { cwd: root, env: { ...env, PORT: String(port), ...extra }, stdio: 'ignore' });
+const sobe = (port, extra) => spawn(process.execPath, ['server.js'], { cwd: root, env: { ...env, PORT: String(port), ...extra }, stdio: 'ignore' });
 const A = sobe(PA, { MEDIA_ORIGIN: base(PB) }); const B = sobe(PB, { MEDIA_ONLY: '1' });
 const espera = async (p) => { for (let i = 0; i < 60; i++) { try { if ((await fetch(base(p) + '/api/health')).ok) return; } catch (_) {} await new Promise(r => setTimeout(r, 250)); } throw new Error('servidor não subiu: ' + p); };
 const t = []; const teste = async (n, fn) => { try { await fn(); t.push(['OK ', n]); } catch (e) { t.push(['FALHOU', n, e.message]); } };
