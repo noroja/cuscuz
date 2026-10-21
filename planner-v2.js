@@ -23,7 +23,7 @@
       localStorage.removeItem(k);
     } catch (_) {}
   };
-  const sync = () => { try { if (typeof pushCloud === 'function') pushCloud(); } catch (_) {} };
+  const sync = () => { try { if (typeof pushCloud === 'function') pushCloud(); } catch (_) {} try { if (window.plv3 && plv3.agendar) plv3.agendar(); } catch (_) {} };
   const hoje = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Fortaleza' }).format(new Date());
   const DIAS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
   const fmtDia = iso => { const d = new Date(iso + 'T00:00:00Z'); return DIAS[d.getUTCDay()] + ', ' + iso.slice(8, 10) + '/' + iso.slice(5, 7); };
@@ -32,6 +32,7 @@
   const ICON = { aula: 'ph-video-camera', resumo: 'ph-notebook', questoes: 'ph-list-checks', flashcards: 'ph-cards', erros: 'ph-warning-circle', simulado: 'ph-timer', prova: 'ph-flag' };
   const NOME = { aula: 'Aula', resumo: 'Resumo', questoes: 'Questões', flashcards: 'Flashcards', erros: 'Erros', simulado: 'Simulado', prova: 'Prova' };
   const COR = { estudo: 'var(--teal)', revisao: 'var(--violet)', simulado: 'var(--amber)', erros: 'var(--rose)', prova: 'var(--rose)' };
+  const ativa = t => !!t && t.status !== 'cancelado' && t.status !== 'reagendada';
   let tab = 'hoje', busy = false;
 
   function css() {
@@ -192,7 +193,7 @@
     const h = hoje();
     const hasPlan = !!(plano && Array.isArray(plano.tarefas));
     const perfil = (plano && plano.perfil) || st.perfil || {};
-    const tarefas = plano && Array.isArray(plano.tarefas) ? plano.tarefas : [];
+    const tarefas = plano && Array.isArray(plano.tarefas) ? plano.tarefas.filter(ativa) : [];
     const doDia = tarefas.filter(t => t.data === h);
     const feitas = doDia.filter(t => t.status === 'feito').length;
     const pendentes = doDia.filter(t => t.status !== 'feito' && t.tipo !== 'prova');
@@ -223,7 +224,7 @@
   function renderChat() {
     const st = chatState(); const r = root(); if (!r) return;
     const plano = get(K_PLAN, null);
-    r.innerHTML = renderOverview(st, plano) + `<div class="plv2"><div class="plv2-bar"><div><h2> ${plano ? 'Ajustar seu plano com o Mentor' : 'Converse com o Mentor IA'}</h2><div class="plv2-sub">O cronograma nasce das suas respostas e aproveita suas aulas e PDFs reais.</div></div>
+    r.innerHTML = (window.plv3 && plano ? plv3.nav() : '') + renderOverview(st, plano) + `<div class="plv2"><div class="plv2-bar"><div><h2> ${plano ? 'Ajustar seu plano com o Mentor' : 'Converse com o Mentor IA'}</h2><div class="plv2-sub">O cronograma nasce das suas respostas e aproveita suas aulas e PDFs reais.</div></div>
       <div class="plv2-btns">${plano ? '<button class="b" onclick="plv2.voltar()"><i class="ph ph-calendar"></i> Ver cronograma</button>' : ''}<button class="b" onclick="plv2.reiniciar()"><i class="ph ph-arrow-counter-clockwise"></i> Recomeçar</button></div></div>
       <div class="plv2-chat"><div class="plv2-msgs" id="plv2-msgs">${st.msgs.map(m => `<div class="plv2-m ${m.role === 'user' ? 'me' : 'bot'}">${E(m.content)}</div>`).join('')}</div>
       ${st.resumo.length > 1 ? `<div class="plv2-sum"><b>O que entendi de você:</b><ul style="margin:6px 0 0 16px;padding:0">${st.resumo.map(x => `<li>${E(x)}</li>`).join('')}</ul></div>` : ''}
@@ -261,8 +262,16 @@
     const st = chatState(); const antigo = get(K_PLAN, null);
     if (window.toast) toast('Montando seu cronograma com as aulas do acervo…', 'info');
     try {
-      const textos = (st.msgs || []).filter(m => m.role === 'user' && String(m.content).length > 300).map(m => m.content).slice(-6);
-      const j = await api('/api/planner/generate-tasks', { perfil: (opts && opts.perfil) || st.perfil || (antigo && antigo.perfil), textos, hoje: hoje(), dias: opts && opts.dias, retidas: antigo ? antigo.tarefas.filter(t => t.status === 'feito') : [] });
+      const perfilUsado = (opts && opts.perfil) || st.perfil || (antigo && antigo.perfil);
+      let j;
+      if (antigo && window.plv3 && plv3.regerar) {
+        // já existe plano: replaneja daqui para frente preservando concluídas, canceladas, edições e histórico
+        j = { plan: await plv3.regerar(antigo, perfilUsado, opts && opts.dias, opts && opts.motivo) };
+      } else {
+        const textos = (st.msgs || []).filter(m => m.role === 'user' && String(m.content).length > 300).map(m => m.content).slice(-6);
+        j = await api('/api/planner/generate-tasks', { perfil: perfilUsado, textos, hoje: hoje(), dias: opts && opts.dias, retidas: antigo ? antigo.tarefas.filter(t => t.status === 'feito') : [] });
+        if (window.plv3 && plv3.anotar) { try { j.plan = await plv3.anotar(j.plan); } catch (_) { /* segue sem anotações */ } }
+      }
       set(K_PLAN, j.plan); sync();
       tab = 'hoje'; busy = false; renderPlano();
       (j.plan.avisos || []).forEach(a => { if (window.toast) toast('⚠️ ' + a, 'warning'); });
@@ -278,7 +287,7 @@
       // lotes de 8 tarefas de estudo, das mais próximas para as mais distantes (até ~40 tarefas por vez)
       for (let volta = 0; volta < 5; volta++) {
         const plano = get(K_PLAN, null); if (!plano) break;
-        const alvo = plano.tarefas.filter(t => t.tipo === 'estudo' && t.status !== 'feito' && !t.ia && !t._iaTentou && t.data >= hoje()).sort((x, y) => x.data.localeCompare(y.data)).slice(0, 8);
+        const alvo = plano.tarefas.filter(t => ativa(t) && t.tipo === 'estudo' && t.status !== 'feito' && !t.ia && !t._iaTentou && t.data >= hoje()).sort((x, y) => x.data.localeCompare(y.data)).slice(0, 8);
         if (!alvo.length) break;
         let j = null;
         const pedidos = (chatState().msgs || []).filter(m => m.role === 'user').map(m => String(m.content).slice(0, 400)).slice(-6);
@@ -324,8 +333,8 @@
       return `<button class="plv2-rec" onclick="plv2.abrir('${E(t.id)}',${i})"><i class="ph ${ic}" style="color:var(--teal);font-size:16px"></i><span><b>${rot}:</b> ${E(String(r.titulo).replace(/^(Questões|Flashcards|Aula): /, ''))}</span></button>`;
     }).join('');
     const est = t.estrategia || {}; const chips = Object.entries(est).filter(([, v]) => v).map(([k, v]) => `<em>${E(NOME[k] || k)} ${v}′</em>`).join('');
-    return `<tr class="${t.status === 'feito' ? 'feito' : ''}"><td data-l="Tarefa"><span class="plv2-pill" style="color:${cor};border-color:${cor}">${({ estudo: 'ESTUDO', revisao: 'REVISÃO', simulado: 'SIMULADO', erros: 'ERROS', prova: 'PROVA' })[t.tipo] || 'TAREFA'}</span><div class="tt">${E(t.titulo)}</div><div class="mt">${t.minutos ? fmtMin(t.minutos) : ''}${t.ia ? ' · ✨ detalhado por IA' : ''}</div><div class="plv2-chips">${chips}</div>
-      ${t.tipo !== 'prova' ? `<div class="plv2-done"><button class="b" onclick="plv2.feito('${E(t.id)}')">${t.status === 'feito' ? '<i class="ph ph-check-circle" style="color:var(--green)"></i> Concluída' : '<i class="ph ph-circle"></i> Marcar como feita'}</button></div>` : ''}</td>
+    return `<tr class="${t.status === 'feito' ? 'feito' : ''}"><td data-l="Tarefa"><span class="plv2-pill" style="color:${cor};border-color:${cor}">${({ estudo: 'ESTUDO', revisao: 'REVISÃO', simulado: 'SIMULADO', erros: 'ERROS', prova: 'PROVA' })[t.tipo] || 'TAREFA'}</span>${t.trilha ? `<span class="plv2-trilha t-${E(t.trilha)}" title="${t.trilha === 'compartilhada' ? 'Vale para a faculdade e para a residência' : 'Exclusiva desta trilha'}">${({ faculdade: 'FACULDADE', residencia: 'RESIDÊNCIA', compartilhada: 'COMPARTILHADA' })[t.trilha] || ''}</span>` : ''}<div class="tt">${E(t.titulo)}</div><div class="mt">${t.minutos ? fmtMin(t.minutos) : ''}${t.ia ? ' · ✨ detalhado por IA' : ''}${t.editadaManual ? ' · ✏️ ajustada por você' : ''}${t.adiadaDe && t.adiadaDe.length ? ' · adiada de ' + E(fmtBr(t.adiadaDe[t.adiadaDe.length - 1])) : ''}</div>${t.prioridade != null && t.tipo !== 'prova' ? `<div class="mt" title="Heurística de organização, não validada cientificamente">Prioridade ${t.prioridade}/100 — ${E(t.justificativa || '')}</div>` : ''}<div class="plv2-chips">${chips}</div>
+      ${t.tipo !== 'prova' ? `<div class="plv2-done"><button class="b" onclick="plv2.feito('${E(t.id)}')">${t.status === 'feito' ? '<i class="ph ph-check-circle" style="color:var(--green)"></i> Concluída' : '<i class="ph ph-circle"></i> Marcar como feita'}</button>${window.plv3 && t.status !== 'feito' ? ` <button class="b" onclick="plv3.adiar('${E(t.id)}')" title="Adiar"><i class="ph ph-clock-clockwise"></i></button> <button class="b" onclick="plv3.editar('${E(t.id)}')" title="Editar"><i class="ph ph-pencil-simple"></i></button> <button class="b" onclick="plv3.cancelar('${E(t.id)}')" title="Cancelar"><i class="ph ph-x-circle"></i></button>` : ''}</div>` : ''}</td>
       <td data-l="Passo a passo">${passos}</td><td data-l="Materiais">${recs || '<span class="plv2-obs">—</span>'}</td><td data-l="Observações"><div class="plv2-obs">${E(t.observacoes || '')}</div></td></tr>`;
   }
 
@@ -336,7 +345,7 @@
     const plano = get(K_PLAN, null);
     if (!plano) return renderChat();
     const h = hoje();
-    let ts = plano.tarefas;
+    let ts = plano.tarefas.filter(ativa);
     const atrasadas = ts.filter(t => t.data < h && t.status !== 'feito' && t.tipo !== 'prova');
     if (tab === 'hoje') ts = ts.filter(t => t.data === h);
     else if (tab === 'semana') { const fim = new Date(h + 'T00:00:00Z'); fim.setUTCDate(fim.getUTCDate() + 7); ts = ts.filter(t => t.data >= h && t.data < fim.toISOString().slice(0, 10)); }
@@ -344,9 +353,10 @@
     else ts = ts.filter(t => t.data >= h);
     const porDia = {}; ts.forEach(t => (porDia[t.data] = porDia[t.data] || []).push(t));
     const dias = Object.keys(porDia).sort();
-    const done = plano.tarefas.filter(t => t.status === 'feito' && t.tipo !== 'prova').length, tot = plano.tarefas.filter(t => t.tipo !== 'prova').length;
+    const done = plano.tarefas.filter(t => ativa(t) && t.status === 'feito' && t.tipo !== 'prova').length, tot = plano.tarefas.filter(t => ativa(t) && t.tipo !== 'prova').length;
     const tabs = [['hoje', 'Hoje'], ['semana', 'Próximos 7 dias'], ['tudo', 'Tudo'], ['atrasadas', 'Atrasadas' + (atrasadas.length ? ' (' + atrasadas.length + ')' : '')]];
-    r.innerHTML = renderOverview(chatState(), plano) + `<div class="plv2"><div class="plv2-bar"><div><h2>Seu cronograma</h2><div class="plv2-sub">${done}/${tot} tarefas concluídas · de ${plano.inicio.split('-').reverse().slice(0, 2).join('/')} a ${plano.fim.split('-').reverse().slice(0, 2).join('/')}${plano.perfil && plano.perfil.dataProva ? ' · prova ' + plano.perfil.dataProva.split('-').reverse().slice(0, 2).join('/') : ''}</div></div>
+    if (window.plv3 && plv3.secao() !== 'visao') { r.innerHTML = plv3.nav() + plv3.corpo(plano); plv3.depois(); return; }
+    r.innerHTML = (window.plv3 ? plv3.nav() : '') + renderOverview(chatState(), plano) + `<div class="plv2"><div class="plv2-bar"><div><h2>Seu cronograma</h2><div class="plv2-sub">${done}/${tot} tarefas concluídas · de ${plano.inicio.split('-').reverse().slice(0, 2).join('/')} a ${plano.fim.split('-').reverse().slice(0, 2).join('/')}${plano.perfil && plano.perfil.dataProva ? ' · prova ' + plano.perfil.dataProva.split('-').reverse().slice(0, 2).join('/') : ''}</div></div>
       <div class="plv2-btns"><button class="b pri" onclick="plv2.conversar()"><i class="ph ph-chats-circle"></i> Conversar / ajustar</button><button class="b" onclick="plv2.colar()"><i class="ph ph-clipboard-text"></i> Colar cronograma da faculdade</button><button class="b" onclick="plv2.exportar()"><i class="ph ph-export"></i> Exportar</button><button class="b" onclick="plv2.maisSemanas()"><i class="ph ph-calendar-plus"></i> +4 semanas</button><button class="b" onclick="plv2.ia()"><i class="ph ph-sparkle"></i> Detalhar com IA</button>${atrasadas.length ? '<button class="b" onclick="plv2.reagendar()"><i class="ph ph-arrows-clockwise"></i> Reagendar atrasadas</button>' : ''}${legacyRender ? '<button class="b" onclick="plv2.antigo()"><i class="ph ph-clock-counter-clockwise"></i> Planner antigo</button>' : ''}</div></div>
       <div class="plv2-tabs">${tabs.map(([k, n]) => `<button class="b ${tab === k ? 'on' : ''}" onclick="plv2.aba('${k}')">${n}</button>`).join('')}</div>
       <div id="plv2-lista">${dias.length ? dias.map(d => { const lst = porDia[d]; const m = lst.reduce((a, t) => a + (t.minutos || 0), 0); return `<div class="plv2-day"><div class="plv2-dh ${d === h ? 'hoje' : ''}">${fmtDia(d)}${d === h ? ' · hoje' : ''}<span>${m ? fmtMin(m) + ' planejados' : ''}</span></div><table class="plv2-t"><thead><tr><th style="width:21%">Tarefa</th><th style="width:36%">Passo a passo</th><th style="width:23%">Materiais</th><th>Observações</th></tr></thead><tbody>${lst.map(tarefaRow).join('')}</tbody></table></div>`; }).join('') : `<div class="plv2-empty">${tab === 'hoje' ? 'Nada agendado para hoje — dia livre no seu cronograma. 🎉' : tab === 'atrasadas' ? 'Nenhuma tarefa atrasada.' : 'Nada por aqui.'}</div>`}</div></div>`;
@@ -394,7 +404,7 @@
     },
     baixar(fmt) {
       const p = get(K_PLAN, null); if (!p) return;
-      const T = p.tarefas.slice().sort((x, y) => x.data.localeCompare(y.data));
+      const T = p.tarefas.filter(ativa).sort((x, y) => x.data.localeCompare(y.data));
       const ok = ['pendente', 'feito'];
       const passos = t => (t.passos || []).map(s => s.n + '. ' + s.texto + (s.minutos ? ' (' + s.minutos + ' min)' : '')).join('\n');
       const baixa = (nome, tipo, conteudo) => { const u = URL.createObjectURL(new Blob([conteudo], { type: tipo + ';charset=utf-8' })); const a = document.createElement('a'); a.href = u; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000); };
@@ -436,7 +446,7 @@
     },
     aba(k) { tab = k; renderPlano(); },
     irParaLista(k) { tab = k; renderPlano(); setTimeout(() => { const lista = document.querySelector('.plv2-tabs'); if (lista) lista.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 0); },
-    feito(id) { const p = get(K_PLAN, null); const t = p && p.tarefas.find(x => x.id === id); if (!t) return; t.status = t.status === 'feito' ? 'pendente' : 'feito'; set(K_PLAN, p); sync(); renderPlano(); },
+    feito(id) { const p = get(K_PLAN, null); const t = p && p.tarefas.find(x => x.id === id); if (!t) return; t.status = t.status === 'feito' ? 'pendente' : 'feito'; if (t.status === 'feito') t.feitoEm = new Date().toISOString(); else delete t.feitoEm; p.historico = (p.historico || []).concat([{ ts: new Date().toISOString(), acao: t.status === 'feito' ? 'concluir' : 'reabrir', id: t.id, titulo: t.titulo }]).slice(-500); set(K_PLAN, p); sync(); renderPlano(); },
     conversar() {
       const p = get(K_PLAN, null); const st = chatState();
       st.perfil = (p && p.perfil) || st.perfil; st.pronto = false; st.asking = ''; st.jaExtras = true;
@@ -489,6 +499,8 @@
     antigo() { if (legacyRender) legacyRender(); },
     abrir
   };
+
+  window.plv2._i = { get, set, rem, sync, hoje, E, tarefaRow, fmtMin, fmtBr, fmtDia, api, renderPlano, renderChat, chatState, gerar, css, root, ativa, DIAS };
 
   function init(forceChat) {
     css();

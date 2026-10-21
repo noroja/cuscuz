@@ -3311,7 +3311,7 @@ const HEAVY_KEYS = new Set([
   'acv_done', 'acv_fav', 'acv_wrong', 'acv_quiz', 'acv_sims', 'acv_decks',
   'acv_resumos', 'acv_fc', 'acv_fc_srs', 'acv_days', 'acv_last',
   'cuscuz_exam_answers', 'cuscuz_questions_cache', 'cuscuz_questions_meta',
-  'planner-ia-plan', 'planner-v2-plan', 'planner-v2-chat'
+  'planner-ia-plan', 'planner-v2-plan', 'planner-v2-chat', 'planner-v3-perfil'
 ]);
 const heavyMem = new Map();
 let heavyStore = null;
@@ -4681,13 +4681,13 @@ function openEditProfile(){
     })
     .catch(()=>toast('❌ Erro ao atualizar nome','error'));
 }
-function payload(){return{db:DB,done:[...DONE],fav:[...FAV],quiz:QUIZS,last:lsGet('acv_last',null),days:lsGet('acv_days',[]),sims:SIMS,decks:DECKS,wrong:[...WRONG],resumos:RESUMOS,fc:FCS,fcsrs:FCSRS,plv2:lsGet('planner-v2-plan',null)}}
+function payload(){return{db:DB,done:[...DONE],fav:[...FAV],quiz:QUIZS,last:lsGet('acv_last',null),days:lsGet('acv_days',[]),sims:SIMS,decks:DECKS,wrong:[...WRONG],resumos:RESUMOS,fc:FCS,fcsrs:FCSRS,plv2:lsGet('planner-v2-plan',null),plv3:lsGet('planner-v3-perfil',null)}}
 function pushCloud(){if(!CLOUD_ON||!SYNC_USER)return;setDot('sync');
  FBDB.ref('users/'+safeUser(SYNC_USER)+'/state').set(payload()).then(()=>setDot('ok')).catch(()=>setDot('off'))}
 function applyCloud(cl){lsSet(LS,Object.assign(JSON.parse(JSON.stringify(DEFDB)),cl.db||{}));
  lsSet('acv_done',cl.done||[]);lsSet('acv_fav',cl.fav||[]);lsSet('acv_quiz',cl.quiz||{});lsSet('acv_last',cl.last||null);
  lsSet('acv_days',cl.days||[]);lsSet('acv_sims',cl.sims||[]);lsSet('acv_decks',cl.decks||[]);lsSet('acv_wrong',cl.wrong||[]);
- lsSet('acv_resumos',cl.resumos||{});lsSet('acv_fc',cl.fc||[]);lsSet('acv_fc_srs',cl.fcsrs||{});if(cl.plv2)lsSet('planner-v2-plan',cl.plv2)}
+ lsSet('acv_resumos',cl.resumos||{});lsSet('acv_fc',cl.fc||[]);lsSet('acv_fc_srs',cl.fcsrs||{});if(cl.plv2)lsSet('planner-v2-plan',cl.plv2);if(cl.plv3)lsSet('planner-v3-perfil',cl.plv3)}
 
 function startApp(){
  window.CuscuzTour && window.CuscuzTour.onAppReady(); // dispara o tour de boas-vindas no 1º acesso
@@ -12052,6 +12052,7 @@ function enterDriveCourse(id, name) {
 }
 </style>
 <script src="/planner-v2.js"></script>
+<script src="/js/planner-academico.js"></script>
 
 <script src="/aula-dia.js"></script>
 <script defer type="module" src="/js/medreader-core.js"></script>

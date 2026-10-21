@@ -175,6 +175,18 @@ export function registerPlannerV3(app, { generateAI, aiConfigured, getBank, getS
     } catch (e) { falha(res, 500, e.message); }
   });
 
+  // Edição simples do perfil do motor (campos conhecidos, sempre sanitizados pelo mesmo validador do chat)
+  app.post(`${P}/perfil`, (req, res) => {
+    try {
+      const base = PE.sanePerfil(null, req.body.perfil || {});
+      const patch = req.body.patch && typeof req.body.patch === 'object' ? req.body.patch : {};
+      const permitidos = ['objetivo', 'alvo', 'dataProva', 'semData', 'provasFaculdade', 'semProvas', 'horas', 'dificuldades', 'fortes', 'semDificuldades', 'metodo', 'cursos', 'anseios'];
+      const filtrado = {}; for (const k of permitidos) if (k in patch) filtrado[k] = patch[k];
+      if ('provasFaculdade' in filtrado && Array.isArray(filtrado.provasFaculdade) && !filtrado.provasFaculdade.length) { filtrado.semProvas = true; delete filtrado.provasFaculdade; }
+      res.json({ success: true, perfil: PE.sanePerfil(base, filtrado) });
+    } catch (e) { falha(res, 500, e.message); }
+  });
+
   /* 3) Integração / priorização de um plano existente */
   const contexto = body => ({ hoje: okHoje(body.hoje), associacoes: saneAssoc(body.associacoes), desempenho: saneDesempenho(body.desempenho), pesos: body.pesos });
 

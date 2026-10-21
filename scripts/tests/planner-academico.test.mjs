@@ -216,6 +216,11 @@ await teste('14b. sem Supabase: resposta offline (o app segue com o armazenament
   const j = await (await fetch(`http://127.0.0.1:${s2.address().port}/api/planner/v3/estado`)).json();
   s2.close(); assert.equal(j.offline, true);
 });
+await teste('perfil: só campos permitidos e sempre sanitizados', async () => {
+  const { j } = await post('/perfil', { perfil: { objetivo: 'graduacao' }, patch: { horas: [0, 60, 60, 60, 60, 60, 0], dataProva: '2027-02-01', materiais: [{ texto: 'x'.repeat(100) }], objetivo: 'invalido', alvo: 'ENARE' } });
+  assert.deepEqual(j.perfil.horas, [0, 60, 60, 60, 60, 60, 0]); assert.equal(j.perfil.dataProva, '2027-02-01'); assert.equal(j.perfil.alvo, 'ENARE');
+  assert.equal(j.perfil.objetivo, 'graduacao'); assert.equal((j.perfil.materiais || []).length, 0);
+});
 await teste('acervo: lista PDFs de cronograma e declara que não há dados estruturados', async () => {
   const { j } = await get('/acervo-cronogramas'); assert.equal(j.estruturado, false); assert.equal(j.itens.length, 1);
 });
