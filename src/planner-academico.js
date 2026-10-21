@@ -25,7 +25,8 @@ export const PESOS_PADRAO = Object.freeze({
   volume: 10,      // participação da matéria no conteúdo ainda pendente
   conteudo: 10,    // incidência da matéria em provas de residência (campo `peso` de DISCS; aproximado)
   sinergia: 10,    // tema útil para as duas trilhas
-  material: 5      // há aula/PDF/questões do acervo vinculados
+  material: 5,     // há aula/PDF/questões do acervo vinculados
+  destaque: 5      // o professor disse que cai na prova / o aluno marcou ⭐ na Aula do dia (tarefa com `destaque`)
 });
 const JANELA_PROVA_FAC = 45, JANELA_PROVA_RES = 180, MIN_RESPOSTAS = 5;
 
@@ -219,6 +220,9 @@ export function priorizar(plano, { hoje, desempenho = {}, pesos } = {}) {
     // material do acervo
     f.material = (t.recursos || []).some(r => ['video', 'pdf', 'questoes', 'flashcards'].includes(r.tipo)) ? 1 : 0;
     if (f.material) why.push('há material do acervo vinculado');
+    // destaque vindo da Aula do dia
+    f.destaque = t.destaque ? 1 : 0;
+    if (f.destaque) why.unshift('o professor indicou que cai na prova (ou você marcou ⭐ na aula)');
     let s = 0; for (const k of Object.keys(W)) s += W[k] * (f[k] || 0);
     t.prioridade = Math.round(s / soma * 100);
     t.fatores = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, Math.round(v * 100) / 100]));
@@ -338,8 +342,10 @@ export function replanejar({ plano, hoje, banco = null, associacoes = [], desemp
   const antigas = plano.tarefas || [];
   const passadasFeitas = antigas.filter(t => t.status === 'feito' && t.data < hoje);
   const preservadas = antigas.filter(t => !passadasFeitas.includes(t) && (
-    t.status === 'feito' || t.status === 'cancelado' || t.status === 'reagendada' || (t.editadaManual && t.data >= hoje && t.tipo !== 'prova')));
+    t.status === 'feito' || t.status === 'cancelado' || t.status === 'reagendada' || (t.editadaManual && t.data >= hoje && t.tipo !== 'prova') || t.origem === 'aula-dia'));
   let reagendadas = 0, descartadas = 0;
+  // Revisões criadas pela Aula do dia não são recriadas pelo motor: ficam; se venceram sem ser feitas, vêm para hoje (nada se perde).
+  for (const t of preservadas) if (t.origem === 'aula-dia' && t.status === 'pendente' && t.data < hoje) { t.adiadaDe = [...(Array.isArray(t.adiadaDe) ? t.adiadaDe : []), t.data]; t.data = hoje; reagendadas++; }
   for (const t of antigas) {
     if (passadasFeitas.includes(t) || preservadas.includes(t)) continue;
     if (t.data < hoje && t.tipo !== 'prova') { t.status = 'reagendada'; t.reagendadaEm = new Date().toISOString(); t.motivoRemocao = 'Atrasada: conteúdo reposto no novo plano.'; preservadas.push(t); reagendadas++; }

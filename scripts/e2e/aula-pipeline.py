@@ -42,6 +42,30 @@ try:
         nc=len(doc['caps']); chk('capítulos todos preenchidos, em ordem', nc>=4 and [str(c).split('\n')[0] for c in doc['caps']]==[f'## {i}.0 — Cap {i}' for i in range(1,nc+1)], str(doc.get('caps'))[:300])
         chk('resumo montado com os 4 capítulos', all(f'Cap {i}' in doc['resumoMd'] for i in range(1,nc+1)) and 'Considerações Finais' in doc['resumoMd'])
         chk('flashcards e cai na prova', len(doc['flashcards'])==2 and doc['resultado']['caiNaProva']==['cai isto'])
+        # ── fechar o ciclo ──
+        hoje=datetime.date.today(); d=lambda n:(hoje+datetime.timedelta(days=n)).isoformat()
+        plano={'inicio':d(0),'fim':d(40),'perfil':{'objetivo':'graduacao','horas':[0,120,120,120,120,120,60],'provasFaculdade':[{'disciplina':'Clínica','data':d(10),'tipo':'P1','assuntos':['Sepse']}],'aulasFaculdade':[]},'tarefas':[],'resumo':''}
+        pg.evaluate("(p)=>{plv2._i.set('planner-v2-plan',p)}", plano)
+        pg.evaluate("(h)=>{ /* a aula é de hoje */ }", d(0))
+        # a sessão do seed tem data fixa; ajusta para hoje no documento aberto e salva
+        pg.evaluate("""async(h)=>{ const r=await new Promise((ok)=>{const q=indexedDB.open('aulaDia',1);q.onsuccess=()=>ok(q.result)}); const doc=await new Promise((ok)=>{const g=r.transaction('audio').objectStore('audio').get('doc:a1');g.onsuccess=()=>ok(g.result)}); doc.data=h; await new Promise((ok)=>{const t=r.transaction('audio','readwrite');t.objectStore('audio').put(doc,'doc:a1');t.oncomplete=ok}); }""", d(0))
+        pg.evaluate("auladia.voltar && 0"); pg.reload(); pg.wait_for_timeout(2500)
+        pg.evaluate("go('view-auladia')"); pg.wait_for_timeout(1000); pg.evaluate("auladia.abrir('a1')"); pg.wait_for_timeout(800)
+        chk('painel "Fechar o ciclo" aparece quando há flashcards', pg.evaluate("!!document.querySelector('#ad-ciclo')"))
+        n0=pg.evaluate("(typeof FCS!=='undefined'?FCS.length:-1)")
+        pg.evaluate("auladia.fecharCiclo()"); pg.wait_for_timeout(2500)
+        pl=pg.evaluate("plv2._i.get('planner-v2-plan',null)")
+        rv=[t for t in pl['tarefas'] if t.get('origem')=='aula-dia']
+        chk('revisões 24h e 7 dias criadas; a de 30 dias cortada pela prova em 10 dias', sorted(t['id'].split('-r')[-1] for t in rv)==['1','7'], str([(t['id'],t['data']) for t in rv]))
+        chk('datas = aula + intervalo', sorted(t['data'] for t in rv)==[d(1),d(7)], str([t['data'] for t in rv]))
+        chk('revisão marcada como destaque (cai na prova) e com prioridade calculada', all(t.get('destaque') for t in rv) and all(isinstance(t.get('prioridade'),(int,float)) for t in rv), str([(t.get('destaque'),t.get('prioridade')) for t in rv]))
+        chk('fator destaque aparece na justificativa', any('cai na prova' in (t.get('justificativa') or '') for t in rv), str([t.get('justificativa') for t in rv]))
+        chk('cartões entraram no Treino', pg.evaluate("(typeof FCS!=='undefined'?FCS.length:-1)")==n0+2, 'antes=%d'%n0)
+        pg.evaluate("auladia.fecharCiclo()"); pg.wait_for_timeout(1500)
+        pl2=pg.evaluate("plv2._i.get('planner-v2-plan',null)")
+        chk('idempotente: 2º clique não duplica revisões nem cartões', len([t for t in pl2['tarefas'] if t.get('origem')=='aula-dia'])==2 and pg.evaluate("(typeof FCS!=='undefined'?FCS.length:-1)")==n0+2)
+        # replanejar pelo Mentor mantém as revisões da aula
+        pg.evaluate("plv2._i.gerar && 0")
         chk('sem erros de JS', not errs, str(errs))
         print('tempo do pipeline: %.1fs'%dt)
         b.close()

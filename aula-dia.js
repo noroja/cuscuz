@@ -903,7 +903,7 @@
     const falhas = (s.chunks || []).filter(c => c.status === 'erro' || c.status === 'pendente').length;
     const completo = s.resumoMd && s.flashcards && s.resultado;
     r.innerHTML = `<div class="ad"><h2>${E(nomeCompleto(s))}</h2><div class="sub">${E(s.disciplina || '')} › ${E(s.tema || 'sem conteúdo definido')} › ${E(s.parte || 'Única')} · ${E(s.data)} · ${hms(s.duracao || 0)} · ${palavrasDe(s.textoRevisado || s.texto)} palavras</div>
-    <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="b" onclick="auladia.voltar()"><i class="ph ph-arrow-left"></i> Aulas</button>${geminiOk && !completo ? '<button class="b pri" onclick="auladia.gerar()"><i class="ph ph-sparkle"></i> Gerar / continuar</button>' : ''}${falhas ? `<button class="b" onclick="auladia.reenviar()">Tentar novamente (${falhas})</button>` : ''}<button class="b" onclick="auladia.copiar()">Copiar texto</button><button class="b" onclick="auladia.baixar('transcricao')">⬇ Transcrição .md</button>${s.resumoMd ? '<button class="b" onclick="auladia.baixar(\'resumo\')">⬇ Resumo .md</button>' : ''}${s.resumoGeral ? '<button class="b" onclick="auladia.baixar(\'resumogeral\')">⬇ Resumo Geral .md</button>' : ''}<button class="b" onclick="auladia.baixar('tudo')">⬇ Tudo (NotebookLM)</button></div><div id="ad-proc" style="margin:0 0 8px"></div>
+    <div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="b" onclick="auladia.voltar()"><i class="ph ph-arrow-left"></i> Aulas</button>${geminiOk && !completo ? '<button class="b pri" onclick="auladia.gerar()"><i class="ph ph-sparkle"></i> Gerar / continuar</button>' : ''}${falhas ? `<button class="b" onclick="auladia.reenviar()">Tentar novamente (${falhas})</button>` : ''}<button class="b" onclick="auladia.copiar()">Copiar texto</button><button class="b" onclick="auladia.baixar('transcricao')">⬇ Transcrição .md</button>${s.resumoMd ? '<button class="b" onclick="auladia.baixar(\'resumo\')">⬇ Resumo .md</button>' : ''}${s.resumoGeral ? '<button class="b" onclick="auladia.baixar(\'resumogeral\')">⬇ Resumo Geral .md</button>' : ''}<button class="b" onclick="auladia.baixar('tudo')">⬇ Tudo (NotebookLM)</button></div><div id="ad-proc" style="margin:0 0 8px"></div>${cicloHtml(s)}
     <div class="ad-tabs">${tabs.map(([k, n]) => `<button class="b ${abaRes === k ? 'on' : ''}" onclick="auladia.aba('${k}')">${n}</button>`).join('')}</div>${corpo}</div></div>`;
     if (pipelineRodando && sessAtual && htmlPassos) { const el = $('ad-proc'); if (el) el.innerHTML = htmlPassos; }
     if (abaRes === 'audio') desenharKaraoke();
@@ -928,12 +928,93 @@
     a.download = [s.disciplina || 'aula', s.tema, s.parte, tipo || 'tudo', s.data].filter(Boolean).join(' - ').replace(/[^\p{L}\p{N}\- ]+/gu, '_') + '.md'; document.body.appendChild(a); a.click(); a.remove();
   }
   async function copiar() { const s = sessAtual; if (!s) return; try { await navigator.clipboard.writeText(s.textoRevisado || s.texto || textoPuro(s)); toast('Transcrição copiada', 'success'); } catch (_) { toast('Não consegui copiar — use "Baixar .md".', 'error'); } }
-  function enviarFlash() {
-    const s = sessAtual; if (!s || !s.flashcards || typeof FCS === 'undefined') return;
+  // Adiciona os cartões da aula ao Treino (sem duplicar). Devolve quantos entraram, ou -1 se o Treino não está disponível.
+  function adicionarFlashcards(s) {
+    if (!s || !s.flashcards || typeof FCS === 'undefined') return -1;
     const ja = new Set(FCS.map(c => c.f + '::' + c.b)); let n = 0;
-    s.flashcards.forEach(f => { if (!ja.has(f.frente + '::' + f.verso)) { FCS.push({ f: f.frente, b: f.verso, s: 'x' }); n++; } });
+    s.flashcards.forEach(f => { if (!ja.has(f.frente + '::' + f.verso)) { FCS.push({ f: f.frente, b: f.verso, s: 'x' }); ja.add(f.frente + '::' + f.verso); n++; } });
     if (typeof saveFC === 'function') saveFC();
+    return n;
+  }
+  function enviarFlash() {
+    const n = adicionarFlashcards(sessAtual); if (n < 0) return;
     toast(n + ' flashcards adicionados ao Treino — eles entram na revisão espaçada de hoje.', 'success');
+  }
+
+  /* ───────────── fechar o ciclo: cartões → Treino · revisões → Mentor · teste imediato ───────────── */
+  const REVISOES = [[1, '24h', 'flashcards', 10], [7, '7 dias', 'questoes', 15], [30, '30 dias', 'questoes', 15]]; // mesmos intervalos do motor do Mentor
+  const pad2 = n => String(n).padStart(2, '0');
+  const somaDias = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); };
+  const normTxt = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const temaDaAula = s => (s.tema || '').trim() || ((s.mapa && s.mapa.capitulos && s.mapa.capitulos[0]) || {}).titulo || s.disciplina || 'Aula';
+
+  // Cria no plano do Mentor as revisões desta aula (24h, 7 e 30 dias). Idempotente (ids por aula+intervalo), não passa da prova da matéria.
+  function revisoesParaPlano(s, plano, hoje) {
+    const tema = temaDaAula(s), disc = (s.disciplina || 'Aula').trim(), base = s.data || hoje;
+    const destaques = ((s.resultado && s.resultado.caiNaProva) || []).slice(0, 3);
+    const destaque = destaques.length > 0 || (s.marcas || []).length > 0;
+    const prova = ((plano.perfil && plano.perfil.provasFaculdade) || []).filter(p => p.data >= base && normTxt(p.disciplina) && (normTxt(disc).includes(normTxt(p.disciplina)) || normTxt(p.disciplina).includes(normTxt(disc)))).map(p => p.data).sort()[0];
+    const existentes = new Set((plano.tarefas || []).map(t => t.id));
+    const novas = [];
+    for (const [d, rot, kind, min] of REVISOES) {
+      const id = 'aula-' + s.id + '-r' + d; if (existentes.has(id)) continue;
+      let data = somaDias(base, d); if (data < hoje) data = hoje;
+      if (prova && data >= prova) continue; // revisão depois da prova não serve
+      const rotulo = (kind === 'flashcards' ? 'Flashcards: ' : 'Questões: ') + tema;
+      novas.push({ id, data, tipo: 'revisao', trilha: 'faculdade', titulo: 'Revisão ' + rot + ': ' + tema, materia: disc, tema, minutos: min,
+        passos: [{ n: 1, acao: kind, minutos: min, recursos: [0], texto: kind === 'flashcards' ? 'Revisão de ' + rot + ' — "' + tema + '": faça os flashcards SEM olhar o resumo; o que errar volta amanhã.' : 'Revisão de ' + rot + ' — "' + tema + '": responda questões do tema e anote em 1 linha a regra de cada erro.' }],
+        recursos: [{ tipo: kind, titulo: rotulo, tema, disc }], estrategia: { [kind]: min },
+        observacoes: 'Criada pela Aula do dia (' + s.data + ').' + (destaques.length ? ' O professor indicou que cai na prova: ' + destaques.join(' · ') + '.' : ''),
+        status: 'pendente', origem: 'aula-dia', origemAula: s.id, destaque });
+    }
+    return novas;
+  }
+
+  async function fecharCiclo() {
+    const s = sessAtual; if (!s || !s.flashcards) return toast('Gere o resumo e os flashcards primeiro.', 'warning');
+    const out = s.ciclo = Object.assign({}, s.ciclo);
+    const nc = adicionarFlashcards(s);
+    out.cartoes = nc < 0 ? out.cartoes || 0 : (out.cartoes || 0) + nc; out.cartoesTotal = (s.flashcards || []).length;
+    const I = window.plv2 && window.plv2._i;
+    let plano = I ? I.get('planner-v2-plan', null) : null;
+    if (!plano || !Array.isArray(plano.tarefas)) { out.revisoes = out.revisoes || 0; out.semPlano = true; }
+    else {
+      out.semPlano = false;
+      const novas = revisoesParaPlano(s, plano, hojeISO());
+      if (novas.length) {
+        plano.tarefas = plano.tarefas.concat(novas).sort((a, b) => String(a.data).localeCompare(String(b.data)));
+        I.set('planner-v2-plan', plano);
+        try { if (window.plv3 && plv3.anotar) { const p2 = await plv3.anotar(plano); if (p2 && Array.isArray(p2.tarefas)) { plano = p2; I.set('planner-v2-plan', plano); } } } catch (_) { /* sem prioridade calculada agora; o próximo replanejamento calcula */ }
+        try { I.sync(); } catch (_) {}
+      }
+      out.revisoes = (out.revisoes || 0) + novas.length; out.revisoesTotal = REVISOES.length;
+    }
+    out.em = new Date().toISOString();
+    await salvarAgora(s); desenharResultado();
+    toast(out.semPlano ? 'Cartões enviados ao Treino. Para agendar revisões, crie um plano no Mentor primeiro.' : 'Ciclo fechado: ' + (nc < 0 ? 0 : nc) + ' cartões no Treino e revisões agendadas no Mentor.', out.semPlano ? 'warning' : 'success');
+  }
+
+  async function testarAgora() {
+    const s = sessAtual; if (!s) return;
+    if (typeof window.buscarQtdQuestoesTema !== 'function' || typeof window.iniciarSimuladoDoTema !== 'function') return toast('O Treino não está disponível nesta tela.', 'warning');
+    toast('Buscando questões do tema…', 'info');
+    const tema = temaDaAula(s);
+    try {
+      const r = await window.buscarQtdQuestoesTema(tema, s.disciplina || '', '');
+      if (!r || !(r.questions || []).length) return toast('Ainda não há questões do banco sobre este tema.', 'warning');
+      await window.iniciarSimuladoDoTema(tema, s.disciplina || '', r.questions, '');
+    } catch (e) { toast('Não consegui abrir o teste: ' + e.message, 'error'); }
+  }
+
+  function cicloHtml(s) {
+    if (!s.flashcards) return '';
+    const c = s.ciclo;
+    const linha = (ok, txt) => `<div class="ad-step ${ok ? 'ok' : ''}">${ok ? '✔' : '○'} ${txt}</div>`;
+    return `<div class="card" id="ad-ciclo" style="margin-bottom:10px"><b>🔁 Fechar o ciclo</b>
+      <div class="sub" style="margin:4px 0 8px">Ler não basta: testar e revisar nos intervalos certos é o que fixa. Um toque faz tudo.</div>
+      ${linha(c && c.cartoes != null, c && c.cartoes != null ? (c.cartoes + ' cartões novos no Treino (de ' + (c.cartoesTotal || (s.flashcards || []).length) + ')') : 'Flashcards da aula no Treino (revisão espaçada)')}
+      ${linha(c && c.revisoes > 0, c && c.semPlano ? 'Sem plano no Mentor: crie um para agendar revisões' : (c && c.revisoes != null ? c.revisoes + ' revisões agendadas no Mentor (24 h, 7 e 30 dias)' : 'Revisões em 24 h, 7 e 30 dias no seu plano do Mentor'))}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="b pri" onclick="auladia.fecharCiclo()"><i class="ph ph-arrows-clockwise"></i> ${c ? 'Atualizar' : 'Fechar o ciclo'}</button><button class="b" onclick="auladia.testar()"><i class="ph ph-exam"></i> Testar agora (questões do tema)</button></div></div>`;
   }
   async function abrirSess(id) { if (rec) return toast('Fim da gravação primeiro — finalize ou aguarde terminar.', 'warning'); const s = await carregarSess(id); if (!s) return; sessAtual = s; abaRes = s.resumoMd ? 'resumo' : 'transcricao'; desenharResultado(); }
   function apagarSess(id) { if (!confirm('Apagar esta aula gravada?')) return; salvarSessoes(sessoes().filter(x => x.id !== id)); idbDel(id + ':'); idbDelKey('doc:' + id); if (sessAtual && sessAtual.id === id) sessAtual = null; render(); }
@@ -942,8 +1023,8 @@
     iniciar, marcar, abrir: abrirSess, apagar: apagarSess, enviarFlash, baixar, copiar,
     pausar, continuar, parar, retomar, finalizar,
     gerar() { if (sessAtual) pipeline(sessAtual); }, reenviar: reenviarFalhas, parteAuto: atualizarParteSugerida,
-    kVai,
-    _pool: pool, _limitador: limitador,
+    kVai, fecharCiclo, testar: testarAgora,
+    _pool: pool, _limitador: limitador, _revisoes: revisoesParaPlano,
     gerarRQ: gerarResumoGeral,
     mmGerar, mmToggle: mmClique, mmZoom, mmFit, mmTudo, mmPNG,
     ancora(id) { const el = document.getElementById('adh-' + id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); },

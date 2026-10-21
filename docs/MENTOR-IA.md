@@ -47,6 +47,7 @@ Pontuação 0–100 = média ponderada de fatores 0–1. Pesos padrão (configur
 | conteudo | 10 | campo `peso` de `DISCS` (incidência aproximada em provas de residência) |
 | sinergia | 10 | 1 se compartilhada |
 | material | 5 | há aula/PDF/questões/flashcards do acervo |
+| destaque | 5 | 1 se a tarefa veio da Aula do dia com "cai na prova" indicado pelo professor ou momento marcado com ⭐ |
 
 Cada tarefa mostra a justificativa (até 3 fatores relevantes).
 

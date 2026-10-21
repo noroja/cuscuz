@@ -216,6 +216,26 @@ await teste('13b. replanejar preserva concluídas/canceladas, não duplica e gua
   const minDia = {}; novo.tarefas.filter(t => PA.ativa(t) && t.data >= '2026-10-22' && t.tipo !== 'prova').forEach(t => { minDia[t.data] = (minDia[t.data] || 0) + (t.minutos || 0); });
   const horas = novo.perfil.horas; for (const [d, m] of Object.entries(minDia)) if (!novo.tarefas.some(t => t.data === d && t.editadaManual)) assert.ok(m <= (horas[PE.parseIso(d).getUTCDay()] || 0) + 5, `dia ${d} acima da disponibilidade (${m} min)`);
 });
+await teste('13b2. revisões da Aula do dia: sobrevivem ao replanejamento; vencidas vêm para hoje', async () => {
+  const p = gerar({}, 28); PA.anotarPlano(p, { hoje });
+  const rev = (id, data) => ({ id, data, tipo: 'revisao', trilha: 'faculdade', titulo: 'Revisão 24h: Sepse', materia: 'Clínica Médica', tema: 'Sepse', minutos: 10, passos: [], recursos: [], estrategia: {}, observacoes: '', status: 'pendente', origem: 'aula-dia', origemAula: 'a1' });
+  p.tarefas.push(rev('aula-a1-rev1', '2026-10-20'), rev('aula-a1-rev7', '2026-10-29'));
+  const novo = PA.replanejar({ plano: p, hoje: '2026-10-22', banco: null });
+  const a = novo.tarefas.find(t => t.id === 'aula-a1-rev1'), b = novo.tarefas.find(t => t.id === 'aula-a1-rev7');
+  assert.ok(a && b, 'ambas mantidas'); assert.equal(a.data, '2026-10-22'); assert.deepEqual(a.adiadaDe, ['2026-10-20']); assert.equal(a.status, 'pendente');
+  assert.equal(b.data, '2026-10-29');
+  const de2 = PA.replanejar({ plano: novo, hoje: '2026-10-22', banco: null });
+  assert.equal(de2.tarefas.filter(t => t.origem === 'aula-dia').length, 2, 'sem duplicar no 2º replanejamento');
+});
+await teste('13b3. destaque da aula sobe a prioridade (fator documentado, peso configurável)', async () => {
+  assert.ok(PA.PESOS_PADRAO.destaque > 0);
+  const p = gerar({}, 14); PA.anotarPlano(p, { hoje });
+  const [x, y] = p.tarefas.filter(t => t.tipo === 'estudo' && PA.ativa(t) && t.data >= hoje).slice(0, 2);
+  Object.assign(y, { materia: x.materia, tema: x.tema, data: x.data, minutos: x.minutos, recursos: x.recursos, trilha: x.trilha });
+  x.destaque = false; y.destaque = true; PA.priorizar(p, { hoje });
+  assert.ok(y.prioridade > x.prioridade, `${y.prioridade} > ${x.prioridade}`); assert.ok(/cai na prova|⭐/.test(y.justificativa));
+  PA.priorizar(p, { hoje, pesos: { destaque: 0 } }); assert.equal(y.prioridade, x.prioridade, 'peso 0 neutraliza');
+});
 await teste('13c. rotas /acao e /replanejar via HTTP', async () => {
   const p = gerar(); PA.anotarPlano(p, { hoje });
   const t = p.tarefas.find(x => x.tipo === 'estudo' && x.data >= hoje);

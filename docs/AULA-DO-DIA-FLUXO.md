@@ -34,7 +34,7 @@ Tudo em série. Capítulos e revisão são independentes entre si e só esperava
 - O campo `anterior` (final do trecho anterior) era enviado pelo front e **ignorado** pelo servidor. Corrigido: entra no prompt do Whisper (ver 3.1). O efeito na qualidade não foi medido.
 - Corte fixo a cada 90 s pode partir uma frase ao meio. Não corrigido (fase 2).
 - Dados só no aparelho (localStorage + IndexedDB): trocar de celular ou limpar o navegador perde as aulas.
-- O app dispara geração de questões por IA ao abrir (observado nos testes: 4 chamadas ao carregar a página). Isso consome cota que a aula precisa. Não investigado a fundo.
+- **Consumo de IA ao abrir uma videoaula:** `/api/questions/match` gera questões por IA quando o banco tem menos de 10 que casem com o tema (cache só em memória; na Vercel cada função nova perde o cache). Quem dispara é a pré-busca da contagem de questões ao abrir a aula, não o carregamento do app. Opções: usar `ia=0` na pré-busca e gerar só quando você clicar em praticar, ou guardar as questões geradas no banco. Não alterado (muda o comportamento do Treino).
 
 ### 2.4 Rendimento de estudo (o que falta)
 A aula termina em material (resumo, cartões), mas **não fecha o ciclo**: não testa o aluno, não agenda revisões no Mentor, não alimenta a priorização. O resultado é conteúdo bem feito que precisa de disciplina manual para virar retenção.
@@ -55,13 +55,15 @@ Hoje cada saída relê a aula. Proposta:
 Resultado esperado: de ~7 leituras para ~3 e a maior parte do trabalho pronta quando a aula termina. É projeção: precisa de medição com aula real e de checagem de fidelidade (nada pode ser omitido).
 Também na fase 2: corte do trecho no silêncio (VAD simples com o analisador de áudio que já existe), transcrição de reserva por Gemini (áudio) quando a Groq estiver em limite, e botão ❓ "dúvida" durante a aula.
 
-### Fase 3 — proposta: fechar o ciclo de aprendizado
-Ao terminar a aula:
-1. **Teste imediato** (5–8 questões do banco por tema via `/api/questions/match`): recuperação ativa em vez de só reler.
-2. **Revisões espaçadas no Mentor:** criar tarefas de revisão (D+1, D+3, D+7, D+14) pelo mesmo mecanismo de `agendarRevisoes` do planejador, em vez de só mandar flashcards para o Treino.
-3. **Planejador:** marcar a tarefa "Aula/Prévia" do dia como feita, atualizar a cobertura dos assuntos da prova e dar peso extra ao que o professor marcou como "cai" ou o aluno marcou com ⭐ (fator da priorização).
-4. **Sincronização** das aulas pela nuvem (Supabase), com o áudio opcional.
-5. **Indicador de consumo** por aula (tokens usados via `usage`) para controlar as cotas.
+### Fase 3 — implementada (parte): fechar o ciclo
+Na tela do resultado aparece o painel **🔁 Fechar o ciclo** (assim que os flashcards existem):
+1. Os cartões da aula vão para o Treino (sem duplicar).
+2. O Mentor ganha **3 revisões da aula**: 24 h (flashcards), 7 dias e 30 dias (questões) — os mesmos intervalos do motor do planejador. Ids por aula+intervalo (idempotente), nunca depois da prova da matéria, e marcadas `origem: "aula-dia"`.
+3. **Replanejar não as perde:** o motor preserva essas tarefas; as vencidas e não feitas vêm para hoje (com o histórico em `adiadaDe`).
+4. **Prioridade:** novo fator `destaque` (peso 5, configurável): sobe a prioridade da revisão quando o professor indicou que cai na prova ou você marcou ⭐.
+5. Botão **Testar agora**: abre o simulado do Treino com as questões do tema (banco; pode gerar por IA se houver poucas, como já fazia ao abrir uma aula).
+Verificado: testes do motor (preservação, vencidas, destaque) e E2E no navegador com IA falsa (revisões 24 h e 7 dias criadas, a de 30 dias cortada pela prova, idempotência, cartões no Treino, prioridade calculada). Não testado com dados reais.
+Ainda proposto: marcar a tarefa "Prévia/Aula" do dia como concluída, atualizar a cobertura dos assuntos da prova, sincronizar as aulas pela nuvem e mostrar o consumo de tokens por aula.
 
 ## 4. Riscos e não verificado
 - Nenhuma chamada real à Groq, ao Gemini ou ao OpenRouter foi feita; os E2E usam uma IA falsa.

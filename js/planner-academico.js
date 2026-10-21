@@ -10,8 +10,8 @@
   const toast = (m, t) => { try { if (window.toast) window.toast(m, t || 'info'); } catch (_) {} };
   const SECOES = [['visao', 'Visão geral', 'ph-squares-four'], ['faculdade', 'Faculdade', 'ph-graduation-cap'], ['residencia', 'Residência', 'ph-stethoscope'], ['integrado', 'Plano integrado', 'ph-git-merge'],
     ['calendario', 'Calendário de provas', 'ph-calendar-check'], ['hoje', 'Tarefas do dia', 'ph-list-checks'], ['revisoes', 'Revisões e desempenho', 'ph-chart-line-up'], ['perfil', 'Perfil e configurações', 'ph-sliders']];
-  const PESOS_ROTULO = { prova: 'Proximidade da prova', desempenho: 'Desempenho (erros em questões)', revisao: 'Tempo desde a última revisão', volume: 'Volume de conteúdo pendente', conteudo: 'Incidência em provas de residência', sinergia: 'Sinergia faculdade ↔ residência', material: 'Material do acervo disponível' };
-  const PESOS_PADRAO = { prova: 30, desempenho: 20, revisao: 15, volume: 10, conteudo: 10, sinergia: 10, material: 5 };
+  const PESOS_ROTULO = { prova: 'Proximidade da prova', desempenho: 'Desempenho (erros em questões)', revisao: 'Tempo desde a última revisão', volume: 'Volume de conteúdo pendente', conteudo: 'Incidência em provas de residência', sinergia: 'Sinergia faculdade ↔ residência', material: 'Material do acervo disponível', destaque: 'Marcado na aula (cai na prova / ⭐)' };
+  const PESOS_PADRAO = { prova: 30, desempenho: 20, revisao: 15, volume: 10, conteudo: 10, sinergia: 10, material: 5, destaque: 5 };
   const PERFIL_AC_VAZIO = () => ({ periodo: '', instituicao: '', disciplinas: [], blocoMin: 50, objetivosAcademicos: '', residencia: { especialidade: '', instituicoes: '', provaAlvo: '' }, preferencias: '', pesos: {}, associacoes: [], atualizadoEm: 0 });
 
   let sec = 'visao';
