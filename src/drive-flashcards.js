@@ -418,7 +418,7 @@ async function persistFlashcardChunk(supabase, deck) {
     content_hash: hash(`${card.type || 'basic'}\n${card.front}\n${card.back}`), is_active: true
   }));
   if (rows.length) {
-    const { error } = await supabase.from('flashcards').upsert(rows, { onConflict: 'id' });
+    const { error } = await supabase.from('flashcard_library_cards').upsert(rows, { onConflict: 'id' });
     if (error) throw new Error(`Falha salvando cartões do deck ${deck.name}: ${error.message}`);
   }
   const links = deck.cards.flatMap(card => (card.media || []).map((media, position) => ({ card_id: card.id, media_id: media.id, position })));

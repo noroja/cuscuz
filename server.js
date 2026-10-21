@@ -3947,7 +3947,7 @@ app.post('/api/flashcards/library/reviews', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Dados de revisão inválidos.' });
   }
   try {
-    const { data: card, error: cardError } = await supabase.from('flashcards').select('id').eq('id', cardId).maybeSingle();
+    const { data: card, error: cardError } = await supabase.from('flashcard_library_cards').select('id').eq('id', cardId).maybeSingle();
     if (cardError) throw cardError;
     if (!card) return res.status(404).json({ success: false, error: 'Cartão não encontrado.' });
     const reviewedAt = new Date().toISOString();

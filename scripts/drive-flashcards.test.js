@@ -80,7 +80,7 @@ test('extracts a real synthetic APKG with two templates, cloze and referenced im
     assert.match(cloze.frontHtml, /\[faixa\]/);
     assert.match(cloze.back, /Resposta: 60–100 bpm/);
     assert.equal(tables.get('flashcard_notes').length, 2);
-    assert.equal(tables.get('flashcards').length, 3);
+    assert.equal(tables.get('flashcard_library_cards').length, 3);
     assert.equal(tables.get('flashcard_media_links').length, 2);
     const assetName = basic.media[0].url.split('/').at(-1);
     const media = await readFlashcardMedia(supabase, assetName);

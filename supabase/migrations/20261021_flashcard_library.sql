@@ -50,7 +50,9 @@ create table if not exists public.flashcard_notes (
   unique (source_file_id, source_note_id)
 );
 
-create table if not exists public.flashcards (
+-- Nome distinto da tabela legada public.flashcards (que pode usar id uuid).
+-- Os IDs da biblioteca são hashes estáveis em texto e não alteram a tabela legada.
+create table if not exists public.flashcard_library_cards (
   id text primary key,
   deck_id text not null references public.flashcard_decks(id) on delete restrict,
   note_id text not null references public.flashcard_notes(id) on delete restrict,
@@ -80,7 +82,7 @@ create table if not exists public.flashcard_media (
 );
 
 create table if not exists public.flashcard_media_links (
-  card_id text not null references public.flashcards(id) on delete restrict,
+  card_id text not null references public.flashcard_library_cards(id) on delete restrict,
   media_id text not null references public.flashcard_media(id) on delete restrict,
   position integer not null default 0,
   primary key (card_id, media_id)
@@ -89,7 +91,7 @@ create table if not exists public.flashcard_media_links (
 -- Progresso do usuário é separado da biblioteca de origem.
 create table if not exists public.flashcard_reviews (
   username text not null,
-  card_id text not null references public.flashcards(id) on delete restrict,
+  card_id text not null references public.flashcard_library_cards(id) on delete restrict,
   due_at timestamptz,
   interval_days double precision not null default 0,
   ease double precision not null default 2.5,
@@ -104,7 +106,7 @@ create table if not exists public.flashcard_reviews (
 create table if not exists public.flashcard_review_events (
   event_id uuid primary key,
   username text not null,
-  card_id text not null references public.flashcards(id) on delete restrict,
+  card_id text not null references public.flashcard_library_cards(id) on delete restrict,
   grade smallint not null check (grade between 0 and 3),
   reviewed_at timestamptz not null default now(),
   schedule_after jsonb not null default '{}'::jsonb
@@ -113,9 +115,9 @@ create table if not exists public.flashcard_review_events (
 create index if not exists idx_flashcard_sources_status on public.flashcard_sources(import_status, updated_at desc);
 create index if not exists idx_flashcard_jobs_source on public.flashcard_import_jobs(drive_file_id, started_at desc);
 create index if not exists idx_flashcard_decks_source on public.flashcard_decks(source_file_id, is_active);
-create index if not exists idx_flashcard_cards_deck on public.flashcards(deck_id, is_active, id);
-create index if not exists idx_flashcard_cards_source on public.flashcards(source_file_id, is_active);
-create index if not exists idx_flashcard_cards_tags on public.flashcards using gin(tags);
+create index if not exists idx_flashcard_cards_deck on public.flashcard_library_cards(deck_id, is_active, id);
+create index if not exists idx_flashcard_cards_source on public.flashcard_library_cards(source_file_id, is_active);
+create index if not exists idx_flashcard_cards_tags on public.flashcard_library_cards using gin(tags);
 create index if not exists idx_flashcard_reviews_due on public.flashcard_reviews(username, due_at);
 create index if not exists idx_flashcard_review_events_user on public.flashcard_review_events(username, reviewed_at desc);
 
@@ -125,7 +127,7 @@ declare
 begin
   foreach tbl in array array[
     'flashcard_sources','flashcard_import_jobs','flashcard_decks','flashcard_notes',
-    'flashcards','flashcard_media','flashcard_media_links','flashcard_reviews','flashcard_review_events'
+    'flashcard_library_cards','flashcard_media','flashcard_media_links','flashcard_reviews','flashcard_review_events'
   ] loop
     execute format('alter table public.%I enable row level security', tbl);
     execute format('revoke all on table public.%I from anon, authenticated', tbl);
