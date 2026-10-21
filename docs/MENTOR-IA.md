@@ -86,3 +86,9 @@ Formato de mensagem suportado, por exemplo:
 Validação: npm test e build aprovados; testes de JSON, tabelas, fallback, conteúdo extraído e regressões anteriores. Fluxo real local de upload verificado com PDF válido de teste da biblioteca pdf-parse; conteúdo e leitura exibidos na conversa. Sanitização conferida em navegador real contra script, imagem com evento e link javascript. Nenhum PDF foi enviado a uma conta de produção. Chamadas reais aos provedores de IA não foram necessárias para esse teste.
 
 Prévia demonstrativa conferida visualmente em 1440, 768 e 390 px: 0 falhas e 0 avisos no inspetor. A diagramação, fontes e tabelas originais do PDF não são reconstruídas fielmente: a prévia apresenta o texto extraído; a extração estruturada organiza o que foi identificado. PDFs escaneados continuam exigindo texto selecionável/OCR externo. O extrator existente limita a leitura a cerca de 60 mil caracteres e sinaliza truncamento.
+
+## Correção do manual e modelo Gemini padrão (21/10/2026)
+
+O interpretador de datas define os meses utilizados pela leitura de manuais e aceita dias por extenso com ou sem a palavra dia. O teste de regressão cobre texto administrativo sem data numérica, que antes interrompia a leitura com MESES is not defined.
+
+O modelo Gemini padrão passa a gemini-3.8-flash, validado com mensagem técnica fictícia na conta configurada localmente. A API recusou gemini-2.5-flash para novos usuários dessa conta. GEMINI_MODEL explícito no ambiente continua tendo prioridade: se a Vercel fixar o modelo anterior, é necessário atualizar essa variável no painel. O .env local não é enviado ao GitHub nem copiado para a produção.

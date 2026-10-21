@@ -17,7 +17,7 @@
 //   GROQ_TPM           teto de tokens por minuto do plano (padrão 8000 — free tier do gpt-oss-120b;
 //                      usado para dimensionar janelas de requisição que não estouram o limite)
 //   GEMINI_API_KEY     chave do Google AI Studio (activa o provedor Gemini)
-//   GEMINI_MODEL       padrão gemini-2.5-flash
+//   GEMINI_MODEL       padrão gemini-3.8-flash
 //   GEMINI_BASE_URL    padrão https://generativelanguage.googleapis.com/v1beta
 //   GEMINI_TIMEOUT_MS  timeout por tentativa (padrão 60000)
 //   GEMINI_MAX_RETRIES tentativas extras (padrão 2)
@@ -50,7 +50,7 @@ const cfg = () => ({
   },
   gemini: {
     key: process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '',
-    model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
     base: (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, ''),
     timeout: Math.max(5000, parseInt(process.env.GEMINI_TIMEOUT_MS, 10) || 60000),
     retries: Math.min(4, Math.max(0, process.env.GEMINI_MAX_RETRIES == null || process.env.GEMINI_MAX_RETRIES === '' ? 2 : parseInt(process.env.GEMINI_MAX_RETRIES, 10) || 0)),
