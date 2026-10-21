@@ -34,7 +34,7 @@ Tudo em série. Capítulos e revisão são independentes entre si e só esperava
 - O campo `anterior` (final do trecho anterior) era enviado pelo front e **ignorado** pelo servidor. Corrigido: entra no prompt do Whisper (ver 3.1). O efeito na qualidade não foi medido.
 - Corte fixo a cada 90 s pode partir uma frase ao meio. Não corrigido (fase 2).
 - Dados só no aparelho (localStorage + IndexedDB): trocar de celular ou limpar o navegador perde as aulas.
-- **Consumo de IA ao abrir uma videoaula:** `/api/questions/match` gera questões por IA quando o banco tem menos de 10 que casem com o tema (cache só em memória; na Vercel cada função nova perde o cache). Quem dispara é a pré-busca da contagem de questões ao abrir a aula, não o carregamento do app. Opções: usar `ia=0` na pré-busca e gerar só quando você clicar em praticar, ou guardar as questões geradas no banco. Não alterado (muda o comportamento do Treino).
+- **Consumo de IA ao abrir uma videoaula:** `/api/questions/match` gera questões por IA quando o banco tem menos de 10 que casem com o tema (cache só em memória; na Vercel cada função nova perde o cache). Quem dispara é a pré-busca da contagem de questões ao abrir a aula, não o carregamento do app. Opções: usar `ia=0` na pré-busca e gerar só quando você clicar em praticar, ou guardar as questões geradas no banco. **Corrigido:** a pré-busca ao abrir a aula usa `ia=0` (só banco); a IA só entra ao clicar em praticar, se o banco tiver menos de 10 questões.
 
 ### 2.4 Rendimento de estudo (o que falta)
 A aula termina em material (resumo, cartões), mas **não fecha o ciclo**: não testa o aluno, não agenda revisões no Mentor, não alimenta a priorização. O resultado é conteúdo bem feito que precisa de disciplina manual para virar retenção.

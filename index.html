@@ -11921,9 +11921,10 @@ function moduloDaAula(v) {
   return '';
 }
 
-async function buscarQtdQuestoesTema(tema, disc, modulo) {
+// comIA=false (padrão): só banco, sem gastar IA ao abrir a aula; true: pode gerar questões por IA (ação explícita de praticar).
+async function buscarQtdQuestoesTema(tema, disc, modulo, comIA) {
   try {
-    const qUrl = `/api/questions/match?disciplina=${encodeURIComponent(disc || '')}&tema=${encodeURIComponent(tema || '')}&modulo=${encodeURIComponent(modulo || '')}&limit=40`;
+    const qUrl = `/api/questions/match?disciplina=${encodeURIComponent(disc || '')}&tema=${encodeURIComponent(tema || '')}&modulo=${encodeURIComponent(modulo || '')}&limit=40${comIA ? '' : '&ia=0'}`;
     const res = await fetch(qUrl);
     if (res.ok) {
       const data = await res.json();
@@ -12017,10 +12018,11 @@ window.modalPraticarQuestoesTema = function() {
 
 window.iniciarSimuladoDoTema = async function(tema, disc, questions, modulo) {
   let qs = Array.isArray(questions) && questions.length ? [...questions] : [];
-  if (!qs.length) {
+  if (qs.length < 10) {
+    // A pré-busca ao abrir a aula não usa IA; ao praticar, completa com questões geradas se o banco tiver poucas.
     toast('Carregando questões selecionadas do tema…', 'info');
-    const res = await buscarQtdQuestoesTema(tema, disc, modulo || '');
-    qs = res.questions || [];
+    const res = await buscarQtdQuestoesTema(tema, disc, modulo || '', true);
+    if ((res.questions || []).length > qs.length) qs = res.questions;
   }
   if (!qs.length) {
     toast('Ainda não há questões do banco sobre esta aula. Ative a chave Gemini para gerar questões do tema.', 'warning');

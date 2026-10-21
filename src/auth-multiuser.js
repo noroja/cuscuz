@@ -377,7 +377,7 @@ export function setupAuthRoutes(app) {
 // Alias para compatibilidade com server.js (que importa registerAuthRoutes)
 export const registerAuthRoutes = setupAuthRoutes;
 
-// Middleware de autenticação para rotas /api (exceto /api/auth/*, /api/health, /api/config e /api/drive/*)
+// Middleware de autenticação para rotas /api (exceto /api/auth/*, /api/health, /api/config e a mídia /api/drive/stream|pdf)
 export function authMiddleware(req, res, next) {
   // Dentro de app.use('/api', ...), req.path NÃO contém o prefixo /api.
   // Usar req.originalUrl (caminho completo) para comparar corretamente.
@@ -386,7 +386,8 @@ export function authMiddleware(req, res, next) {
   if (full === '/api/health') return next();
   if (full === '/api/config') return next();
   if (full.startsWith('/api/radar-medico/refresh')) return next(); // cron: valida CRON_SECRET na própria rota
-  if (full.startsWith('/api/drive/')) return next();
+  // Mídia (<video>/<iframe> não enviam Authorization) segue aberta; as rotas JSON do Drive exigem login.
+  if (full.startsWith('/api/drive/stream/') || full.startsWith('/api/drive/pdf/')) return next();
   const authHeader = req.headers.authorization || '';
   const token =
     authHeader.startsWith('Bearer ') ? authHeader.slice(7) :
