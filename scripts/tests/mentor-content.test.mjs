@@ -1,0 +1,25 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import MarkdownIt from 'markdown-it';
+const source = fs.readFileSync(new URL('../../js/mentor-content.js', import.meta.url), 'utf8');
+const context = { window: {} };
+vm.createContext(context); vm.runInContext(source, context);
+const content = context.window.MentorContent;
+assert.equal(content.markdown('{"reply":"## Semana\\n\\n**Clínica médica**"}'), '## Semana\n\n**Clínica médica**');
+assert.equal(content.markdown('```json\n{"markdown":"# Cronograma"}\n```'), '# Cronograma');
+assert.equal(content.markdown('{JSON incompleto'), '{JSON incompleto');
+assert.match(content.markdown({ provas: [{ disciplina: 'Cardiologia', data: '2026-11-05' }] }), /\| Disciplina \| Data \|/);
+assert.match(content.markdown({ assuntos: ['Sepse', 'Choque'] }), /- Sepse\n- Choque/);
+assert.match(content.render('<img src=x onerror=alert(1)>'), /&lt;img/);
+assert.equal(content.documentPreview({nome:'sem texto'}), '');
+assert.match(content.documentPreview({nome:'<arquivo>',texto:'Teste'}), /&lt;arquivo&gt;/);
+// Parser behavior is independent of sanitization; full DOM sanitization is checked in a real browser.
+context.window.markdownit = MarkdownIt;
+context.window.DOMPurify = {sanitize: html => html};
+const html = content.render('# Título\n\n**Texto**\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n[ruim](javascript:alert(1))\n\n<script>alert(1)</script>');
+assert.match(html, /<h2>Título<\/h2>/);
+assert.match(html, /<strong>Texto<\/strong>/);
+assert.match(html, /class="mentor-table".*tabindex="0"/);
+assert.doesNotMatch(html, /<script|href="javascript:/);
+console.log('OK — JSON e Markdown, tabelas acessíveis, fallback legível e HTML desativado.');

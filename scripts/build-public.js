@@ -33,4 +33,10 @@ for (const d of pastas) {
   copiados++;
 }
 
+const vendor = path.join(out, 'js', 'vendor');
+fs.mkdirSync(vendor, { recursive: true });
+for (const [source, target] of [
+  ['markdown-it/dist/browser/markdown-it.umd.min.js', 'markdown-it.min.js'],
+  ['dompurify/dist/purify.min.js', 'purify.min.js']
+]) fs.copyFileSync(path.join(root, 'node_modules', source), path.join(vendor, target));
 console.log(`[build-public] ${copiados} itens copiados para public/`);

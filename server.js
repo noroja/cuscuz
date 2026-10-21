@@ -4113,6 +4113,9 @@ app.get('/api/anki/download/:fileId', async (req, res) => {
 });
 
 // Serve static assets from root directory
+// Same-origin Markdown dependencies in local mode; Vercel serves their build copies from public/.
+app.get('/js/vendor/markdown-it.min.js', (_req, res) => res.sendFile(path.join(__dirname, 'node_modules/markdown-it/dist/browser/markdown-it.umd.min.js')));
+app.get('/js/vendor/purify.min.js', (_req, res) => res.sendFile(path.join(__dirname, 'node_modules/dompurify/dist/purify.min.js')));
 app.use(express.static(__dirname, {
   dotfiles: 'deny',
   extensions: ['html', 'htm'],

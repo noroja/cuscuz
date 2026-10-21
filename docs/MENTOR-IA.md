@@ -68,3 +68,21 @@ O catálogo não tem cronogramas estruturados; tem PDFs de cronograma (Extensivo
 
 ## Testes
 `npm test` (provedor e planejador, com Groq e Supabase simulados).
+
+## Leitura formatada de documentos e JSON (21/10/2026)
+
+O Mentor usa Markdown para apresentar mensagens e o conteúdo de objetos JSON. Os envelopes com `reply`, `markdown`, `content` ou `resposta` (string) exibem o campo textual. Objetos e listas de dados viram seções, listas ou tabelas. JSON incompleto continua legível como texto. O transporte da API permanece em JSON; o texto original da conversa é preservado.
+
+Após carregar PDF/TXT/MD, a conversa oferece uma seção recolhível com o texto extraído e uma leitura organizada dos dados identificados. A importação acadêmica também mostra o texto e a leitura estruturada junto aos campos de conferência existentes. A confirmação do cronograma continua explícita. O extrator de PDF da rota manual usa a biblioteca já disponível na aplicação, dispensando o executável externo pdftotext.
+
+Apresentação: títulos hierárquicos, ênfase, listas, citações, código e tabelas com rolagem horizontal e foco por teclado. Mantidos azul-marinho, turquesa e a tipografia do produto. Markdown-it com HTML desativado; resultado sanitizado pelo DOMPurify. Dependências servidas no mesmo domínio, com cópias estáticas no build da Vercel e rotas locais dedicadas. Falha de carregamento mantém texto escapado legível.
+
+Formato de mensagem suportado, por exemplo:
+
+```json
+{"reply":"## Conteúdo da semana\n\n- **Clínica médica:** revisar os assuntos informados.\n- Conferir datas antes de confirmar."}
+```
+
+Validação: npm test e build aprovados; testes de JSON, tabelas, fallback, conteúdo extraído e regressões anteriores. Fluxo real local de upload verificado com PDF válido de teste da biblioteca pdf-parse; conteúdo e leitura exibidos na conversa. Sanitização conferida em navegador real contra script, imagem com evento e link javascript. Nenhum PDF foi enviado a uma conta de produção. Chamadas reais aos provedores de IA não foram necessárias para esse teste.
+
+Prévia demonstrativa conferida visualmente em 1440, 768 e 390 px: 0 falhas e 0 avisos no inspetor. A diagramação, fontes e tabelas originais do PDF não são reconstruídas fielmente: a prévia apresenta o texto extraído; a extração estruturada organiza o que foi identificado. PDFs escaneados continuam exigindo texto selecionável/OCR externo. O extrator existente limita a leitura a cerca de 60 mil caracteres e sinaliza truncamento.

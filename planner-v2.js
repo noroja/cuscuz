@@ -234,7 +234,7 @@
     const plano = get(K_PLAN, null);
     r.innerHTML = (window.plv3 && plano ? plv3.nav() : '') + renderOverview(st, plano) + `<div class="plv2"><div class="plv2-bar"><div><h2> ${plano ? 'Ajustar seu plano com o Mentor' : 'Vamos desenhar sua rotina'}</h2><div class="plv2-sub">Conte seu objetivo ao Mentor. Seu plano usa as aulas e os materiais do seu acervo.</div></div>
       <div class="plv2-btns">${plano ? '<button class="b" onclick="plv2.voltar()"><i class="ph ph-calendar"></i> Ver cronograma</button>' : ''}<button class="b" onclick="plv2.reiniciar()"><i class="ph ph-arrow-counter-clockwise"></i> Recomeçar</button></div></div>
-      <div class="plv2-chat" aria-busy="${busy}"><div class="plv2-msgs" id="plv2-msgs" role="log" aria-live="polite" aria-relevant="additions text">${st.msgs.map(m => `<div class="plv2-m ${m.role === 'user' ? 'me' : 'bot'}">${E(m.content)}</div>`).join('')}</div>
+      <div class="plv2-chat" aria-busy="${busy}"><div class="plv2-msgs" id="plv2-msgs" role="log" aria-live="polite" aria-relevant="additions text">${st.msgs.map(m => `<div class="plv2-m ${m.role === 'user' ? 'me' : 'bot'}">${!window.MentorContent ? E(m.content) : '<div class="mentor-prose">' + window.MentorContent.render(m.content) + '</div>' + window.MentorContent.documentPreview(m.documento) + (m.leitura ? '<details class="mentor-document" open><summary>Leitura organizada do documento</summary><div class="mentor-prose">' + window.MentorContent.render(m.leitura) + '</div></details>' : '')}</div>`).join('')}</div>
       ${st.resumo.length > 1 ? `<div class="plv2-sum"><b>O que entendi de você:</b><ul style="margin:6px 0 0 16px;padding:0">${st.resumo.map(x => `<li>${E(x)}</li>`).join('')}</ul></div>` : ''}
       <div class="plv2-q" id="plv2-q">${(st.pronto ? ['Quero ajustar algo'] : []).concat(st.quick.filter(q => !st.pronto || !/gerar/i.test(q))).map(q => `<button onclick="plv2.enviar(${E(JSON.stringify(JSON.stringify(q)))})">${E(q)}</button>`).join('')}${st.pronto ? '<button class="b pri" style="border-radius:99px;background:var(--teal);color:var(--text-inverse);font-weight:700" onclick="plv2.gerar()"><i class="ph ph-magic-wand"></i> Gerar meu cronograma</button>' : ''}</div>
       <div class="plv2-in"><input type="file" id="plv2-file" accept=".pdf,.txt,.md,application/pdf,text/plain" style="display:none" onchange="plv2.anexar(this)"><button class="b" aria-label="Anexar manual do aluno ou ementa em PDF" title="Anexar manual do aluno / ementa (PDF)" onclick="document.getElementById('plv2-file').click()"><i class="ph ph-paperclip" aria-hidden="true"></i></button><textarea aria-label="Sua resposta para o Mentor" id="plv2-txt" name="mentorResponse" autocomplete="off" rows="2" placeholder="Escreva sua resposta…" onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)&&!event.isComposing){event.preventDefault();plv2.enviar()}"></textarea><button class="b pri" aria-label="Enviar resposta" id="plv2-send" ${busy ? 'disabled' : ''} onclick="plv2.enviar()"><i class="ph ph-paper-plane-tilt" aria-hidden="true"></i><span class="plv2-send-label">${busy ? 'Enviando…' : 'Enviar'}</span></button></div></div></div>`;
@@ -260,7 +260,7 @@
     const box = document.getElementById('plv2-msgs');
     if (box) { const d = document.createElement('div'); d.className = 'plv2-m bot'; d.id = 'plv2-typing'; d.setAttribute('role','status'); d.textContent = 'Pensando…'; box.appendChild(d); box.scrollTop = box.scrollHeight; }
     try {
-      const j = await api('/api/planner/chat', Object.assign({ messages: st.msgs, perfil: st.perfil, asking: st.asking, jaExtras: st.jaExtras, hoje: hoje() }, extra || {}));
+      const j = await api('/api/planner/chat', Object.assign({ messages: st.msgs.map(({ role, content }) => ({ role, content })), perfil: st.perfil, asking: st.asking, jaExtras: st.jaExtras, hoje: hoje() }, extra || {}));
       st.perfil = j.perfil; st.asking = j.asking || ''; st.jaExtras = !!j.jaExtras; st.quick = j.quickReplies || []; st.pronto = !!j.pronto; st.resumo = j.resumo || [];
       st.msgs.push({ role: 'model', content: j.reply });
     } catch (e) {
@@ -469,13 +469,15 @@
     async anexar(inp) {
       const f = inp.files && inp.files[0]; inp.value = ''; if (!f || busy) return;
       if (f.size > 18 * 1024 * 1024) { if (window.toast) toast('Arquivo muito grande (máx. 18 MB). Envie só as páginas de ementa/avaliações.', 'error'); return; }
-      const st = chatState(); st.msgs.push({ role: 'user', content: '📎 ' + f.name + ' (manual do aluno)' }); st.quick = []; set(K_CHAT, st); renderChat();
       busy = true;
+      const st = chatState(); st.msgs.push({ role: 'user', content: 'Arquivo: ' + f.name }); st.quick = []; set(K_CHAT, st); renderChat();
       const box = document.getElementById('plv2-msgs'); if (box) { const d = document.createElement('div'); d.className = 'plv2-m bot'; d.textContent = 'Lendo o manual… (pode levar até 1 minuto)'; box.appendChild(d); box.scrollTop = box.scrollHeight; }
       try {
         const b64 = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = no; r.readAsDataURL(f); });
         const j = await api('/api/planner/manual', { nome: f.name, mime: f.type, base64: b64, perfil: st.perfil, hoje: hoje() });
-        st.perfil = j.perfil; st.resumo = j.resumo || []; set(K_CHAT, st); busy = false;
+        st.perfil = j.perfil; st.resumo = j.resumo || [];
+        st.msgs.push({ role: 'model', content: j.reply, documento: j.documento, leitura: j.leitura });
+        set(K_CHAT, st); busy = false;
         await turno(null, { anexo: true, nota: j.reply });
       } catch (e) {
         busy = false; const s2 = chatState(); s2.msgs.push({ role: 'model', content: 'Não consegui ler o arquivo (' + e.message + '). Você pode digitar o conteúdo de cada prova aqui no chat.' }); set(K_CHAT, s2); renderChat();

@@ -320,7 +320,7 @@
         ${semData ? `<div class="alerta">Há itens só com semana. Informe a data de início da <b>semana 1</b>: eles serão distribuídos nos dias em que você disse poder estudar.<br><input type="date" id="im-ini1" style="margin-top:4px"></div>` : ''}`;
     }
     const av = (imp.ambiguidades || []).concat(imp.faltando || []).map(a => `<div class="alerta">⚠️ ${E(a.msg)}</div>`).join('');
-    overlay(`<h3>Conferir: ${titulo}</h3><p class="muted">Origem: <b>${imp.origem === 'ia' ? 'leitura por IA (pode errar)' : imp.origem === 'manual' ? 'criação manual' : 'leitura automática por regras'}</b>. Corrija o que for preciso e confirme. Só então o plano é atualizado.</p>${imp.aviso ? `<div class="alerta">${E(imp.aviso)}</div>` : ''}${av}${corpoT}<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button class="b" onclick="plv3.fechar()">Cancelar</button><button class="b" onclick="plv3._reler()">Ler outro</button>${t === 'faculdade' ? '<button class="b" onclick="plv3._confirmar(\'substituir\')">Confirmar (substituir o que existe)</button>' : ''}<button class="b pri" onclick="plv3._confirmar(\'mesclar\')">Confirmar e atualizar plano</button></div>`);
+    overlay(`<h3>Conferir: ${titulo}</h3><p class="muted">Origem: <b>${imp.origem === 'ia' ? 'leitura por IA (pode errar)' : imp.origem === 'manual' ? 'criação manual' : 'leitura automática por regras'}</b>. Corrija o que for preciso e confirme. Só então o plano é atualizado.</p>${imp.aviso ? `<div class="alerta">${E(imp.aviso)}</div>` : ''}${av}${window.MentorContent ? window.MentorContent.documentPreview(imp.documento) : ''}<details class="mentor-document" open><summary>Leitura organizada do cronograma</summary><div class="mentor-prose">${window.MentorContent ? window.MentorContent.render(imp.rascunho) : ''}</div></details><h4>Conferir e editar os dados</h4>${corpoT}<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button class="b" onclick="plv3.fechar()">Cancelar</button><button class="b" onclick="plv3._reler()">Ler outro</button>${t === 'faculdade' ? '<button class="b" onclick="plv3._confirmar(\'substituir\')">Confirmar (substituir o que existe)</button>' : ''}<button class="b pri" onclick="plv3._confirmar(\'mesclar\')">Confirmar e atualizar plano</button></div>`);
   }
   async function _ler() {
     const st = document.getElementById('im-st'), btn = document.getElementById('im-ler');
@@ -332,7 +332,7 @@
       else if (texto.trim().length >= 30) corpo.texto = texto; else return toast('Cole o cronograma ou escolha um arquivo.', 'warning');
       btn.disabled = true; st.textContent = 'Lendo… (PDF e IA podem levar até 1 minuto)';
       const j = await post('/conferir', corpo);
-      imp.rascunho = j.rascunho; imp.ambiguidades = j.ambiguidades || []; imp.faltando = j.faltando || []; imp.origem = j.origem; imp.aviso = j.aviso;
+      imp.documento = j.documento; imp.rascunho = j.rascunho; imp.ambiguidades = j.ambiguidades || []; imp.faltando = j.faltando || []; imp.origem = j.origem; imp.aviso = j.aviso;
       if (imp.trilha === 'faculdade' && !imp.rascunho.provas) imp.rascunho = { provas: [], aulas: [] };
       if (imp.trilha === 'residencia' && !(imp.rascunho.itens || []).length && j.origem === 'nenhuma') { st.textContent = ''; btn.disabled = false; return toast((imp.ambiguidades[0] || {}).msg || 'Não consegui ler este formato.', 'warning'); }
       telaImport();
@@ -370,7 +370,7 @@
     overlay(`<h3>Lendo “${E(nome)}”…</h3><p class="muted">Baixando o PDF e extraindo o texto. Pode levar até 1 minuto.</p>`);
     try {
       const j = await post('/conferir', { trilha: 'residencia', driveId: id, nome, hoje: hoje() });
-      imp.rascunho = j.rascunho; imp.ambiguidades = j.ambiguidades || []; imp.faltando = j.faltando || []; imp.origem = j.origem; imp.aviso = j.aviso; imp.driveId = '';
+      imp.documento = j.documento; imp.rascunho = j.rascunho; imp.ambiguidades = j.ambiguidades || []; imp.faltando = j.faltando || []; imp.origem = j.origem; imp.aviso = j.aviso; imp.driveId = '';
       if (!(imp.rascunho.itens || []).length) { fechar(); return toast((imp.ambiguidades && imp.ambiguidades[0] && imp.ambiguidades[0].msg) || 'Não consegui extrair temas deste PDF. Cole o texto manualmente.', 'warning'); }
       telaImport();
     } catch (e) { fechar(); toast('Não consegui ler o PDF: ' + e.message, 'error'); }

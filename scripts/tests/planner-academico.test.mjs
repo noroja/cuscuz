@@ -50,6 +50,7 @@ const res = []; const teste = async (nome, fn) => { try { await fn(); res.push([
 await teste('9a. conferir (faculdade, regras) devolve rascunho sem alterar nada', async () => {
   const { j } = await post('/conferir', { trilha: 'faculdade', texto: CRON_FAC, hoje });
   assert.equal(j.success, true); assert.equal(j.origem, 'regras');
+  assert.equal(j.documento.texto, CRON_FAC); assert.equal(j.documento.nome, 'texto colado');
   assert.equal(j.rascunho.provas.length, 2); assert.ok(j.rascunho.aulas.length >= 3);
 });
 await teste('9b. detecta ambiguidades: prova no passado e sem conteúdo', async () => {

@@ -102,6 +102,7 @@ export function registerPlannerV3(app, { generateAI, aiConfigured, getBank, getS
         texto = (await pdfParaTexto(buf.toString('base64'))).slice(0, MAX_TEXTO);
       }
       if (texto.trim().length < 30) return falha(res, 400, 'Texto vazio ou curto demais para ler um cronograma.');
+      const documento = { nome: fonte, texto };
       const ano = hoje.slice(0, 4);
       const comIA = async (esquema, instrucao) => {
         const r = await generateAI({ contents: `${instrucao}\n\nREGRAS: extraia SOMENTE o que está escrito no texto. Não invente datas, disciplinas, temas nem provas. Datas sem ano usam ${ano}. Deixe vazio o que não constar. Datas no formato YYYY-MM-DD.\n\nTEXTO:\n${texto.slice(0, 60000)}`, config: { temperature: 0, responseMimeType: 'application/json', responseSchema: esquema } });
@@ -112,21 +113,21 @@ export function registerPlannerV3(app, { generateAI, aiConfigured, getBank, getS
         try { det = PE.parseCronograma(texto, hoje); } catch (_) { det = null; }
         let bruto = det && ((det.provas || []).length || (det.aulas || []).length) ? { provas: det.provas, aulas: det.aulas } : null;
         if (!bruto) {
-          if (!aiConfigured()) return res.json({ success: true, origem: 'nenhuma', iaDisponivel: false, rascunho: PA.validarExtracao({}, { hoje }), ambiguidades: [{ tipo: 'formato', msg: 'Não reconheci o formato do cronograma e a IA não está configurada (GROQ_API_KEY). Use linhas como "1. Disciplina" seguidas de "* dd/mm: conteúdo".' }], faltando: [] });
+          if (!aiConfigured()) return res.json({ success: true, documento, origem: 'nenhuma', iaDisponivel: false, rascunho: PA.validarExtracao({}, { hoje }), ambiguidades: [{ tipo: 'formato', msg: 'Não reconheci o formato do cronograma e a IA não está configurada (GROQ_API_KEY). Use linhas como "1. Disciplina" seguidas de "* dd/mm: conteúdo".' }], faltando: [] });
           bruto = await comIA(ESQ_FAC, 'Você lê cronogramas de faculdade de Medicina. Extraia as avaliações (provas) com disciplina, data e assuntos, e as aulas com disciplina, data e tema.'); origem = 'ia';
         }
         const v = PA.validarExtracao(bruto, { hoje });
-        return res.json({ success: true, origem, trilha, fonte, rascunho: { provas: v.provas, aulas: v.aulas, disciplinas: v.disciplinas }, ambiguidades: v.ambiguidades, faltando: v.faltando,
+        return res.json({ success: true, documento, origem, trilha, fonte, rascunho: { provas: v.provas, aulas: v.aulas, disciplinas: v.disciplinas }, ambiguidades: v.ambiguidades, faltando: v.faltando,
           aviso: origem === 'ia' ? 'Extraído por IA: confira cada linha antes de confirmar.' : undefined });
       }
       // residência
       let origem = 'regras'; let itens = PA.parseCronogramaResidencia(texto, hoje).itens;
       if (!itens.length) {
-        if (!aiConfigured()) return res.json({ success: true, origem: 'nenhuma', iaDisponivel: false, trilha, fonte, rascunho: { itens: [] }, ambiguidades: [{ tipo: 'formato', msg: 'Não reconheci o formato e a IA não está configurada. Use linhas "dd/mm: tema" ou crie o cronograma manualmente.' }], faltando: [] });
+        if (!aiConfigured()) return res.json({ success: true, documento, origem: 'nenhuma', iaDisponivel: false, trilha, fonte, rascunho: { itens: [] }, ambiguidades: [{ tipo: 'formato', msg: 'Não reconheci o formato e a IA não está configurada. Use linhas "dd/mm: tema" ou crie o cronograma manualmente.' }], faltando: [] });
         itens = saneItensResidencia((await comIA(ESQ_RES, 'Você lê cronogramas de preparação para residência médica. Extraia cada tema de estudo com a semana (número) e/ou a data, e a disciplina.')).itens); origem = 'ia';
       } else itens = saneItensResidencia(itens);
       const semData = itens.filter(i => !i.data).length;
-      return res.json({ success: true, origem, trilha, fonte, rascunho: { itens }, ambiguidades: semData ? [{ tipo: 'sem_data', msg: `${semData} item(ns) só têm a semana. Informe a data de início da semana 1 para distribuir nos seus dias de estudo.` }] : [],
+      return res.json({ success: true, documento, origem, trilha, fonte, rascunho: { itens }, ambiguidades: semData ? [{ tipo: 'sem_data', msg: `${semData} item(ns) só têm a semana. Informe a data de início da semana 1 para distribuir nos seus dias de estudo.` }] : [],
         faltando: itens.length ? [] : [{ tipo: 'vazio', msg: 'Nenhum tema identificado.' }], aviso: origem === 'ia' ? 'Extraído por IA: confira cada linha antes de confirmar.' : undefined });
     } catch (e) {
       console.warn('[Planner v3 conferir]', e.message);
