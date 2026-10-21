@@ -248,6 +248,25 @@ input::placeholder,textarea::placeholder {color:var(--text-muted) !important;opa
 .mobile-nav-btn.active {color:var(--text-primary) !important;box-shadow:none !important;background:var(--bg-elevated) !important}
 .mobile-nav-btn.active i {color:var(--teal) !important}
 .toast {border-radius:12px !important;background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border-default)}
+/* Acervo audit: real actions, readable rows, actionable recovery. */
+button.ac2-ph {appearance:none;border:0;font:inherit;color:var(--text-primary);width:100%;text-align:center}
+button.ac2-aula {appearance:none;width:100%;border:0;background:transparent;text-align:left;font:inherit;color:var(--text-primary);min-height:44px}
+button.ac2-aula:hover {background:var(--bg-hover)}
+button.ac2-aula {border-inline-start:3px solid transparent;box-shadow:none !important}
+button.ac2-aula.ativa {background:var(--bg-active);color:var(--text-primary);border-inline-start-color:var(--teal)}
+.ac2-time-tooltip,.ac2-cbadge,.ac2-time-display,.ac2-ctrl-sync,.ac2-speed-btn {font-family:var(--font-ui) !important}
+.ac2-player-wrap:has(+ .ac2-recovery:not([hidden])) {aspect-ratio:auto;height:180px}
+.ac2-aula .aula-title {min-width:0}
+.ac2-aula .aula-dur {font-size:12px !important}
+.ac2-progt {cursor:default;user-select:text}
+.ac2-progt:hover {border-color:var(--border-subtle)}
+.ac2-status-retry {display:inline-flex;align-items:center;justify-content:center;margin-top:8px;padding:7px 12px;min-height:38px;font:inherit;color:var(--text-primary);background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:999px;cursor:pointer}
+.ac2-status-retry:hover {background:var(--bg-hover)}
+#ac2-extra-st {font-size:13px !important;line-height:1.6;color:var(--text-secondary)}
+.ac2-recovery {display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:16px;margin:12px 0;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:12px;color:var(--text-primary);font-size:14px;line-height:1.6}
+.ac2-recovery[hidden] {display:none}
+.ac2-recovery button {margin:0}
+@media(pointer:coarse) {.ac2-cbtn,.ac2-navbtn,.ac2-search-clear,.ac2-status-retry {min-width:44px;min-height:44px}}
 /* Vercel interface review: explicit interactive and native-control states. */
 a.nav-item,a.mobile-nav-btn,a.study-text-action {text-decoration:none}
 .sidebar-brand-group {appearance:none;border:0;background:transparent;text-align:left;font:inherit;color:inherit}

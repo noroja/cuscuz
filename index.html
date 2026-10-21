@@ -2323,26 +2323,26 @@ mark.exam-highlight {
                   <div class="ac2-ctrl-row">
                     <div class="ac2-ctrl-left">
                       <!-- Play / Pause -->
-                      <button class="ac2-cbtn" id="ac2-play-btn" onclick="ac2TogglePlay()" title="Reproduzir / Pausar (Espaço)">
-                        <i class="ph ph-play-fill" id="ac2-play-icon"></i>
+                      <button class="ac2-cbtn" id="ac2-play-btn" onclick="ac2TogglePlay()" title="Reproduzir / Pausar (Espaço)" aria-label="Reproduzir / Pausar (Espaço)">
+                        <i class="ph ph-play-fill" aria-hidden="true" id="ac2-play-icon"></i>
                       </button>
                       <!-- Rewind 10s -->
-                      <button class="ac2-cbtn" onclick="ac2SeekOffset(-10)" title="Voltar 10s (←)">
-                        <i class="ph ph-arrow-counter-clockwise"></i>
+                      <button class="ac2-cbtn" onclick="ac2SeekOffset(-10)" title="Voltar 10s (←)" aria-label="Voltar 10s (←)">
+                        <i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i>
                         <span class="ac2-cbadge">10</span>
                       </button>
                       <!-- Forward 10s -->
-                      <button class="ac2-cbtn" onclick="ac2SeekOffset(10)" title="Avançar 10s (→)">
-                        <i class="ph ph-arrow-clockwise"></i>
+                      <button class="ac2-cbtn" onclick="ac2SeekOffset(10)" title="Avançar 10s (→)" aria-label="Avançar 10s (→)">
+                        <i class="ph ph-arrow-clockwise" aria-hidden="true"></i>
                         <span class="ac2-cbadge">10</span>
                       </button>
 
                       <!-- Volume -->
                       <div class="ac2-vol-wrap">
-                        <button class="ac2-cbtn" id="ac2-vol-btn" onclick="ac2ToggleMute()" title="Silenciar / Ativar som (M)">
-                          <i class="ph ph-speaker-high" id="ac2-vol-icon"></i>
+                        <button class="ac2-cbtn" id="ac2-vol-btn" onclick="ac2ToggleMute()" title="Silenciar / Ativar som (M)" aria-label="Silenciar / Ativar som (M)">
+                          <i class="ph ph-speaker-high" aria-hidden="true" id="ac2-vol-icon"></i>
                         </button>
-                        <input type="range" class="ac2-vol-slider" id="ac2-vol-slider" min="0" max="1" step="0.05" value="1" oninput="ac2SetVolume(this.value)">
+                        <input type="range" class="ac2-vol-slider" id="ac2-vol-slider" aria-label="Volume da videoaula" min="0" max="1" step="0.05" value="1" oninput="ac2SetVolume(this.value)">
                       </div>
 
                       <!-- Time Display -->
@@ -2362,19 +2362,19 @@ mark.exam-highlight {
 
                       <!-- Speed Selector Dropdown/Button -->
                       <div class="ac2-speed-wrap">
-                        <button class="ac2-cbtn ac2-speed-btn" id="ac2-speed-btn" onclick="ac2CycleSpeed()" title="Velocidade de Reprodução">
+                        <button class="ac2-cbtn ac2-speed-btn" id="ac2-speed-btn" onclick="ac2CycleSpeed()" title="Velocidade de Reprodução" aria-label="Velocidade de Reprodução">
                           <b id="ac2-speed-label">1.0x</b>
                         </button>
                       </div>
 
                       <!-- Picture-in-Picture -->
-                      <button class="ac2-cbtn" onclick="ac2TogglePiP()" title="Modo Picture-in-Picture (Janela Flutuante)">
-                        <i class="ph ph-picture-in-picture"></i>
+                      <button class="ac2-cbtn" onclick="ac2TogglePiP()" title="Modo Picture-in-Picture (Janela Flutuante)" aria-label="Modo Picture-in-Picture (Janela Flutuante)">
+                        <i class="ph ph-picture-in-picture" aria-hidden="true"></i>
                       </button>
 
                       <!-- Fullscreen -->
-                      <button class="ac2-cbtn" onclick="ac2ToggleFullscreen()" title="Tela Cheia (F)">
-                        <i class="ph ph-corners-out" id="ac2-fs-icon"></i>
+                      <button class="ac2-cbtn" onclick="ac2ToggleFullscreen()" title="Tela Cheia (F)" aria-label="Tela Cheia (F)">
+                        <i class="ph ph-corners-out" aria-hidden="true" id="ac2-fs-icon"></i>
                       </button>
                     </div>
                   </div>
@@ -2382,26 +2382,31 @@ mark.exam-highlight {
               </div>
 
               <!-- Placeholder interativo (pode alternar para YouTube ou Google Drive) -->
-              <div class="ac2-ph" id="ac2-ph" onclick="ac2IniciarPrimeira()">
-                <i class="ph ph-play-circle"></i>
+              <button type="button" class="ac2-ph" id="ac2-ph" onclick="ac2IniciarPrimeira()" aria-label="Reproduzir a primeira aula do curso">
+                <i class="ph ph-play-circle" aria-hidden="true"></i>
                 <div class="ac2-ph-title">Pronto para começar seus estudos?</div>
                 <div class="ac2-ph-sub">Selecione uma videoaula no menu lateral ou clique aqui para reproduzir a primeira aula do curso.</div>
-              </div>
+              </button>
             </div>
+          </div>
+
+          <div class="ac2-recovery" id="ac2-recovery" role="status" aria-live="polite" hidden>
+            <span>Não foi possível abrir esta videoaula. Tente carregá-la novamente ou escolha outra aula.</span>
+            <button type="button" class="ac2-status-retry" onclick="ac2Recarregar()">Recarregar videoaula</button>
           </div>
 
           <!-- Barra utilitária do player -->
           <div class="ac2-player-bar">
             <div class="ac2-player-bar-left">
-              <button class="ac2-navbtn ac2-outline-toggle" id="ac2-outline-toggle" onclick="ac2ToggleNav()" title="Mostrar aulas do curso" aria-controls="ac2-side" aria-expanded="false"><i class="ph ph-list-bullets"></i><span id="ac2-outline-toggle-label">Aulas do curso</span></button>
-              <button class="ac2-navbtn" onclick="ac2Recarregar()" title="Recarregar vídeo"><i class="ph ph-arrow-clockwise"></i></button>
-              <button class="ac2-navbtn" id="ac2-player-mode-btn" onclick="ac2AlternarModoPlayer()" title="Alternar player" style="display:none !important"><i class="ph ph-film-strip"></i></button>
+              <button class="ac2-navbtn ac2-outline-toggle" id="ac2-outline-toggle" onclick="ac2ToggleNav()" title="Mostrar aulas do curso" aria-controls="ac2-side" aria-expanded="false" aria-label="Mostrar aulas do curso"><i class="ph ph-list-bullets" aria-hidden="true"></i><span id="ac2-outline-toggle-label">Aulas do curso</span></button>
+              <button class="ac2-navbtn" onclick="ac2Recarregar()" title="Recarregar vídeo" aria-label="Recarregar vídeo"><i class="ph ph-arrow-clockwise" aria-hidden="true"></i></button>
+              <button class="ac2-navbtn" id="ac2-player-mode-btn" onclick="ac2AlternarModoPlayer()" title="Alternar player" style="display:none !important" aria-label="Alternar player"><i class="ph ph-film-strip" aria-hidden="true"></i></button>
               <span class="ac2-buffer-txt" id="ac2-buffer"></span>
             </div>
             <div class="ac2-player-bar-right">
-              <span class="ac2-buffer-txt" id="ac2-mode-label"><i class="ph ph-shield-check ok"></i> Player pronto</span>
+              <span class="ac2-buffer-txt" id="ac2-mode-label"><i class="ph ph-shield-check ok" aria-hidden="true"></i> Player pronto</span>
               <span>·</span>
-              <span class="ac2-bmeta" id="ac2-bmeta"><i class="ph ph-lightning"></i> <b id="ac2-buffer-txt">Qualidade automática</b></span>
+              <span class="ac2-bmeta" id="ac2-bmeta"><i class="ph ph-lightning" aria-hidden="true"></i> <b id="ac2-buffer-txt">Qualidade automática</b></span>
             </div>
           </div>
 
@@ -2417,49 +2422,47 @@ mark.exam-highlight {
             <h2 class="ac2-titulo" id="ac2-titulo">Carregando acervo de aulas…</h2>
 
             <div class="ac2-meta" id="ac2-meta">
-              <span><i class="ph ph-eye"></i> <b id="ac2-views">1.420 visualizações</b></span>
+              <span><i class="ph ph-clock" aria-hidden="true"></i> <b id="ac2-dur">—</b></span>
               <span class="sep">·</span>
-              <span><i class="ph ph-clock"></i> <b id="ac2-dur">38 min</b></span>
+              <span><i class="ph ph-graduation-cap" aria-hidden="true"></i> <b id="ac2-curso">—</b></span>
               <span class="sep">·</span>
-              <span><i class="ph ph-graduation-cap"></i> <b id="ac2-curso">—</b></span>
+              <span><i class="ph ph-folder-open" aria-hidden="true"></i> <b id="ac2-disc">—</b></span>
               <span class="sep">·</span>
-              <span><i class="ph ph-folder-open"></i> <b id="ac2-disc">—</b></span>
-              <span class="sep">·</span>
-              <span><i class="ph ph-check-circle" style="color:var(--green)"></i> <b>Aula Liberada</b></span>
+              <span><i class="ph ph-check-circle" aria-hidden="true" style="color:var(--green)"></i> <b>Aula Liberada</b></span>
             </div>
 
             <!-- 3. Barra de Ações Funcionais (Gostei/Não Gostei, Salvar, Marcar como vista, Próxima Aula) -->
             <div class="ac2-actions">
               <!-- Grupo de Avaliação Gostei / Não Gostei -->
               <div class="ac2-vote-group">
-                <button class="ac2-vote-btn" id="ac2-like" title="Gostei desta aula" onclick="ac2Like()">
-                  <i class="ph ph-thumbs-up"></i>
-                  <span id="ac2-like-count">128</span>
+                <button class="ac2-vote-btn" id="ac2-like" title="Gostei desta aula" onclick="ac2Like()" aria-label="Gostei desta aula">
+                  <i class="ph ph-thumbs-up" aria-hidden="true"></i>
+                  <span id="ac2-like-count">Gostei</span>
                 </button>
                 <div class="ac2-vote-sep"></div>
-                <button class="ac2-vote-btn" id="ac2-dislike" title="Não gostei" onclick="ac2Dislike()">
-                  <i class="ph ph-thumbs-down"></i>
+                <button class="ac2-vote-btn" id="ac2-dislike" title="Não gostei" onclick="ac2Dislike()" aria-label="Não gostei">
+                  <i class="ph ph-thumbs-down" aria-hidden="true"></i>
                 </button>
               </div>
 
               <!-- Botão Salvar (Favoritos) -->
-              <button class="ac2-act-btn" id="ac2-fav" title="Salvar aula nos favoritos">
-                <i class="ph ph-star"></i>
+              <button class="ac2-act-btn" id="ac2-fav" title="Salvar aula nos favoritos" aria-label="Salvar aula nos favoritos">
+                <i class="ph ph-star" aria-hidden="true"></i>
                 <span>Salvar</span>
               </button>
 
               <!-- Botão / Checkbox Marcar como vista -->
-              <button class="ac2-act-btn" id="ac2-done" title="Marcar aula como concluída">
-                <i class="ph ph-check-circle"></i>
+              <button class="ac2-act-btn" id="ac2-done" title="Marcar aula como concluída" aria-label="Marcar aula como concluída">
+                <i class="ph ph-check-circle" aria-hidden="true"></i>
                 <span>Marcar como vista</span>
               </button>
 
               <!-- Link Direto no Google Drive -->
 
               <!-- Botão Próxima Aula -->
-              <button class="ac2-act-btn ac2-act-next" id="ac2-next" title="Ir para a próxima aula">
+              <button class="ac2-act-btn ac2-act-next" id="ac2-next" title="Ir para a próxima aula" aria-label="Ir para a próxima aula">
                 <span>Próxima Aula</span>
-                <i class="ph ph-skip-forward"></i>
+                <i class="ph ph-skip-forward" aria-hidden="true"></i>
               </button>
             </div>
 
@@ -2469,7 +2472,7 @@ mark.exam-highlight {
           <div class="ac2-mat-card">
             <div class="ac2-mat-head">
               <div>
-                <h3><i class="ph ph-book-open"></i> <span id="ac2-mat-title">Materiais do conteúdo</span></h3>
+                <h3><i class="ph ph-book-open" aria-hidden="true"></i> <span id="ac2-mat-title">Materiais do conteúdo</span></h3>
                 <div class="ac2-mat-sub" id="ac2-mat-sub">Arquivos da aula e da disciplina, organizados por tipo.</div>
               </div>
               <span class="ac2-mat-badge" id="ac2-mat-badge">3 arquivos disponíveis</span>
@@ -2477,20 +2480,20 @@ mark.exam-highlight {
 
             <!-- Recursos ligados à aula: leitura, apostila ou revisão ativa -->
             <div class="ac2-mat-tabs" role="tablist" aria-label="Recursos desta aula" onkeydown="matTabsKeydown(event)">
-              <button type="button" role="tab" aria-selected="true" aria-controls="mat-content-questoes" tabindex="0" class="ac2-mat-tab active" id="mat-tab-questoes" data-tab="questoes" onclick="matSwitchTab('questoes')"><i class="ph ph-exam"></i> Questões</button>
-              <button type="button" role="tab" aria-selected="false" aria-controls="mat-content-pdf" tabindex="-1" class="ac2-mat-tab" id="mat-tab-pdf" data-tab="pdf" onclick="matSwitchTab('pdf')"><i class="ph ph-file-pdf"></i> PDFs</button>
-              <button type="button" role="tab" aria-selected="false" aria-controls="mat-content-apostila" tabindex="-1" class="ac2-mat-tab" id="mat-tab-apostila" data-tab="apostila" onclick="matSwitchTab('apostila')"><i class="ph ph-book-open"></i> Apostilas</button>
-              <button type="button" role="tab" aria-selected="false" aria-controls="mat-content-flashcards" tabindex="-1" class="ac2-mat-tab" id="mat-tab-flashcards" data-tab="flashcards" onclick="matSwitchTab('flashcards')"><i class="ph ph-cards"></i> Flashcards</button>
+              <button type="button" role="tab" aria-selected="true" aria-controls="mat-content-questoes" tabindex="0" class="ac2-mat-tab active" id="mat-tab-questoes" data-tab="questoes" onclick="matSwitchTab('questoes')"><i class="ph ph-exam" aria-hidden="true"></i> Questões</button>
+              <button type="button" role="tab" aria-selected="false" aria-controls="mat-content-pdf" tabindex="-1" class="ac2-mat-tab" id="mat-tab-pdf" data-tab="pdf" onclick="matSwitchTab('pdf')"><i class="ph ph-file-pdf" aria-hidden="true"></i> PDFs</button>
+              <button type="button" role="tab" aria-selected="false" aria-controls="mat-content-apostila" tabindex="-1" class="ac2-mat-tab" id="mat-tab-apostila" data-tab="apostila" onclick="matSwitchTab('apostila')"><i class="ph ph-book-open" aria-hidden="true"></i> Apostilas</button>
+              <button type="button" role="tab" aria-selected="false" aria-controls="mat-content-flashcards" tabindex="-1" class="ac2-mat-tab" id="mat-tab-flashcards" data-tab="flashcards" onclick="matSwitchTab('flashcards')"><i class="ph ph-cards" aria-hidden="true"></i> Flashcards</button>
             </div>
 
             <div id="mat-content-questoes" class="ac2-mat-content active" role="tabpanel" tabindex="0" aria-labelledby="mat-tab-questoes">
               <div style="padding:18px 8px 10px">
                 <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:16px">
-                  <i class="ph ph-target" style="font-size:22px;color:var(--cyan);margin-top:2px"></i>
+                  <i class="ph ph-target" aria-hidden="true" style="font-size:22px;color:var(--cyan);margin-top:2px"></i>
                   <div><strong style="display:block;color:var(--text-primary);font-size:15px;margin-bottom:4px">Pratique o conteúdo desta aula</strong><span style="color:var(--text-secondary);font-size:13px;line-height:1.5">Questões relacionadas ao tema, selecionadas do banco disponível.</span></div>
                 </div>
                 <div class="ac2-praticar-wrap" id="ac2-praticar-wrap" style="display:none">
-                  <button class="btn-praticar-questoes-tema" id="ac2-btn-praticar" onclick="ac2PraticarQuestoesTema()" title="Praticar questões selecionadas sobre este tema">
+                  <button class="btn-praticar-questoes-tema" id="ac2-btn-praticar" onclick="ac2PraticarQuestoesTema()" title="Praticar questões selecionadas sobre este tema" aria-label="Praticar questões selecionadas sobre este tema">
                     <span class="praticar-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg></span>
                     <span class="praticar-text">Praticar questões: <strong id="ac2-praticar-tema">Tema da Aula</strong> (<span id="ac2-praticar-qtd">80</span>)</span>
                   </button>
@@ -2516,17 +2519,17 @@ mark.exam-highlight {
               <div class="apostila-reader-inline" id="apostila-reader-inline" style="display:none;margin-top:16px;border:1px solid var(--border-muted);border-radius:16px;overflow:hidden;background:var(--bg-surface);box-shadow:var(--shadow-glass)">
                 <div class="apostila-reader-inline-header" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-base);border-bottom:1px solid var(--border-subtle);flex-shrink:0">
                   <div style="display:flex;align-items:center;gap:8px">
-                    <i class="ph ph-book-open" style="font-size:18px;color:var(--teal)"></i>
+                    <i class="ph ph-book-open" aria-hidden="true" style="font-size:18px;color:var(--teal)"></i>
                     <span id="apostila-inline-title" style="font-weight:700;color:var(--text-primary);font-size:14px">Apostila</span>
                   </div>
                   <div style="display:flex;align-items:center;gap:6px">
-                    <button class="apostila-reader-btn" style="padding:6px 10px;font-size:11px" onclick="toggleApostilaInlineToc()"><i class="ph ph-list"></i><span style="margin-left:4px">Sumário</span></button>
-                    <button class="apostila-reader-close" onclick="apostilaInlineClose()" style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:var(--bg-hover);border:1px solid var(--border-subtle)"><i class="ph ph-x"></i></button>
+                    <button class="apostila-reader-btn" style="padding:6px 10px;font-size:11px" onclick="toggleApostilaInlineToc()"><i class="ph ph-list" aria-hidden="true"></i><span style="margin-left:4px">Sumário</span></button>
+                    <button class="apostila-reader-close" onclick="apostilaInlineClose()" style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:var(--bg-hover);border:1px solid var(--border-subtle)"><i class="ph ph-x" aria-hidden="true"></i></button>
                   </div>
                 </div>
                 <div class="apostila-reader-inline-content" id="apostila-reader-inline-content" style="flex:1;overflow:hidden;background:var(--bg-base);min-height:400px;position:relative">
                   <div class="apostila-reader-loading" id="apostila-inline-loading" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:var(--text-muted);font-size:14px;padding:40px">
-                    <i class="ph ph-book-open" style="font-size:40px;color:var(--teal);animation:pulse 1.5s ease-in-out infinite"></i>
+                    <i class="ph ph-book-open" aria-hidden="true" style="font-size:40px;color:var(--teal);animation:pulse 1.5s ease-in-out infinite"></i>
                     <span>Carregando apostila…</span>
                   </div>
                   <iframe class="apostila-reader-frame" id="apostila-inline-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock" style="width:100%;height:100%;border:0;background:var(--bg-base);display:none"></iframe>
@@ -2535,11 +2538,11 @@ mark.exam-highlight {
                   <div class="apostila-inline-toc-panel" id="apostila-inline-toc-panel" style="position:absolute;top:0;right:0;width:300px;height:100%;background:var(--bg-surface);border-left:1px solid var(--border-muted);box-shadow:var(--shadow-glass-lg);z-index:10;transform:translateX(100%);transition:transform .3s cubic-bezier(0.16,1,0.3,1);display:flex;flex-direction:column">
                     <div style="padding:12px 16px;border-bottom:1px solid var(--border-muted);background:var(--bg-base);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
                       <span style="font-weight:700;color:var(--text-primary);font-size:13px">Sumário</span>
-                      <button onclick="toggleApostilaInlineToc()" style="width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:var(--bg-hover);border:1px solid var(--border-subtle)"><i class="ph ph-x"></i></button>
+                      <button onclick="toggleApostilaInlineToc()" style="width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:var(--bg-hover);border:1px solid var(--border-subtle)"><i class="ph ph-x" aria-hidden="true"></i></button>
                     </div>
                     <div style="padding:8px;border-bottom:1px solid var(--border-muted);position:relative;flex-shrink:0">
                       <input type="text" id="apostila-inline-toc-search" placeholder="Buscar no sumário…" style="width:100%;padding:8px 32px 8px 10px;border-radius:6px;border:1px solid var(--border-muted);background:var(--bg-elevated);color:var(--text-primary);font-size:12px;outline:none" oninput="filterApostilaInlineToc(this.value)">
-                      <i class="ph ph-magnifying-glass" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:12px;pointer-events:none"></i>
+                      <i class="ph ph-magnifying-glass" aria-hidden="true" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:12px;pointer-events:none"></i>
                     </div>
                     <div class="apostila-inline-toc-tree" id="apostila-inline-toc-tree" style="flex:1;overflow-y:auto;padding:8px"></div>
                   </div>
@@ -2551,11 +2554,11 @@ mark.exam-highlight {
             <div id="mat-content-flashcards" class="ac2-mat-content" role="tabpanel" tabindex="0" aria-labelledby="mat-tab-flashcards" style="display:none">
               <div class="ac2-flashcards-entry">
                 <div class="ac2-flashcards-copy">
-                  <span class="ac2-flashcards-kicker"><i class="ph ph-brain"></i> Revisão ativa · SRS</span>
+                  <span class="ac2-flashcards-kicker"><i class="ph ph-brain" aria-hidden="true"></i> Revisão ativa · SRS</span>
                   <strong>Fixe os pontos principais desta aula</strong>
                   <span>Abra o deck do tema. Suas avaliações entram na mesma fila de revisão do Planejador.</span>
                 </div>
-                <button type="button" class="btn-primary ac2-flashcards-cta" onclick="ac2AbrirFlashcards()"><i class="ph ph-cards"></i> Iniciar revisão SRS</button>
+                <button type="button" class="btn-primary ac2-flashcards-cta" onclick="ac2AbrirFlashcards()"><i class="ph ph-cards" aria-hidden="true"></i> Iniciar revisão SRS</button>
               </div>
               <div id="ac2-fc-area" class="ac2-fc-area" aria-live="polite" aria-atomic="true"></div>
             </div>
@@ -2566,19 +2569,19 @@ mark.exam-highlight {
         <aside class="ac2-side" id="ac2-side" aria-label="Aulas e módulos do curso">
           <!-- Cabeçalho da Sidebar com estatísticas -->
           <div class="ac2-side-head">
-            <h2><i class="ph ph-graduation-cap" style="color:var(--teal)"></i> Conteúdo do curso</h2>
+            <h2><i class="ph ph-graduation-cap" aria-hidden="true" style="color:var(--teal)"></i> Conteúdo do curso</h2>
             <div class="ac2-stats" id="ac2-stats">
-              <span><i class="ph ph-play-circle"></i> <b>—</b> aulas</span>
+              <span><i class="ph ph-play-circle" aria-hidden="true"></i> <b>—</b> aulas</span>
               <span class="dot">·</span>
-              <span><i class="ph ph-clock"></i> <b>—</b></span>
+              <span><i class="ph ph-clock" aria-hidden="true"></i> <b>—</b></span>
               <span class="dot">·</span>
-              <span><i class="ph ph-folder-simple"></i> <b>—</b> módulos</span>
+              <span><i class="ph ph-folder-simple" aria-hidden="true"></i> <b>—</b> módulos</span>
             </div>
 
             <!-- Progresso do curso -->
-            <div class="ac2-progt" id="ac2-progt" onclick="ac2ToggleProg()" title="Clique para alternar detalhes">
+            <section class="ac2-progt" id="ac2-progt" aria-label="Progresso do curso">
               <div class="ac2-progt-row">
-                <span><i class="ph ph-chart-line-up" style="color:var(--teal)"></i> Progresso no curso</span>
+                <span><i class="ph ph-chart-line-up" aria-hidden="true" style="color:var(--teal)"></i> Progresso no curso</span>
                 <span class="pct" id="ac2-pct-mini">0%</span>
               </div>
               <div class="ac2-progt-bar">
@@ -2586,22 +2589,22 @@ mark.exam-highlight {
               </div>
               <div class="ac2-progt-sub">
                 <span id="ac2-contagem">0/0 aulas concluídas</span>
-                <i class="ph ph-caret-down caret"></i>
+
               </div>
-            </div>
+            </section>
           </div>
 
           <!-- Barra de Busca de Aulas -->
           <div class="ac2-search-box">
-            <i class="ph ph-magnifying-glass"></i>
+            <i class="ph ph-magnifying-glass" aria-hidden="true"></i>
             <input type="search" id="ac2-busca" name="courseSearch" aria-label="Buscar aulas neste curso" class="ac2-search-input" placeholder="Buscar aulas específicas no curso…" autocomplete="off">
-            <button class="ac2-search-clear" id="ac2-busca-clear" title="Limpar busca" onclick="ac2LimparBusca()"><i class="ph ph-x"></i></button>
+            <button class="ac2-search-clear" id="ac2-busca-clear" title="Limpar busca" onclick="ac2LimparBusca()" aria-label="Limpar busca"><i class="ph ph-x" aria-hidden="true"></i></button>
           </div>
 
           <!-- Menu em Accordion (Sanfona) com rolagem independente -->
           <div id="ac2-arvore" class="ac2-arvore">
             <div style="padding:28px 16px;text-align:center;color:var(--text-muted);font-size:13px">
-              <i class="ph ph-circle-notch" style="animation:spin 1s linear infinite;display:block;font-size:26px;margin:0 auto 10px;color:var(--teal)"></i>
+              <i class="ph ph-circle-notch" aria-hidden="true" style="animation:spin 1s linear infinite;display:block;font-size:26px;margin:0 auto 10px;color:var(--teal)"></i>
               Carregando módulos do curso…
             </div>
           </div>
@@ -2614,16 +2617,16 @@ mark.exam-highlight {
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <input type="text" id="drive-filter-input" class="drive-filter-input" placeholder="🔎 Filtrar nesta pasta..." oninput="filterCurrentDriveFolder(this.value)">
-          <button class="filter-pill" id="drive-filter-pinned-btn" onclick="toggleDriveFilterPinned()"><i class="ph ph-push-pin" style="color:var(--teal)"></i> Fixados Offline (<span id="drive-pinned-count">0</span>)</button>
-          <button class="filter-pill" onclick="openFavorites()"><i class="ph ph-star" style="color:#FFC107"></i> Favoritos</button>
-          <button class="filter-pill" onclick="refreshCurrentDriveFolder()"><i class="ph ph-arrows-clockwise" style="color:var(--teal)"></i> Atualizar Drive</button>
+          <button class="filter-pill" id="drive-filter-pinned-btn" onclick="toggleDriveFilterPinned()"><i class="ph ph-push-pin" aria-hidden="true" style="color:var(--teal)"></i> Fixados Offline (<span id="drive-pinned-count">0</span>)</button>
+          <button class="filter-pill" onclick="openFavorites()"><i class="ph ph-star" aria-hidden="true" style="color:#FFC107"></i> Favoritos</button>
+          <button class="filter-pill" onclick="refreshCurrentDriveFolder()"><i class="ph ph-arrows-clockwise" aria-hidden="true" style="color:var(--teal)"></i> Atualizar Drive</button>
         </div>
       </div>
 
       <div style="margin:0 20px 12px">
         <button class="filter-pill" onclick="plMenuToggle()" style="width:100%;justify-content:space-between;padding:12px 16px;border-radius:14px">
-          <span style="display:flex;align-items:center;gap:9px;font-weight:700"><i class="ph ph-tree-structure" style="color:var(--teal);font-size:18px"></i> Menu do curso — todas as videoaulas por curso e disciplina</span>
-          <i class="ph ph-caret-down" id="pl-menu-caret"></i>
+          <span style="display:flex;align-items:center;gap:9px;font-weight:700"><i class="ph ph-tree-structure" aria-hidden="true" style="color:var(--teal);font-size:18px"></i> Menu do curso — todas as videoaulas por curso e disciplina</span>
+          <i class="ph ph-caret-down" aria-hidden="true" id="pl-menu-caret"></i>
         </button>
         <div id="pl-menu-acervo" style="display:none;margin-top:10px">
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -2649,31 +2652,31 @@ mark.exam-highlight {
 
       <!-- Pastas / Cursos -->
       <div id="drive-folders-section">
-        <div class="content-list-title" id="drive-folders-title" style="display:none"><i class="ph ph-folder-notch-open" style="font-size:16px;vertical-align:middle"></i> Pastas / Cursos</div>
+        <div class="content-list-title" id="drive-folders-title" style="display:none"><i class="ph ph-folder-notch-open" aria-hidden="true" style="font-size:16px;vertical-align:middle"></i> Pastas / Cursos</div>
         <div class="cards-grid" id="drive-folders-grid" style="padding:0 20px 24px"></div>
       </div>
 
       <!-- Videoaulas -->
       <div id="drive-videos-section">
-        <div class="content-list-title" id="drive-videos-title" style="display:none"><i class="ph ph-play-circle" style="font-size:16px;vertical-align:middle"></i> Videoaulas</div>
+        <div class="content-list-title" id="drive-videos-title" style="display:none"><i class="ph ph-play-circle" aria-hidden="true" style="font-size:16px;vertical-align:middle"></i> Videoaulas</div>
         <div class="content-list" id="drive-videos-grid"></div>
       </div>
 
       <!-- Materiais / PDFs -->
       <div id="drive-pdfs-section">
-        <div class="content-list-title" id="drive-pdfs-title" style="display:none"><i class="ph ph-file-pdf" style="font-size:16px;vertical-align:middle"></i> Materiais & Apostilas (PDF)</div>
+        <div class="content-list-title" id="drive-pdfs-title" style="display:none"><i class="ph ph-file-pdf" aria-hidden="true" style="font-size:16px;vertical-align:middle"></i> Materiais & Apostilas (PDF)</div>
         <div class="content-list" id="drive-pdfs-grid"></div>
       </div>
 
       <!-- Apostilas HTML (Leitor MedReader) -->
       <div id="drive-apostilas-section">
-        <div class="content-list-title" id="drive-apostilas-title" style="display:none"><i class="ph ph-book-open" style="font-size:16px;vertical-align:middle;color:var(--teal)"></i> Apostilas Interativas (HTML)</div>
+        <div class="content-list-title" id="drive-apostilas-title" style="display:none"><i class="ph ph-book-open" aria-hidden="true" style="font-size:16px;vertical-align:middle;color:var(--teal)"></i> Apostilas Interativas (HTML)</div>
         <div class="content-list" id="drive-apostilas-grid"></div>
       </div>
 
       <!-- Outros Arquivos -->
       <div id="drive-other-section">
-        <div class="content-list-title" id="drive-other-title" style="display:none"><i class="ph ph-files" style="font-size:16px;vertical-align:middle"></i> Outros Arquivos</div>
+        <div class="content-list-title" id="drive-other-title" style="display:none"><i class="ph ph-files" aria-hidden="true" style="font-size:16px;vertical-align:middle"></i> Outros Arquivos</div>
         <div class="content-list" id="drive-other-grid"></div>
       </div>
 
@@ -2692,7 +2695,7 @@ mark.exam-highlight {
         </div>
         <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap">
           <button class="btn-outline btn-sm" onclick="refreshCurrentDriveFolder()">
-            <i class="ph ph-arrows-clockwise"></i> Atualizar Drive
+            <i class="ph ph-arrows-clockwise" aria-hidden="true"></i> Atualizar Drive
           </button>
         </div>
       </div>
@@ -2714,20 +2717,20 @@ mark.exam-highlight {
         </div>
 
         <!-- SISTEMA DE ABAS -->
-        <div class="treino-tabs-bar">
-          <button class="treino-tab-btn active" id="tab-btn-prontas" onclick="switchTreinoTab('prontas')">
+        <div class="treino-tabs-bar" role="tablist" aria-label="Formas de praticar" onkeydown="treinoTabsKeydown(event)">
+          <button class="treino-tab-btn active" id="tab-btn-prontas" role="tab" aria-controls="treino-tab-prontas" aria-selected="true" tabindex="0" onclick="switchTreinoTab('prontas')">
             <i class="ph ph-list-checks" aria-hidden="true"></i> Questões <span id="prontas-badge-count">0</span>
           </button>
-          <button class="treino-tab-btn" id="tab-btn-gemini" onclick="switchTreinoTab('gemini')">
+          <button class="treino-tab-btn" id="tab-btn-gemini" role="tab" aria-controls="treino-tab-gemini" aria-selected="false" tabindex="-1" onclick="switchTreinoTab('gemini')">
             <i class="ph ph-sparkle" aria-hidden="true"></i> Criar com IA
           </button>
-          <button class="treino-tab-btn" id="tab-btn-flashcards" onclick="switchTreinoTab('flashcards')">
+          <button class="treino-tab-btn" id="tab-btn-flashcards" role="tab" aria-controls="treino-tab-flashcards" aria-selected="false" tabindex="-1" onclick="switchTreinoTab('flashcards')">
             <i class="ph ph-cards" aria-hidden="true"></i> Flashcards <span id="fc-due">0</span>
           </button>
         </div>
 
         <!-- CONTEÚDO DA ABA 1: QUESTÕES PRONTAS -->
-        <div id="treino-tab-prontas" class="treino-tab-content">
+        <div id="treino-tab-prontas" role="tabpanel" aria-labelledby="tab-btn-prontas" tabindex="0" class="treino-tab-content">
           <!-- Barra de Filtros e Busca -->
           <div class="imp-box" style="margin-bottom:16px;padding:16px 20px">
             <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
@@ -2781,7 +2784,7 @@ mark.exam-highlight {
         </div>
 
         <!-- CONTEÚDO DA ABA 2: GERADOR GEMINI -->
-        <div id="treino-tab-gemini" class="treino-tab-content" style="display:none">
+        <div id="treino-tab-gemini" role="tabpanel" aria-labelledby="tab-btn-gemini" tabindex="0" class="treino-tab-content" style="display:none">
           <div class="imp-box" style="margin-bottom:24px">
             <div style="display:flex;align-items:center;gap:10px">
               <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--cyan),var(--teal));display:flex;align-items:center;justify-content:center;color:#000;font-size:20px">
@@ -2860,7 +2863,7 @@ mark.exam-highlight {
         </div>
 
         <!-- CONTEÚDO DA ABA 3: FLASHCARDS SRS & DECKS -->
-        <div id="treino-tab-flashcards" class="treino-tab-content" style="display:none">
+        <div id="treino-tab-flashcards" role="tabpanel" aria-labelledby="tab-btn-flashcards" tabindex="0" class="treino-tab-content" style="display:none">
           <div id="bank-panel" class="imp-box" style="margin-bottom:24px">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
               <b style="font-size:15px">🗂️ Revisão Ativa (Active Recall & SRS)</b>
@@ -6623,13 +6626,24 @@ function updateBankBadges() {
 }
 
 // Alternância entre as 3 Abas
+function treinoTabsKeydown(event) {
+  const names = ['prontas', 'gemini', 'flashcards'];
+  const current = names.findIndex(name => event.target.closest('#tab-btn-' + name));
+  if (current < 0 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? names.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : names.length - 1)) % names.length;
+  switchTreinoTab(names[next]);
+  $('tab-btn-' + names[next]).focus();
+}
+
 function switchTreinoTab(tabName) {
+  if (!['prontas', 'gemini', 'flashcards'].includes(tabName)) return;
   activeTreinoTab = tabName;
   ['prontas', 'gemini', 'flashcards'].forEach(t => {
     const btn = $('tab-btn-' + t);
     const content = $('treino-tab-' + t);
-    if (btn) btn.classList.toggle('active', t === tabName);
-    if (content) content.style.display = (t === tabName) ? 'block' : 'none';
+    if (btn) { btn.classList.toggle('active', t === tabName); btn.setAttribute('aria-selected', String(t === tabName)); btn.tabIndex = t === tabName ? 0 : -1; }
+    if (content) { content.style.display = (t === tabName) ? 'block' : 'none'; content.hidden = t !== tabName; }
   });
   if (tabName === 'prontas') {
     renderBankQuestionsFeed();
@@ -10238,19 +10252,6 @@ const AC2 = {
   ordem: []
 };
 
-function ac2CalcularLikes(id) {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = ((hash << 5) - hash) + id.charCodeAt(i);
-  const base = (Math.abs(hash) % 180) + 42;
-  return base + (AC2_LIKES.has(id) ? 1 : 0);
-}
-
-function ac2CalcularViews(id) {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = ((hash << 5) - hash) + id.charCodeAt(i);
-  const base = (Math.abs(hash) % 2400) + 850;
-  return base.toLocaleString('pt-BR');
-}
 
 window.ac2Like = function () {
   if (!AC2.atualId) return;
@@ -10350,17 +10351,33 @@ function ac2Init() {
     });
     AC2.sig = (data.generatedAt || '') + '/' + (data.videos || []).length + '/' + (data.materials || []).length;
     AC2.pronto = true;
-    const totalHoras = Math.round(AC2.LISTA.length * 0.6);
     $('ac2-stats').innerHTML =
       '<span><i class="ph ph-play-circle" style="color:var(--teal)"></i> <b>' + AC2.LISTA.length.toLocaleString('pt-BR') + '</b> aulas</span>' +
-      '<span class="dot">·</span>' +
-      '<span><i class="ph ph-clock" style="color:var(--teal)"></i> <b>~' + totalHoras.toLocaleString('pt-BR') + 'h</b></span>' +
       '<span class="dot">·</span>' +
       '<span><i class="ph ph-folder-simple" style="color:var(--teal)"></i> <b>' + AC2.ORDEM.length + '</b> módulos</span>';
     ac2RenderArvore();
     ac2Progresso();
   });
   return AC2.carregando;
+}
+
+function ac2StatusMensagem(st) {
+  const retry = '<button type="button" class="ac2-status-retry" onclick="ac2TentarAtualizar(this)">Tentar novamente</button>';
+  if (!st || !st.chave || st.erroConta || (st.erro && !st.videos && !st.materiais)) {
+    return '<span>Não foi possível atualizar o acervo. Tente novamente. Se persistir, avise o suporte da plataforma.</span>' + retry;
+  }
+  if (st.running) return '<span>Atualizando o acervo… Você pode continuar usando os materiais disponíveis.</span>';
+  if (st.erro || st.falhas) return '<span>Parte do acervo não pôde ser atualizada. Os materiais disponíveis continuam acessíveis.</span>' + retry;
+  const total = Math.max(0, Number(st.videos) || 0) + Math.max(0, Number(st.materiais) || 0);
+  return '<span>Acervo atualizado · ' + new Intl.NumberFormat('pt-BR').format(total) + ' itens disponíveis</span>';
+}
+
+async function ac2TentarAtualizar(button) {
+  if (!button || button.disabled) return;
+  button.disabled = true;
+  button.textContent = 'Atualizando…';
+  try { await ac2Atualizar(); }
+  finally { if (button.isConnected) { button.disabled = false; button.textContent = 'Tentar novamente'; } }
 }
 
 /* Atualização por evento do Drive; esta rotina também roda uma vez ao abrir a área para mostrar estado e recuperar cache. */
@@ -10370,13 +10387,11 @@ async function ac2Atualizar() {
     const st = await fetch('/api/acervo/extra-status').then(r => r.ok ? r.json() : null).catch(() => null);
     const stats = $('ac2-stats');
     let aviso = $('ac2-extra-st');
-    if (st && stats) {
+    if (stats) {
       if (!aviso) { aviso = document.createElement('span'); aviso.id = 'ac2-extra-st'; aviso.style.cssText = 'display:block;width:100%;font-size:11.5px;margin-top:4px'; stats.appendChild(aviso); }
-      aviso.innerHTML = !st.chave ? '<span style="color:var(--amber,#f59e0b)">⚠ Falta GOOGLE_SERVICE_ACCOUNT_JSON (pasta privada) ou GOOGLE_DRIVE_API_KEY (pasta com link) no Render — sem isso o servidor não lê o Drive.</span>'
-        : st.erroConta ? '<span style="color:var(--amber,#f59e0b)">⚠ Conta de serviço: ' + esc(st.erroConta) + '</span>'
-        : st.erro && !st.videos && !st.materiais ? '<span style="color:var(--amber,#f59e0b)">⚠ Não consegui ler o Drive: ' + esc(st.erro) + '</span>'
-        : st.running ? '<span style="color:var(--text-muted)">Lendo o Drive… ' + (st.pastas || 0) + ' pastas, ' + (st.videos || 0) + ' vídeos, ' + (st.materiais || 0) + ' materiais</span>'
-        : st.erro || st.falhas ? '<span style="color:var(--amber,#f59e0b)">⚠ ' + esc(st.erro || (st.falhas + ' pasta(s) não puderam ser lidas')) + '</span>' : '<span style="color:var(--text-muted)">Drive em dia · ' + ((st.videos || 0) + (st.materiais || 0)).toLocaleString('pt-BR') + ' itens lidos das pastas ao vivo</span>';
+      aviso.setAttribute('role', 'status');
+      aviso.setAttribute('aria-live', 'polite');
+      aviso.innerHTML = ac2StatusMensagem(st);
     }
     if (!AC2.pronto) { if (!AC2.carregando && $('view-acervo') && $('view-acervo').classList.contains('active')) ac2Init(); return; }
     const data = await fetch('/acervo-manifest.json', { cache: 'no-store' }).then(r => r.json());
@@ -10443,15 +10458,15 @@ function ac2PreencherNo(id) {
     '</div>').join('');
   const aulas = no.aulas.slice().sort((a, b) => ac2Nat(a.titulo, b.titulo)).map(v => {
     const feita = DONE.has('drive:' + v.id);
-    return '<div class="ac2-aula' + (AC2.atualId === v.id ? ' ativa' : '') + '" data-id="' + v.id + '" style="padding-left:' + (pad + 12) + 'px" onclick="ac2Abrir(\'' + v.id + '\')" title="' + esc(v.titulo) + '">' +
+    return '<button type="button" class="ac2-aula' + (AC2.atualId === v.id ? ' ativa' : '') + '" data-id="' + v.id + '" style="padding-left:' + (pad + 12) + 'px" onclick="ac2Abrir(\'' + v.id + '\')" title="' + esc(v.titulo) + '">' +
       '<i class="ph ' + (feita ? 'ph-check-circle ok-i' : 'ph-play-circle') + '"></i>' +
       '<span class="aula-title">' + esc(v.titulo) + '</span>' +
-      '<span class="aula-dur">35 min</span>' +
-    '</div>';
+      '<span class="aula-dur">Aula</span>' +
+    '</button>';
   }).join('');
   const docs = no.docs.slice().sort((a, b) => ac2Nat(a.titulo, b.titulo)).map(d =>
-    '<div class="ac2-aula" style="padding-left:' + (pad + 12) + 'px" onclick="window.cuscuzAbrirPdf(\'' + d.id + '\')" title="' + esc(d.titulo) + '">' +
-      '<i class="ph ph-file-pdf" style="color:#ef4444"></i><span class="aula-title">' + esc(d.titulo) + '</span><span class="aula-dur">PDF</span></div>').join('');
+    '<button type="button" class="ac2-aula" style="padding-left:' + (pad + 12) + 'px" onclick="window.cuscuzAbrirPdf(\'' + d.id + '\')" title="' + esc(d.titulo) + '">' +
+      '<i class="ph ph-file-pdf" style="color:#ef4444"></i><span class="aula-title">' + esc(d.titulo) + '</span><span class="aula-dur">PDF</span></button>').join('');
   alvo.innerHTML = pastas + aulas + docs;
   alvo.dataset.preenchido = '1';
 }
@@ -10502,22 +10517,17 @@ window.ac2ToggleSub = function (btn) {
   if (sub.classList.contains('aberto')) ac2PreencherNo(+sub.dataset.sub);
 };
 
-window.ac2ToggleProg = function () {
-  const p = $('ac2-progt');
-  if (p) p.classList.toggle('aberto');
-};
-
 function ac2Preencher(curso, disc) {
   const alvo = document.querySelector('#ac2-arvore [data-lista="' + CSS.escape(curso) + '||' + CSS.escape(disc) + '"]');
   if (!alvo || alvo.dataset.preenchido) return;
   const aulas = (AC2.ARVORE.get(curso) || new Map()).get(disc) || [];
   alvo.innerHTML = aulas.map(v => {
     const feita = DONE.has('drive:' + v.id);
-    return '<div class="ac2-aula' + (AC2.atualId === v.id ? ' ativa' : '') + '" data-id="' + v.id + '" onclick="ac2Abrir(\'' + v.id + '\')" title="' + esc(v.titulo) + '">' +
+    return '<button type="button" class="ac2-aula' + (AC2.atualId === v.id ? ' ativa' : '') + '" data-id="' + v.id + '" onclick="ac2Abrir(\'' + v.id + '\')" title="' + esc(v.titulo) + '">' +
       '<i class="ph ' + (feita ? 'ph-check-circle ok-i' : 'ph-play-circle') + '"></i>' +
       '<span class="aula-title">' + esc(v.titulo) + '</span>' +
-      '<span class="aula-dur">35 min</span>' +
-    '</div>';
+      '<span class="aula-dur">Aula</span>' +
+    '</button>';
   }).join('');
   alvo.dataset.preenchido = '1';
 }
@@ -10723,6 +10733,7 @@ function ac2OnTimeUpdate() {
 function ac2OnLoadedMetadata() {
   const nv = $('ac2-native-video');
   if (!nv) return;
+  const recovery = $('ac2-recovery'); if (recovery) recovery.hidden = true;
   const dEl = $('ac2-dur-time');
   if (dEl && nv.duration) dEl.textContent = fmtTime(nv.duration);
   const durBadge = $('ac2-dur');
@@ -10781,6 +10792,7 @@ function ac2InitNativeVideoListeners() {
   nv.addEventListener('stalled', () => { if (nv.readyState < 3) armStall(); });
   nv.addEventListener('playing', () => { stallN = 0; clearStall(); });
   nv.addEventListener('playing', () => {
+    const recovery = $('ac2-recovery'); if (recovery) recovery.hidden = true;
     const syncTxt = $('ac2-sync-text');
     const status = $('ac2-buffer');
     if (syncTxt) syncTxt.textContent = 'Reproduzindo';
@@ -10788,6 +10800,7 @@ function ac2InitNativeVideoListeners() {
   });
   nv.addEventListener('error', () => {
     if (nv.getAttribute('data-vid') !== AC2.atualId) return;
+    const recovery = $('ac2-recovery'); if (recovery) recovery.hidden = false;
     const syncTxt = $('ac2-sync-text');
     const status = $('ac2-buffer');
     if (syncTxt) syncTxt.textContent = 'Falha ao carregar';
@@ -11313,6 +11326,7 @@ window.ac2SyncNavToggle = function () {
   const label = $('ac2-outline-toggle-label');
   if (toggle) {
     toggle.setAttribute('aria-expanded', String(!off));
+    toggle.setAttribute('aria-label', off ? 'Mostrar aulas do curso' : 'Ocultar aulas do curso');
     toggle.setAttribute('title', off ? 'Mostrar aulas do curso' : 'Ocultar aulas do curso');
   }
   if (label) label.textContent = off ? 'Aulas do curso' : 'Ocultar aulas';
@@ -11348,6 +11362,7 @@ window.ac2Recarregar = function () {
 window.ac2Abrir = function (id, silencioso = false, autoPlay = false) {
   const v = AC2.indice.get(id);
   if (!v) return;
+  const recovery = $('ac2-recovery'); if (recovery) recovery.hidden = true;
   AC2.atualId = id;
   ac2Ativar(id, autoPlay);
 
@@ -11365,8 +11380,7 @@ window.ac2Abrir = function (id, silencioso = false, autoPlay = false) {
   const tit = $('ac2-titulo'); if (tit) tit.textContent = v.titulo;
   const cur = $('ac2-curso'); if (cur) cur.textContent = v.curso;
   const dis = $('ac2-disc'); if (dis) dis.textContent = v.disc;
-  const vws = $('ac2-views'); if (vws) vws.textContent = ac2CalcularViews(id) + ' visualizações';
-  const dur = $('ac2-dur'); if (dur) dur.textContent = '38 min';
+  const dur = $('ac2-dur'); if (dur) dur.textContent = '—';
   const bmeta = $('ac2-bmeta'); if (bmeta) bmeta.classList.remove('carregando');
   const bufTxt = $('ac2-buffer-txt'); if (bufTxt) bufTxt.textContent = 'Qualidade automática';
 
@@ -11413,10 +11427,12 @@ function ac2Acoes() {
   if (likeBtn) {
     likeBtn.classList.toggle('liked', liked);
     const countEl = $('ac2-like-count');
-    if (countEl) countEl.textContent = ac2CalcularLikes(id);
+    if (countEl) countEl.textContent = liked ? 'Marcado' : 'Gostei';
+    likeBtn.setAttribute('aria-pressed', String(liked));
   }
   if (dislikeBtn) {
     dislikeBtn.classList.toggle('disliked', disliked);
+    dislikeBtn.setAttribute('aria-pressed', String(disliked));
   }
 
   // Favorite
@@ -11424,6 +11440,7 @@ function ac2Acoes() {
   const favBtn = $('ac2-fav');
   if (favBtn) {
     favBtn.className = 'ac2-act-btn' + (fav ? ' fav-on' : '');
+    favBtn.setAttribute('aria-pressed', String(fav));
     favBtn.innerHTML = '<i class="ph ' + (fav ? 'ph-star-fill' : 'ph-star') + '"></i> <span>' + (fav ? 'Salvo' : 'Salvar') + '</span>';
   }
 
@@ -11432,6 +11449,7 @@ function ac2Acoes() {
   const doneBtn = $('ac2-done');
   if (doneBtn) {
     doneBtn.className = 'ac2-act-btn' + (feita ? ' done-on' : '');
+    doneBtn.setAttribute('aria-pressed', String(feita));
     doneBtn.innerHTML = '<i class="ph ' + (feita ? 'ph-check-circle ok-i' : 'ph-check-circle') + '"></i> <span>' + (feita ? 'Aula vista' : 'Marcar como vista') + '</span>';
   }
 
@@ -11665,11 +11683,11 @@ if (ac2BuscaEl) {
     let html = '<div style="font-size:11.5px;color:var(--text-muted);padding:4px 8px 10px;font-weight:600">' + hits.length + ' resultado(s) encontrado(s)</div>' +
       hits.map(v => {
         const feita = DONE.has('drive:' + v.id);
-        return '<div class="ac2-aula' + (AC2.atualId === v.id ? ' ativa' : '') + '" data-id="' + v.id + '" onclick="ac2Abrir(\'' + v.id + '\')" title="' + esc(v.curso) + ' › ' + esc(v.disc) + ' — ' + esc(v.titulo) + '">' +
+        return '<button type="button" class="ac2-aula' + (AC2.atualId === v.id ? ' ativa' : '') + '" data-id="' + v.id + '" onclick="ac2Abrir(\'' + v.id + '\')" title="' + esc(v.curso) + ' › ' + esc(v.disc) + ' — ' + esc(v.titulo) + '">' +
           '<i class="ph ' + (feita ? 'ph-check-circle ok-i' : 'ph-play-circle') + '"></i>' +
           '<span class="aula-title">' + esc(v.titulo) + '</span>' +
           '<span style="font-size:10px;color:var(--text-muted);flex:none;border:1px solid var(--border-muted);border-radius:99px;padding:1px 7px">' + esc(v.disc) + '</span>' +
-        '</div>';
+        '</button>';
       }).join('');
     if (arvore) {
       arvore.innerHTML = hits.length ? html : '<div style="padding:24px 16px;color:var(--text-muted);font-size:13px;text-align:center"><i class="ph ph-magnifying-glass" style="font-size:24px;display:block;margin:0 auto 8px;color:var(--text-muted)"></i>Nenhuma videoaula encontrada para "' + esc(q) + '".</div>';

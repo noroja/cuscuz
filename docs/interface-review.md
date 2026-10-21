@@ -80,3 +80,21 @@ Filtros, paginação e seleção de conteúdo ainda não têm todo o estado refl
 Código na branch [`codex/premium-study-experience`](https://github.com/noroja/cuscuz/tree/codex/premium-study-experience). Sem merge ou publicação em produção.
 
 Abertura automática de PR permanecia sem permissão na integração durante a etapa anterior. As alterações podem ser revisadas pela [comparação com main](https://github.com/noroja/cuscuz/compare/main...codex/premium-study-experience).
+
+## Revisão funcional — Web Interface Guidelines (20/10/2026)
+
+Os quatro achados legados acima foram resolvidos nesta rodada. O progresso é agora uma seção informativa: a interação anterior não tinha conteúdo para expandir.
+
+```text
+index.html:2385 - resolvido: início do player é botão nativo com nome acessível.
+index.html:2393 - resolvido: falha de reprodução oferece recuperação visível e anunciada.
+index.html:2720 - resolvido: abas de prática têm estado, painéis e navegação por setas, Home e End.
+index.html:10364 - resolvido: erros do acervo orientam o aluno, sem expor configuração interna, e oferecem nova tentativa.
+index.html:10445 - resolvido: aulas e materiais gerados usam botões nativos e preservam o escape dos títulos.
+```
+
+Contagens artificiais de visualizações e curtidas, duração fixa e estimativa de horas por aula foram removidas. O botão Gostei representa a reação pessoal; duração aguarda metadados reais. O player com erro ocupa menos espaço, as fontes são consistentes e os controles de toque têm alvos maiores.
+
+Validação: suíte npm test e build aprovados; testes novos cobrem mensagens de erro, bloqueio de tentativa duplicada, escape de títulos, controles nativos e abas por teclado. Navegação das abas e controles do acervo também conferidos no navegador real. Prévia do acervo com dados demonstrativos inspecionada em 1440, 768 e 390 px: 0 falhas e 0 avisos; imagens conferidas visualmente.
+
+O teste visual simula uma falha de mídia. Reprodução real do Drive e geração com IA não foram validadas nesta configuração local. Permanecem os limites de URL de filtros e disponibilidade de legendas/transcrições mencionados acima. Esta rodada fica na branch de revisão; a produção não foi atualizada por este trabalho.
