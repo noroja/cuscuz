@@ -22,7 +22,7 @@ const srv = http.createServer((req, res) => {
 await new Promise(r => srv.listen(0, r));
 process.env.GROQ_BASE_URL = `http://127.0.0.1:${srv.address().port}/openai/v1`;
 process.env.GROQ_API_KEY = 'gsk_teste_segredo';
-process.env.GROQ_TIMEOUT_MS = '5000'; process.env.GROQ_MAX_RETRIES = '2';
+process.env.AI_LOG = '0'; process.env.GROQ_TIMEOUT_MS = '5000'; process.env.GROQ_MAX_RETRIES = '2';
 
 // Servidor Gemini FALSO (mesma ideia: só testa o roteador, sem rede real).
 let gmode = 'ok'; const gcalls = [];
@@ -37,6 +37,22 @@ const gsrv = http.createServer((req, res) => {
 });
 await new Promise(r => gsrv.listen(0, r));
 process.env.GEMINI_BASE_URL = `http://127.0.0.1:${gsrv.address().port}`;
+// Servidor OpenRouter FALSO.
+let omode = 'ok'; const ocalls = [];
+const osrv = http.createServer((req, res) => {
+  let b = ''; req.on('data', d => b += d); req.on('end', () => {
+    const body = b.startsWith('{') ? JSON.parse(b) : {};
+    ocalls.push({ url: req.url, auth: req.headers.authorization, title: req.headers['x-title'], body });
+    const j = (st, o, h = {}) => { res.writeHead(st, { 'content-type': 'application/json', ...h }); res.end(JSON.stringify(o)); };
+    if (omode === 'dia') return j(429, { error: { message: 'Rate limit exceeded: free-models-per-day. Add credits' } }, { 'retry-after': '1' });
+    if (omode === 'think') return j(200, { choices: [{ message: { content: '<think>hmm</think>' + JSON.stringify({ ok: true, itens: [2] }) }, finish_reason: 'stop' }], model: 'nvidia/nemotron-3.5-super-vl:free' });
+    if (omode === 'vazio') return j(200, { choices: [{ message: { content: null }, finish_reason: 'length' }] });
+    if (omode === 'schema400' && body.response_format?.type === 'json_schema') return j(400, { error: { message: 'response_format unsupported' } });
+    j(200, { choices: [{ message: { content: JSON.stringify({ ok: true, itens: [1] }) }, finish_reason: 'stop' }], usage: { total_tokens: 5 }, model: 'nvidia/nemotron-3.5-super-vl:free' });
+  });
+});
+await new Promise(r => osrv.listen(0, r));
+process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${osrv.address().port}/api/v1`;
 const P = await import('../../src/ai-provider.js');
 const schema = { type: P.Type.OBJECT, required: ['ok'], properties: { ok: { type: P.Type.BOOLEAN }, itens: { type: P.Type.ARRAY, items: { type: P.Type.INTEGER } } } };
 const reset = (m) => { modo = m; calls.length = 0; gmode = 'ok'; gcalls.length = 0; P._resetForTests(); };
@@ -147,6 +163,76 @@ await teste('gemini fixado: pequeno e grande vão todos ao Gemini', async () => 
     assert.equal(calls.length, 0); assert.equal(gcalls.length, 2);
   } finally { delete process.env.AI_PROVIDER; }
 });
+const comOR = async (fn) => { process.env.OPENROUTER_API_KEY = 'sk-or-segredo'; try { await fn(); } finally { delete process.env.OPENROUTER_API_KEY; delete process.env.AI_PROVIDER; } };
+const resetOR = (m) => { reset('ok'); omode = m; ocalls.length = 0; };
+await teste('openrouter fixado: usa Nemotron :free, json_schema, chave só no header', async () => comOR(async () => {
+  process.env.AI_PROVIDER = 'openrouter'; resetOR('ok');
+  assert.equal(P.aiConfigured(), true); assert.equal(P.aiStatus().model, 'nvidia/nemotron-3.5-super-vl:free');
+  const r = await P.generateAI({ contents: 'oi', config: { systemInstruction: 'sys', responseSchema: schema } });
+  assert.equal(r.provider, 'openrouter'); assert.equal(JSON.parse(r.text).ok, true);
+  assert.equal(ocalls[0].auth, 'Bearer sk-or-segredo'); assert.equal(ocalls[0].url, '/api/v1/chat/completions');
+  assert.equal(ocalls[0].body.response_format.type, 'json_schema');
+  assert.ok(!JSON.stringify(ocalls[0].body).includes('sk-or-segredo'));
+  assert.equal(calls.length, 0); assert.equal(gcalls.length, 0);
+}));
+await teste('openrouter: remove <think> e cai para json_object se o modelo recusa json_schema', async () => comOR(async () => {
+  process.env.AI_PROVIDER = 'openrouter'; resetOR('think');
+  assert.deepEqual(JSON.parse((await P.generateAI({ contents: 'x', config: { responseSchema: schema } })).text).itens, [2]);
+  resetOR('schema400');
+  const r = await P.generateAI({ contents: 'x', config: { responseSchema: schema } });
+  assert.equal(ocalls.length, 2); assert.equal(ocalls[1].body.response_format.type, 'json_object'); assert.equal(JSON.parse(r.text).ok, true);
+}));
+await teste('openrouter: resposta vazia (limite de raciocínio) vira erro explícito', async () => comOR(async () => {
+  process.env.AI_PROVIDER = 'openrouter'; resetOR('vazio');
+  await assert.rejects(() => P.generateAI({ contents: 'x', config: { responseSchema: schema } }), e => e.provider === 'openrouter' && ['truncated', 'invalid_json'].includes(e.code));
+}));
+await teste('auto: OpenRouter é o último recurso quando Groq e Gemini falham', async () => comOR(async () => {
+  resetOR('ok'); modo = '401'; gmode = '403key';
+  const r = await P.generateAI({ contents: 'oi' });
+  assert.equal(r.provider, 'openrouter'); assert.equal(ocalls.length, 1);
+}));
+await teste('auto: com Groq saudável o OpenRouter nem é chamado', async () => comOR(async () => {
+  resetOR('ok'); const r = await P.generateAI({ contents: 'oi' });
+  assert.equal(r.provider, 'groq'); assert.equal(ocalls.length, 0);
+}));
+await teste('openrouter: cota diária (free-models-per-day) liga o disjuntor, sem esperar', async () => comOR(async () => {
+  process.env.AI_PROVIDER = 'openrouter'; resetOR('dia');
+  await assert.rejects(() => P.generateAI({ contents: 'x' }), e => e.code === 'rate_limit' && e.provider === 'openrouter');
+  const n = ocalls.length;
+  await assert.rejects(() => P.generateAI({ contents: 'x' }), e => e.code === 'rate_limit');
+  assert.equal(ocalls.length, n, 'segunda chamada deve ser barrada pelo disjuntor');
+}));
+await teste('fluxo: prompt grande pula a Groq; trilha registra quem respondeu', async () => comOR(async () => {
+  resetOR('ok'); const r = await P.generateAI({ contents: 'x'.repeat(45000) });
+  assert.equal(r.provider, 'gemini'); assert.equal(calls.length, 0); assert.equal(ocalls.length, 0);
+  assert.deepEqual(r.tentativas, [{ provider: 'gemini', ok: true }]);
+}));
+await teste('fluxo: cadeia completa Groq(401) → Gemini(403) → OpenRouter, com trilha', async () => comOR(async () => {
+  resetOR('ok'); modo = '401'; gmode = '403key';
+  const r = await P.generateAI({ contents: 'oi' });
+  assert.deepEqual(r.tentativas.map(x => x.provider + ':' + (x.ok ? 'ok' : x.code)), ['groq:auth', 'gemini:auth', 'openrouter:ok']);
+}));
+await teste('fluxo: AI_ORDER muda a preferência', async () => comOR(async () => {
+  resetOR('ok'); process.env.AI_ORDER = 'openrouter,gemini';
+  try { const r = await P.generateAI({ contents: 'oi' }); assert.equal(r.provider, 'openrouter'); assert.equal(calls.length, 0); }
+  finally { delete process.env.AI_ORDER; }
+}));
+await teste('fluxo: provedor com 2 falhas seguidas é rebaixado (não gasta tempo de novo)', async () => comOR(async () => {
+  resetOR('ok'); modo = '500'; process.env.GROQ_MAX_RETRIES = '0';
+  try {
+    await P.generateAI({ contents: 'a' }); await P.generateAI({ contents: 'b' });
+    assert.equal(P.aiStatus().provedores.groq.rebaixado, true);
+    calls.length = 0; modo = 'ok';
+    const r = await P.generateAI({ contents: 'c' });
+    assert.equal(r.provider, 'gemini'); assert.equal(calls.length, 0, 'groq rebaixada não deve ser a primeira');
+  } finally { process.env.GROQ_MAX_RETRIES = '2'; }
+}));
+await teste('fluxo: status expõe saúde por provedor sem vazar chaves', async () => comOR(async () => {
+  resetOR('ok'); await P.generateAI({ contents: 'oi' });
+  const st = P.aiStatus(); assert.equal(st.provedores.groq.ok, 1); assert.equal(st.provedores.openrouter.configurado, true);
+  assert.ok(!JSON.stringify(st).includes('sk-or-segredo') && !JSON.stringify(st).includes('gsk_teste_segredo'));
+}));
+osrv.closeAllConnections?.(); osrv.close();
 gsrv.closeAllConnections?.(); gsrv.close();
 srv.closeAllConnections?.(); srv.close();
 srv.closeAllConnections?.(); srv.close();

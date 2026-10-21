@@ -23,6 +23,16 @@
 //   GEMINI_MAX_RETRIES tentativas extras (padrão 2)
 //   GEMINI_MAX_OUTPUT_TOKENS  teto de saída (padrão 8192)
 //   GEMINI_MAX_PROMPT_CHARS  teto de caracteres de prompt enviado ao Gemini (padrão 300000)
+//   AI_ORDER           ordem de preferência no modo auto, ex.: "gemini,groq,openrouter" (padrão groq,gemini,openrouter)
+//   AI_LOG             "0" silencia a linha de log por chamada (provedor, modelo, ms, resultado — nunca o conteúdo)
+//   OPENROUTER_API_KEY chave da OpenRouter (3º provedor, compatível com OpenAI). No modo auto entra como
+//                      ÚLTIMO recurso (depois de Groq/Gemini); com AI_PROVIDER=openrouter vira o único.
+//   OPENROUTER_MODEL   padrão nvidia/nemotron-3.5-super-vl:free (modelos ":free" têm cotas diárias baixas
+//                      e podem registrar prompts — veja docs/MENTOR-IA.md)
+//   OPENROUTER_BASE_URL padrão https://openrouter.ai/api/v1
+//   OPENROUTER_TIMEOUT_MS / OPENROUTER_MAX_RETRIES / OPENROUTER_MAX_OUTPUT_TOKENS (padrões 90000 / 2 / 8192)
+//   OPENROUTER_MAX_PROMPT_CHARS teto de caracteres de prompt enviado à OpenRouter (padrão 120000)
+//   OPENROUTER_SITE_URL / OPENROUTER_APP_NAME cabeçalhos opcionais de atribuição (HTTP-Referer / X-Title)
 
 export const Type = { OBJECT: 'object', ARRAY: 'array', STRING: 'string', NUMBER: 'number', INTEGER: 'integer', BOOLEAN: 'boolean' };
 
@@ -46,39 +56,71 @@ const cfg = () => ({
     retries: Math.min(4, Math.max(0, process.env.GEMINI_MAX_RETRIES == null || process.env.GEMINI_MAX_RETRIES === '' ? 2 : parseInt(process.env.GEMINI_MAX_RETRIES, 10) || 0)),
     maxOut: Math.max(256, parseInt(process.env.GEMINI_MAX_OUTPUT_TOKENS, 10) || 8192),
     janelaMax: Math.max(16000, parseInt(process.env.GEMINI_MAX_PROMPT_CHARS, 10) || 300000)
+  },
+  openrouter: {
+    key: process.env.OPENROUTER_API_KEY || '',
+    model: process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3.5-super-vl:free',
+    base: (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/+$/, ''),
+    timeout: Math.max(5000, parseInt(process.env.OPENROUTER_TIMEOUT_MS, 10) || 90000),
+    retries: Math.min(4, Math.max(0, process.env.OPENROUTER_MAX_RETRIES == null || process.env.OPENROUTER_MAX_RETRIES === '' ? 2 : parseInt(process.env.OPENROUTER_MAX_RETRIES, 10) || 0)),
+    maxOut: Math.max(256, parseInt(process.env.OPENROUTER_MAX_OUTPUT_TOKENS, 10) || 8192),
+    janelaMax: Math.max(8000, parseInt(process.env.OPENROUTER_MAX_PROMPT_CHARS, 10) || 120000),
+    site: process.env.OPENROUTER_SITE_URL || '',
+    app: process.env.OPENROUTER_APP_NAME || 'Cuscuz-MED'
   }
 });
 
 // ── estado por provedor (disjuntores independentes) ──
-const bloqueadoAte = { groq: 0, gemini: 0 };
+const bloqueadoAte = { groq: 0, gemini: 0, openrouter: 0 };
 const bloquear = (nome, ms, maxMs = 6 * 3600e3) => { bloqueadoAte[nome] = Date.now() + Math.min(Math.max(ms, 0), maxMs); };
 const disponivel = (nome) => Date.now() >= bloqueadoAte[nome];
+
+// ── saúde por provedor: alimenta a ordem da fila e o /api/health (sem guardar conteúdo de prompt) ──
+const novaSaude = () => ({ chamadas: 0, ok: 0, falhas: 0, seguidas: 0, ultimaFalha: 0, ultimoErro: '', latMs: 0 });
+const saude = { groq: novaSaude(), gemini: novaSaude(), openrouter: novaSaude() };
+function registrar(nome, ok, ms, err, modelo) {
+  const h = saude[nome]; h.chamadas++;
+  if (ok) { h.ok++; h.seguidas = 0; h.latMs = h.latMs ? Math.round(h.latMs * 0.7 + ms * 0.3) : ms; }
+  else { h.falhas++; h.seguidas++; h.ultimaFalha = Date.now(); h.ultimoErro = String((err && err.code) || 'erro'); }
+  if (process.env.AI_LOG !== '0') console.log(`[ia] ${nome} ${modelo || ''} ${ok ? 'ok' : 'falhou(' + h.ultimoErro + ')'} ${ms}ms`);
+}
+// Rebaixa (não exclui) quem falhou 2x seguidas no último minuto: dá chance ao próximo sem esperar timeout de novo.
+const rebaixado = (nome) => saude[nome].seguidas >= 2 && Date.now() - saude[nome].ultimaFalha < 60000;
 
 const ROTEADO = { GROQ: 'groq', GEMINI: 'gemini' };
 // Resolve o modo efetivo e as chaves presentes.
 function roteador() {
   const c = cfg();
-  const temGroq = !!c.groq.key, temGem = !!c.gemini.key;
-  const modo = c.provider === 'auto' || c.provider === 'groq' || c.provider === 'gemini'
+  const temGroq = !!c.groq.key, temGem = !!c.gemini.key, temOR = !!c.openrouter.key;
+  const qtd = (temGroq ? 1 : 0) + (temGem ? 1 : 0) + (temOR ? 1 : 0);
+  const modo = ['auto', 'groq', 'gemini', 'openrouter'].includes(c.provider)
     ? c.provider
-    : (temGroq && temGem ? 'auto' : temGroq ? 'groq' : temGem ? 'gemini' : '');
-  return { c, modo, temGroq, temGem };
+    : (qtd > 1 ? 'auto' : temGroq ? 'groq' : temGem ? 'gemini' : temOR ? 'openrouter' : '');
+  return { c, modo, temGroq, temGem, temOR };
 }
 
 export function aiProviderName() { return roteador().modo || 'desligado'; }
-export function aiConfigured() { const r = roteador(); return !!r.modo && ((r.modo === 'groq' && r.temGroq) || (r.modo === 'gemini' && r.temGem) || (r.modo === 'auto' && (r.temGroq || r.temGem))); }
+export function aiConfigured() { const r = roteador(); return !!r.modo && ((r.modo === 'groq' && r.temGroq) || (r.modo === 'gemini' && r.temGem) || (r.modo === 'openrouter' && r.temOR) || (r.modo === 'auto' && (r.temGroq || r.temGem || r.temOR))); }
 export function aiStatus() {
   const r = roteador();
   return {
     provider: r.modo || 'desligado',
     configured: aiConfigured(),
-    model: r.modo === 'gemini' ? r.c.gemini.model : r.c.groq.model,
+    model: r.modo === 'gemini' ? r.c.gemini.model : r.modo === 'openrouter' ? r.c.openrouter.model : r.c.groq.model,
     sttModel: r.c.groq.stt,
     tpm: r.c.groq.tpm,
     gemini: !!r.c.gemini.key, groq: !!r.c.groq.key,
     geminiModel: r.c.gemini.model,
+    openrouter: !!r.c.openrouter.key, openrouterModel: r.c.openrouter.model,
+    provedores: Object.fromEntries(['groq', 'gemini', 'openrouter'].map(n => [n, {
+      configurado: n === 'groq' ? r.temGroq : n === 'gemini' ? r.temGem : r.temOR,
+      modelo: r.c[n].model,
+      limiteAte: disponivel(n) ? null : bloqueadoAte[n],
+      rebaixado: rebaixado(n),
+      ...saude[n]
+    }])),
     bloqueado: r.modo === 'auto'
-      ? (disponivel('groq') || disponivel('gemini') ? null : (Math.min(bloqueadoAte.groq, bloqueadoAte.gemini)))
+      ? (['groq', 'gemini', 'openrouter'].some(n => (n === 'groq' ? r.temGroq : n === 'gemini' ? r.temGem : r.temOR) && disponivel(n)) ? null : Math.min(...['groq', 'gemini', 'openrouter'].filter(n => (n === 'groq' ? r.temGroq : n === 'gemini' ? r.temGem : r.temOR)).map(n => bloqueadoAte[n])))
       : (disponivel(r.modo) ? null : bloqueadoAte[r.modo])
   };
 }
@@ -91,6 +133,7 @@ export function aiTpm() { return cfg().groq.tpm; }
 export function aiJanelaChars(reservaTokens = 0) {
   const r = roteador();
   if (r.modo === 'gemini' || (r.modo === 'auto' && r.c.gemini.key && r.c.gemini.janelaMax > 0)) return r.c.gemini.janelaMax;
+  if (r.modo === 'openrouter' || (r.modo === 'auto' && !r.c.groq.key && r.c.openrouter.key)) return r.c.openrouter.janelaMax;
   const CARACTERES_POR_TOKEN = 3.4; // PT-BR falado rende ~3,6 caracteres por token — margem apertada de propósito
   return Math.max(1600, Math.round(Math.max((r.c.groq.tpm || 8000) * 0.85 - Math.max(reservaTokens, 600), 1000) * CARACTERES_POR_TOKEN));
 }
@@ -189,8 +232,8 @@ export async function pdfParaTexto(b64) {
   return t.length > 60000 ? t.slice(0, 60000) + '\n[…texto truncado…]' : t;
 }
 
-function rotuloVoz(nome) { return nome === 'gemini' ? 'Gemini' : 'Groq'; }
-function chaveNome(nome) { return nome === 'gemini' ? 'GEMINI_API_KEY' : 'GROQ_API_KEY'; }
+function rotuloVoz(nome) { return nome === 'gemini' ? 'Gemini' : nome === 'openrouter' ? 'OpenRouter' : 'Groq'; }
+function chaveNome(nome) { return nome === 'gemini' ? 'GEMINI_API_KEY' : nome === 'openrouter' ? 'OPENROUTER_API_KEY' : 'GROQ_API_KEY'; }
 
 // Camada de HTTP compartilhada com tratamento de 429/413/5xx e disjuntor POR provedor.
 async function chamar(url, init, opts, rotulo) {
@@ -211,8 +254,8 @@ async function chamar(url, init, opts, rotulo) {
       if (r.status === 429) {
         const janelaCurta = nome === 'groq'
           ? (/tokens per minute|\bTPM\b/i.test(detalhe) && !/per day|TPD|RPD/i.test(detalhe))
-          : /per minute|PerMinute/i.test(corpo); // Gemini: cota por minuto (ex.: RPM de free tier)
-        const diario = /per day|PerDay/i.test(corpo) || /RESOURCE_EXHAUSTED/i.test(detalhe) && !/per minute|PerMinute|per-min/i.test(corpo);
+          : /per minute|PerMinute|per-min/i.test(corpo); // Gemini/OpenRouter: cota por minuto (ex.: RPM de free tier)
+        const diario = /per day|PerDay|per-day|free-models-per-day/i.test(corpo) || (nome === 'gemini' && /RESOURCE_EXHAUSTED/i.test(detalhe) && !/per minute|PerMinute|per-min/i.test(corpo));
         const limiteEspera = janelaCurta ? MAX_INLINE_WAIT_TPM_MS : MAX_INLINE_WAIT_MS;
         const espera = retryMs != null ? Math.max(retryMs, 1000) : 2000 * (tent + 1);
         if (diario || espera > limiteEspera) bloquear(nome, espera);
@@ -327,6 +370,48 @@ async function rodarGemini(messages, conf, schema, querJson, c, params) {
   return { text, usage, model: c.model, provider: 'gemini' };
 }
 
+// ── PROVEDOR OPENROUTER (OpenAI-compatível; ex.: NVIDIA Nemotron) ──
+// Modelos de raciocínio podem devolver <think>…</think> ou content nulo; limpamos e validamos como nos demais.
+async function rodarOpenRouter(messages, conf, schema, querJson, c, params) {
+  const model = params.model || c.model;
+  const base = { model, messages, temperature: conf.temperature ?? 0.4, max_tokens: Math.min(conf.maxOutputTokens || c.maxOut, c.maxOut), reasoning: { effort: 'low' } };
+  const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + c.key, 'X-Title': c.app, ...(c.site ? { 'HTTP-Referer': c.site } : {}) };
+  const url = c.base + '/chat/completions';
+  const limpar = (t) => String(t || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  const rodar = async (body, rotulo) => {
+    const r = await chamar(url, { method: 'POST', headers, body: JSON.stringify(body) }, { ...c, nome: 'openrouter' }, rotulo);
+    const j = await r.json();
+    if (j.error) throw new AIError(`OpenRouter: ${String(j.error.message || 'erro').slice(0, 200)}`, { status: 502, code: /rate|limit|quota/i.test(String(j.error.message)) || j.error.code === 429 ? 'rate_limit' : 'upstream', provider: 'openrouter' });
+    const choice = j.choices && j.choices[0];
+    const text = limpar(choice && choice.message && choice.message.content);
+    if (choice && choice.finish_reason === 'length' && querJson) throw new AIError('A resposta da IA foi cortada por limite de tamanho.', { status: 502, code: 'truncated', provider: 'openrouter' });
+    if (!text && querJson) throw new AIError('A IA não devolveu conteúdo (o modelo gastou o limite pensando).', { status: 502, code: 'invalid_json', provider: 'openrouter' });
+    return { text, usage: j.usage || null, model: j.model || model, provider: 'openrouter' };
+  };
+  if (!querJson) return rodar(base, 'texto');
+
+  const comoJsonObject = () => {
+    const extra = schema ? `\n\nResponda APENAS com JSON válido que obedeça a este JSON Schema:\n${JSON.stringify(schema)}` : '\n\nResponda APENAS com JSON válido.';
+    const msgs = base.messages.map(m => ({ ...m }));
+    const i = msgs.map(m => m.role).lastIndexOf('user');
+    if (i >= 0) msgs[i].content += extra; else msgs.push({ role: 'user', content: extra.trim() });
+    return { ...base, messages: msgs, response_format: { type: 'json_object' } };
+  };
+  let ultimoErro = null;
+  const tentativas = [];
+  if (schema) tentativas.push({ ...base, response_format: { type: 'json_schema', json_schema: { name: 'resposta', strict: false, schema } } });
+  tentativas.push(comoJsonObject());
+  for (const body of tentativas) {
+    try { const out = await rodar(body, 'json'); validarJson(out.text, schema); return out; }
+    catch (err) {
+      ultimoErro = err;
+      if (err instanceof AIError && !['bad_request', 'truncated', 'invalid_json'].includes(err.code)) throw err;
+    }
+  }
+  throw (ultimoErro instanceof AIError ? ultimoErro : new AIError('A IA não devolveu uma resposta JSON válida: ' + (ultimoErro && ultimoErro.message), { status: 502, code: 'invalid_json', provider: 'openrouter' }));
+}
+
 // Erros que VALEM a troca de provedor (fallback no roteador).
 const TROCA_DE_PROVEDOR = new Set(['rate_limit', 'upstream', 'timeout', 'network', 'auth', 'truncated', 'invalid_json', 'bad_request']);
 
@@ -336,7 +421,7 @@ const tokensEst = (obj) => Math.max(1, Math.round(JSON.stringify(obj).length / 4
 // API principal. Retorna { text, usage, model, provider }.
 export async function generateAI(params) {
   const r = roteador();
-  if (!r.modo || (!r.temGroq && !r.temGem)) throw new AIError('Configure GROQ_API_KEY e/ou GEMINI_API_KEY no servidor.', { status: 503, code: 'no_key' });
+  if (!r.modo || (!r.temGroq && !r.temGem && !r.temOR)) throw new AIError('Configure GROQ_API_KEY, GEMINI_API_KEY e/ou OPENROUTER_API_KEY no servidor.', { status: 503, code: 'no_key' });
   if (!aiConfigured()) throw new AIError(`AI_PROVIDER "${r.modo}" exige a chave correspondente no servidor.`, { status: 503, code: 'no_key' });
 
   const conf = params.config || {};
@@ -344,36 +429,53 @@ export async function generateAI(params) {
   const querJson = !!schema || /json/i.test(conf.responseMimeType || '');
   const messages = await montarMensagens(params, r.c);
 
-  // Fila de provedores na ordem de tentativa.
-  const fila = [];
-  if (r.modo === 'auto' && r.temGroq && r.temGem) {
-    const cabeNaGroq = tokensEst(params) <= r.c.groq.tpm * 0.72; // prompt + saída entram no teto do minuto
-    const primeiro = cabeNaGroq ? 'groq' : 'gemini';
-    fila.push(primeiro, primeiro === 'groq' ? 'gemini' : 'groq');
-  } else if (r.modo === 'auto') {
-    fila.push(r.temGem ? 'gemini' : 'groq');
+  // ── ROTEAMENTO (modo auto) ──
+  // 1) elegibilidade por tamanho: Groq só se o prompt cabe no TPM do minuto; Gemini/OpenRouter pelo teto de
+  //    caracteres. 2) ordem de preferência (AI_ORDER; padrão Groq → Gemini → OpenRouter) entre os elegíveis.
+  // 3) provedor rebaixado (2 falhas seguidas no último minuto) vai para o fim. 4) quem não cabe só entra como
+  //    último recurso (o OpenRouter grande demais é pulado). Limites diários/de janela já ficam no disjuntor.
+  const tokens = tokensEst(params); const chars = JSON.stringify(messages).length;
+  let fila = [];
+  if (r.modo === 'auto') {
+    const tem = { groq: r.temGroq, gemini: r.temGem, openrouter: r.temOR };
+    const env = String(process.env.AI_ORDER || '').toLowerCase().split(/[\s,>]+/).filter(n => n in tem);
+    const base = [...new Set([...env, 'groq', 'gemini', 'openrouter'])].filter(n => tem[n]);
+    const cabe = (n) => n === 'groq' ? tokens <= r.c.groq.tpm * 0.72 : chars <= r.c[n].janelaMax;
+    const ordenar = (lista) => [...lista.filter(n => !rebaixado(n)), ...lista.filter(n => rebaixado(n))];
+    fila = [...ordenar(base.filter(cabe)), ...ordenar(base.filter(n => !cabe(n)))];
   } else {
-    fila.push(r.modo);
+    fila = [r.modo];
   }
 
-  let ultimo = null; let todosBloqueados = true;
-  for (const nome of fila) {
-    if (!disponivel(nome)) { ultimo = ultimo || new AIError(`Limite do ${rotuloVoz(nome)} atingido — tente de novo em ~${Math.ceil((bloqueadoAte[nome] - Date.now()) / 60000)} min.`, { status: 429, code: 'rate_limit', retryAfterMs: bloqueadoAte[nome] - Date.now(), provider: nome }); continue; }
+  let ultimo = null; let todosBloqueados = true; const trilha = [];
+  for (let i = 0; i < fila.length; i++) {
+    const nome = fila[i];
+    if (!disponivel(nome)) { trilha.push({ provider: nome, pulado: 'limite' }); ultimo = ultimo || new AIError(`Limite do ${rotuloVoz(nome)} atingido — tente de novo em ~${Math.ceil((bloqueadoAte[nome] - Date.now()) / 60000)} min.`, { status: 429, code: 'rate_limit', retryAfterMs: bloqueadoAte[nome] - Date.now(), provider: nome }); continue; }
     todosBloqueados = false;
-    const cc = nome === 'gemini' ? r.c.gemini : r.c.groq;
+    const base = nome === 'gemini' ? r.c.gemini : nome === 'openrouter' ? r.c.openrouter : r.c.groq;
+    if (nome === 'openrouter' && r.modo === 'auto' && chars > base.janelaMax) { trilha.push({ provider: nome, pulado: 'grande' }); ultimo = ultimo || new AIError('Prompt grande demais para o OpenRouter.', { status: 413, code: 'upstream', provider: nome }); continue; }
+    // Falha rápida: havendo outro provedor livre na fila, gasta no máximo 1 retry aqui e passa a bola.
+    const temProximo = fila.slice(i + 1).some(n => disponivel(n) && !(n === 'openrouter' && chars > r.c.openrouter.janelaMax));
+    const cc = temProximo ? { ...base, retries: Math.min(base.retries, 1) } : base;
+    const t0 = Date.now();
     try {
-      return nome === 'gemini'
+      const out = nome === 'gemini'
         ? await rodarGemini(messages, conf, schema, querJson, cc, params)
-        : await rodarGroq(messages, conf, schema, querJson, cc, params);
+        : nome === 'openrouter'
+          ? await rodarOpenRouter(messages, conf, schema, querJson, cc, params)
+          : await rodarGroq(messages, conf, schema, querJson, cc, params);
+      registrar(nome, true, Date.now() - t0, null, out.model);
+      trilha.push({ provider: nome, ok: true });
+      return { ...out, tentativas: trilha };
     } catch (err) {
-      ultimo = err;
+      ultimo = err; registrar(nome, false, Date.now() - t0, err, base.model); trilha.push({ provider: nome, ok: false, code: err.code });
       if (err.code === 'unsupported_media' || err.code === 'pdf_unavailable' || err.code === 'pdf_sem_texto') throw err; // independe do provedor
       if (!(err instanceof AIError) || !TROCA_DE_PROVEDOR.has(err.code)) throw err;
     }
   }
   if (todosBloqueados && fila.length > 1) {
-    const ms = Math.max(Math.min(bloqueadoAte[fila[0]] - Date.now(), bloqueadoAte[fila[1]] - Date.now()), 1000);
-    throw new AIError(`Nenhum provedor de IA livre agora (Groq/Gemini em limite) — tente de novo em ~${Math.ceil(ms / 60000)} min.`, { status: 429, code: 'rate_limit', retryAfterMs: ms });
+    const ms = Math.max(Math.min(...fila.map(n => bloqueadoAte[n] - Date.now())), 1000);
+    throw new AIError(`Nenhum provedor de IA livre agora (${fila.map(rotuloVoz).join('/')} em limite) — tente de novo em ~${Math.ceil(ms / 60000)} min.`, { status: 429, code: 'rate_limit', retryAfterMs: ms });
   }
   throw (ultimo || new AIError('Nenhum provedor de IA disponível.', { status: 503, code: 'no_key' }));
 }
@@ -405,4 +507,4 @@ export async function transcribeAudio({ audioBase64, mime = 'audio/webm', prompt
 }
 const fimIni = (fim, ini) => fim - ini;
 
-export function _resetForTests() { bloqueadoAte.groq = 0; bloqueadoAte.gemini = 0; }
+export function _resetForTests() { for (const n of ['groq', 'gemini', 'openrouter']) { bloqueadoAte[n] = 0; saude[n] = novaSaude(); } }
