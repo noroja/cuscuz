@@ -888,9 +888,10 @@ html[data-theme="light"] .radar-section .radar-card {
   justify-content: stretch !important;
   gap: clamp(28px, 5vw, 72px);
   padding: clamp(20px, 4vw, 64px) !important;
-  background: var(--bg-void) !important;
+  background: #07090e !important;
   color: var(--on-deep);
   overflow: visible;
+  color-scheme: dark;
 }
 #login-screen::before,
 #login-screen::after { content: none !important; display: none !important; }

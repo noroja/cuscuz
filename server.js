@@ -1510,6 +1510,40 @@ let _bankTimer = null;
 let _bankDirty = false;
 let _bankBase = 0; // quantas questões o repositório já tinha quando o servidor subiu
 let _lastBankUpload = 0;
+let _bankReadyPromise = null;
+let _bankCloud = null;
+let _bankCloudAt = 0;
+let _bankHydrating = null;
+let _bankUploadPromise = null;
+const BANK_CLOUD_TTL_MS = 60 * 1000;
+
+/* Une dois bancos sem perder questões: prefere os dados de `extra` quando a
+   mesma questão aparece nos dois lados (id ou enunciado). */
+function mergeBankArrays(base, extra) {
+  const byId = new Map();
+  const byStmt = new Map();
+  const out = [];
+  const add = (q, override) => {
+    if (!q) return;
+    const idKey = q.id != null ? String(q.id) : '';
+    const stmtKey = typeof hwqStatementKey === 'function' ? hwqStatementKey(q) : String(q.statement || '').slice(0, 80).toLowerCase();
+    const existing = (idKey && byId.get(idKey)) || (stmtKey && byStmt.get(stmtKey));
+    if (existing) {
+      if (override) Object.assign(existing, q);
+      if (idKey) byId.set(idKey, existing);
+      if (stmtKey) byStmt.set(stmtKey, existing);
+      return;
+    }
+    const copy = { ...q };
+    out.push(copy);
+    if (idKey) byId.set(idKey, copy);
+    if (stmtKey) byStmt.set(stmtKey, copy);
+  };
+  for (const q of base || []) add(q, false);
+  for (const q of extra || []) add(q, true);
+  return out;
+}
+
 // O banco pré-catalogado vem no repositório compactado (.json.gz, gerado pelo GitHub Actions); o .json é o arquivo de trabalho
 function readQuestionsBank() {
   if (_bankCache) return _bankCache;
@@ -1532,73 +1566,143 @@ function readQuestionsBank() {
   return (_bankCache = []);
 }
 
-// Carregamento assíncrono não-bloqueante do banco (chamado no startup)
+async function readLocalBankFiles() {
+  const lerPlain = async () => {
+    for (const f of QUESTIONS_BANK_CANDIDATES) {
+      if (fs.existsSync(f)) return JSON.parse(await fs.promises.readFile(f, 'utf8'));
+    }
+    return [];
+  };
+  const lerGz = async () => fs.existsSync(QUESTIONS_BANK_GZ) ? JSON.parse(zlib.gunzipSync(await fs.promises.readFile(QUESTIONS_BANK_GZ)).toString('utf8')) : [];
+  const [a, b] = await Promise.all([lerPlain().catch(() => []), lerGz().catch(() => [])]);
+  return b.length > a.length ? b : a;
+}
+
+// Carregamento durável: seed local + cópia mais completa do Supabase Storage.
+// O resultado é a UNIÃO dos dois (nunca substitui um banco maior pelo seed).
 async function preloadQuestionsBank() {
   try {
-    const lerPlain = async () => {
-      for (const f of QUESTIONS_BANK_CANDIDATES) {
-        if (fs.existsSync(f)) return JSON.parse(await fs.promises.readFile(f, 'utf8'));
-      }
-      return [];
-    };
-    const lerGz = async () => fs.existsSync(QUESTIONS_BANK_GZ) ? JSON.parse(zlib.gunzipSync(await fs.promises.readFile(QUESTIONS_BANK_GZ)).toString('utf8')) : [];
-    const [a, b] = await Promise.all([lerPlain().catch(() => []), lerGz().catch(() => [])]);
-    const data = b.length > a.length ? b : a;
-    if (Array.isArray(data) && data.length) {
-      _bankCache = data;
-      _bankBase = data.length;
-      console.log(`📚 Banco de questões pré-carregado: ${data.length} questões`);
+    const local = await readLocalBankFiles();
+    if (Array.isArray(local) && local.length && (!_bankCache || local.length > _bankCache.length)) {
+      _bankCache = local;
     }
 
-    // Cold start sem seed local (ou seed mais antigo): tenta a cópia durável do
-    // Supabase Storage. Falha é silenciosa — o app segue com o que já tem.
     if (supabaseCatalogReady()) {
       const nuvem = await downloadQuestionsBankFromSupabase();
-      if (Array.isArray(nuvem) && nuvem.length > (_bankCache?.length || 0)) {
-        _bankCache = nuvem;
-        _bankBase = nuvem.length;
-        safeWriteJson(QUESTIONS_BANK_FILE, nuvem);
-        console.log(`📚 Banco de questões atualizado pela nuvem: ${nuvem.length} questões`);
+      if (Array.isArray(nuvem) && nuvem.length) {
+        _bankCloud = nuvem;
+        _bankCloudAt = Date.now();
+        const merged = mergeBankArrays(nuvem, _bankCache || []);
+        _bankCache = merged;
+        _bankBase = merged.length;
+        safeWriteJson(QUESTIONS_BANK_FILE, merged);
+        console.log(`📚 Banco de questões pronto: ${nuvem.length} na nuvem + ${merged.length - nuvem.length} locais = ${merged.length} questões`);
+        // Se havia questões locais que a nuvem não tinha, sobe a união para não perdê-las.
+        if (merged.length > nuvem.length) {
+          uploadQuestionsBankToSupabase(merged).catch(() => {});
+        }
+        return merged;
       }
     }
+
+    if (Array.isArray(_bankCache) && _bankCache.length) {
+      _bankBase = _bankCache.length;
+      console.log(`📚 Banco de questões pré-carregado: ${_bankCache.length} questões`);
+    }
+    return _bankCache || [];
   } catch (err) {
     console.warn('Pré-carregamento do banco falhou (carregará sob demanda):', err.message);
+    return readQuestionsBank();
   }
 }
 
-// Inicia pré-carregamento em background (não bloqueia o servidor)
-preloadQuestionsBank();
+// Toda rota /api/questions aguarda o banco durável antes de ler/mesclar.
+function ensureQuestionsBankLoaded() {
+  if (!_bankReadyPromise) {
+    _bankReadyPromise = preloadQuestionsBank().catch(err => {
+      console.warn('Banco durável indisponível; seguindo com o seed local:', err.message);
+      return readQuestionsBank();
+    });
+  }
+  return _bankReadyPromise;
+}
+ensureQuestionsBankLoaded();
 
-// Escrita: atualiza a memória na hora e grava o arquivo (compacto) em segundo plano, sem bloquear o servidor.
-// Em serverless o caminho é /tmp (efêmero); a cópia durável vai para o Supabase Storage,
-// em background e com throttle — nunca bloqueia nem derruba a requisição.
+/* Rebaixa a cópia da nuvem em instâncias já aquecidas e une com o banco local.
+   `force` é usado antes de mesclar/sincronizar para nunca sobrescrever a nuvem
+   com um seed antigo de outra instância. */
+async function hydrateQuestionsBank({ force = false } = {}) {
+  await ensureQuestionsBankLoaded();
+  if (!supabaseCatalogReady()) return _bankCloud;
+  if (!force && _bankCloudAt && Date.now() - _bankCloudAt < BANK_CLOUD_TTL_MS) return _bankCloud;
+  if (_bankHydrating) return _bankHydrating;
+
+  _bankHydrating = (async () => {
+    const nuvem = await downloadQuestionsBankFromSupabase();
+    if (Array.isArray(nuvem) && nuvem.length) {
+      _bankCloud = nuvem;
+      _bankCloudAt = Date.now();
+      const merged = mergeBankArrays(nuvem, _bankCache || []);
+      if (merged.length !== (_bankCache?.length || 0)) {
+        _bankCache = merged;
+        safeWriteJson(QUESTIONS_BANK_FILE, merged);
+        console.log(`📚 Banco de questões hidratado da nuvem: ${nuvem.length} na nuvem, ${merged.length} locais.`);
+      }
+    }
+    return _bankCloud;
+  })().finally(() => { _bankHydrating = null; });
+
+  return _bankHydrating;
+}
+
+/* Upload durável aguardável. Antes de subir, garante que a nuvem não tenha
+   mais questões que a memória; se tiver, mescla para não perder nada. */
+async function uploadBankNow() {
+  if (!supabaseCatalogReady() || !Array.isArray(_bankCache) || !_bankCache.length) return false;
+  if (_bankUploadPromise) return _bankUploadPromise;
+
+  _bankUploadPromise = (async () => {
+    const nuvem = _bankCloud || (await hydrateQuestionsBank({ force: false }));
+    if (Array.isArray(nuvem) && nuvem.length > _bankCache.length) {
+      _bankCache = mergeBankArrays(nuvem, _bankCache);
+      safeWriteJson(QUESTIONS_BANK_FILE, _bankCache);
+    }
+    _lastBankUpload = Date.now();
+    return uploadQuestionsBankToSupabase(_bankCache);
+  })().finally(() => { _bankUploadPromise = null; });
+
+  return _bankUploadPromise;
+}
+
+// Escrita: atualiza a memória na hora e grava o arquivo (compacto).
+// Uploads explícitos (sync/import) usam uploadBankNow() e são aguardados;
+// escritas incidentais usam uploadBankSoon() com throttle.
 function uploadBankSoon() {
   if (!supabaseCatalogReady() || !Array.isArray(_bankCache) || !_bankCache.length) return;
   if (Date.now() - _lastBankUpload < 60 * 1000) return;
-  _lastBankUpload = Date.now();
-  uploadQuestionsBankToSupabase(_bankCache).catch(() => {});
+  uploadBankNow().catch(() => {});
 }
 
-function flushQuestionsBank() {
+function flushQuestionsBank({ upload = true } = {}) {
   if (!Array.isArray(_bankCache)) _bankCache = [];
   // safeWriteJson é atômico (tmp + rename) e NUNCA lança: EROFS/ENOENT viram false.
   const ok = safeWriteJson(QUESTIONS_BANK_FILE, _bankCache);
   if (ok) {
     _bankDirty = false;
-    uploadBankSoon();
+    if (upload) uploadBankSoon();
   } else if (!IS_SERVERLESS) {
     console.error('Erro ao escrever questions-bank.json: sistema de arquivos não gravável.');
   }
   return ok;
 }
-function writeQuestionsBank(questions) {
+function writeQuestionsBank(questions, { upload = true } = {}) {
   _bankCache = questions; _bankDirty = true;
   clearTimeout(_bankTimer);
   if (IS_SERVERLESS) {
     // Não há garantia de que o timer rode depois da resposta: grava já no /tmp.
-    flushQuestionsBank();
+    flushQuestionsBank({ upload });
   } else {
-    _bankTimer = setTimeout(flushQuestionsBank, 3000);
+    _bankTimer = setTimeout(() => flushQuestionsBank({ upload }), 3000);
   }
   return true;
 }
