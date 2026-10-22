@@ -520,7 +520,72 @@ export async function transcribeAudio(args) {
   return transcribeGemini(args);
 }
 
-async function transcribeGemini({ audioBase64, mime = 'audio/webm', prompt = '', language = 'pt', timestamps = false }) {
+// Reserva no Gemini: 1º o modelo de transcrição dedicado (GEMINI_STT_MODEL, padrão gemini-3.5-transcribe: Files API + /interactions,
+// formato conforme a documentação do Google); se ele falhar por motivo que não seja limite, cai no generateContent com áudio inline.
+// GEMINI_STT_MODEL=off desliga o dedicado. GEMINI_STT_TIMESTAMPS=1 pede marcas de tempo por palavra (a Google avisa que podem reduzir a precisão).
+async function transcribeGemini(args) {
+  const c = cfg().gemini;
+  const stt = process.env.GEMINI_STT_MODEL === undefined ? 'gemini-3.5-transcribe' : process.env.GEMINI_STT_MODEL;
+  if (!c.key) throw new AIError('GEMINI_API_KEY não configurada.', { status: 503, code: 'no_key', provider: 'gemini' });
+  if (!disponivel('gemini')) throw new AIError('Limite do Gemini atingido — tente novamente em instantes.', { status: 429, code: 'rate_limit', provider: 'gemini' });
+  if (stt && stt !== 'off') {
+    try { return await transcribeGeminiDedicado(args, stt); }
+    catch (e) {
+      if (e && (e.code === 'rate_limit' || e.status === 429)) throw e;
+      if (process.env.AI_LOG !== '0') console.log('[ia] transcrição: ' + stt + ' falhou (' + (e.code || e.status || e.message) + '), tentando generateContent');
+    }
+  }
+  return transcribeGeminiGenerate(args);
+}
+
+// Agrupa palavras com marca de tempo em segmentos (frases curtas) para o karaokê.
+export function palavrasEmSegmentos(palavras) {
+  const segs = []; let cur = null;
+  for (const w of palavras) {
+    const t = String(w.text || '').trim(); if (!t) continue;
+    const ini = Number(w.ini) || 0, fim = Number(w.fim) || ini;
+    if (!cur) cur = { ini, fim, text: t }; else { cur.text += ' ' + t; cur.fim = fim; }
+    if (/[.!?]$/.test(t) || cur.fim - cur.ini >= 12 || cur.text.length >= 220) { segs.push(cur); cur = null; }
+  }
+  if (cur) segs.push(cur);
+  return segs;
+}
+
+async function transcribeGeminiDedicado({ audioBase64, mime = 'audio/webm', language = 'pt', timestamps = false }, modelo) {
+  const c = cfg().gemini, t0 = Date.now();
+  const origem = new URL(c.base).origin, v = new URL(c.base).pathname.replace(/\/+$/, '') || '/v1beta';
+  const buf = Buffer.from(audioBase64, 'base64');
+  try {
+    // 1) Files API (upload resumível em 2 passos)
+    const ini = await chamar(`${origem}/upload${v}/files`, { method: 'POST', headers: { 'x-goog-api-key': c.key, 'X-Goog-Upload-Protocol': 'resumable', 'X-Goog-Upload-Command': 'start', 'X-Goog-Upload-Header-Content-Length': String(buf.length), 'X-Goog-Upload-Header-Content-Type': mime, 'Content-Type': 'application/json' }, body: JSON.stringify({ file: { display_name: 'trecho-aula' } }) }, { ...c, nome: 'gemini' }, 'transcrição (upload)');
+    const urlUp = ini.headers.get('x-goog-upload-url');
+    if (!urlUp) throw new AIError('Upload do áudio ao Gemini sem URL de envio.', { status: 502, code: 'upstream', provider: 'gemini' });
+    const fin = await chamar(urlUp, { method: 'POST', headers: { 'Content-Length': String(buf.length), 'X-Goog-Upload-Offset': '0', 'X-Goog-Upload-Command': 'upload, finalize' }, body: buf }, { ...c, nome: 'gemini', timeout: Math.max(c.timeout, 90000) }, 'transcrição (upload)');
+    const arq = (await fin.json()).file || {};
+    if (!arq.uri) throw new AIError('Upload do áudio ao Gemini não devolveu o arquivo.', { status: 502, code: 'upstream', provider: 'gemini' });
+    // 2) Transcrição
+    const quer = process.env.GEMINI_STT_TIMESTAMPS === '1' && timestamps;
+    const body = { model: modelo, input: [{ type: 'audio', uri: arq.uri, mime_type: mime }],
+      ...(quer ? { generation_config: { transcription_config: { mode: { type: 'verbatim' }, timestamp_granularities: ['word'] } } } : { generation_config: { transcription_config: { mode: { type: 'verbatim' } } } }) };
+    const r = await chamar(`${c.base}/interactions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': c.key }, body: JSON.stringify(body) }, { ...c, nome: 'gemini', timeout: Math.max(c.timeout, 120000) }, 'transcrição');
+    const j = await r.json();
+    const texto = String(j.output_text || '').trim();
+    if (!texto && !(Array.isArray(j.steps) && j.steps.length)) throw new AIError('O Gemini não devolveu texto de transcrição.', { status: 502, code: 'upstream', provider: 'gemini' });
+    let segmentos = [];
+    if (quer) {
+      const palavras = [];
+      for (const st of (j.steps || [])) for (const ct of (st.content || [])) for (const an of (ct.annotations || [])) if (an.type === 'word_info') palavras.push({ text: an.text, ini: parseOffset(an.start_offset), fim: parseOffset(an.end_offset) });
+      segmentos = palavrasEmSegmentos(palavras);
+    }
+    registrar('gemini', true, Date.now() - t0, null, modelo, 'transcricao');
+    const final = texto || segmentos.map(x => x.text).join(' ');
+    return timestamps ? { texto: /^\[sem fala\]$/i.test(final) ? '' : final, segmentos } : final;
+  } catch (e) { registrar('gemini', false, Date.now() - t0, e, modelo, 'transcricao'); throw e; }
+}
+// "1.5s", "1500ms" ou número (segundos) → segundos
+const parseOffset = (v) => { if (typeof v === 'number') return v; const m = /^([\d.]+)\s*(ms|s)?$/.exec(String(v || '').trim()); return m ? (m[2] === 'ms' ? +m[1] / 1000 : +m[1]) : 0; };
+
+async function transcribeGeminiGenerate({ audioBase64, mime = 'audio/webm', prompt = '', language = 'pt', timestamps = false }) {
   const c = cfg().gemini;
   if (!c.key) throw new AIError('GEMINI_API_KEY não configurada.', { status: 503, code: 'no_key', provider: 'gemini' });
   if (!disponivel('gemini')) throw new AIError('Limite do Gemini atingido — tente novamente em instantes.', { status: 429, code: 'rate_limit', provider: 'gemini' });

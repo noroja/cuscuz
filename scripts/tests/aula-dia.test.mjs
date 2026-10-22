@@ -17,7 +17,19 @@ await new Promise(r => fake.listen(0, r));
 process.env.GROQ_BASE_URL = `http://127.0.0.1:${fake.address().port}/openai/v1`;
 process.env.AI_LOG = '0';
 const capGem = [];
-const fakeGem = http.createServer((req, res) => { const p = []; req.on('data', d => p.push(d)); req.on('end', () => { capGem.push({ url: req.url, key: req.headers['x-goog-api-key'], corpo: JSON.parse(Buffer.concat(p).toString()) }); res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'texto do gemini' }] } }] })); }); });
+let gemDedicado = false; const capDed = [];
+const fakeGem = http.createServer((req, res) => { const p = []; req.on('data', d => p.push(d)); req.on('end', () => {
+  if (gemDedicado) {
+    const porta = fakeGem.address().port;
+    if (req.url === '/upload/v1beta/files') { capDed.push({ passo: 'start', h: req.headers, corpo: Buffer.concat(p).toString() }); res.writeHead(200, { 'x-goog-upload-url': `http://127.0.0.1:${porta}/upload-dados/1` }); return res.end('{}'); }
+    if (req.url === '/upload-dados/1') { capDed.push({ passo: 'dados', h: req.headers, bytes: Buffer.concat(p).length }); res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ file: { uri: 'https://files.fake/abc', name: 'files/abc' } })); }
+    if (req.url === '/v1beta/interactions') { const corpo = JSON.parse(Buffer.concat(p).toString()); capDed.push({ passo: 'interactions', corpo, key: req.headers['x-goog-api-key'] });
+      const ts = !!(corpo.generation_config.transcription_config.timestamp_granularities);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ output_text: 'Olá turma. Hoje vemos sepse.', steps: ts ? [{ content: [{ annotations: [{ type: 'word_info', text: 'Olá', start_offset: '0.0s', end_offset: '0.4s' }, { type: 'word_info', text: 'turma.', start_offset: '0.4s', end_offset: '1.1s' }, { type: 'word_info', text: 'Hoje', start_offset: '1.5s', end_offset: '1.8s' }, { type: 'word_info', text: 'vemos', start_offset: '1.8s', end_offset: '2.1s' }, { type: 'word_info', text: 'sepse.', start_offset: '2.1s', end_offset: '2.6s' }] }] }] : [] })); }
+  }
+  if (!req.url.includes('generateContent')) { res.writeHead(404, { 'content-type': 'application/json' }); return res.end('{"error":{"message":"nao"}}'); }
+  capGem.push({ url: req.url, key: req.headers['x-goog-api-key'], corpo: JSON.parse(Buffer.concat(p).toString()) }); res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'texto do gemini' }] } }] })); }); });
 await new Promise(r => fakeGem.listen(0, r));
 process.env.GEMINI_BASE_URL = `http://127.0.0.1:${fakeGem.address().port}/v1beta`;
 process.env.GROQ_MAX_RETRIES = '0';
@@ -84,6 +96,28 @@ await teste('transcrição: Groq ok → não chama o Gemini (segmentos preservad
 });
 await teste('transcrição: Groq falha e sem Gemini → erro (sem reserva)', async () => {
   limpa(); process.env.GROQ_API_KEY = 'gsk_x'; groqFalha = 429; const { status } = await trans(); groqFalha = 0; assert.ok(status >= 400);
+});
+
+await teste('transcrição Gemini dedicada: upload (Files API) + /interactions com áudio, modo verbatim e sem marcas de tempo por padrão', async () => {
+  limpa(); process.env.GEMINI_API_KEY = 'g'; gemDedicado = true; capDed.length = 0; capGem.length = 0;
+  try { const { status, j } = await trans(); assert.equal(status, 200); assert.equal(j.texto, 'Olá turma. Hoje vemos sepse.'); assert.deepEqual(j.segmentos, []);
+    assert.deepEqual(capDed.map(x => x.passo), ['start', 'dados', 'interactions']); assert.equal(capDed[0].h['x-goog-upload-command'], 'start'); assert.equal(capDed[1].h['x-goog-upload-command'], 'upload, finalize'); assert.equal(capDed[1].bytes, 5000);
+    const i = capDed[2]; assert.equal(i.key, 'g'); assert.equal(i.corpo.model, 'gemini-3.5-transcribe'); assert.deepEqual(i.corpo.input[0], { type: 'audio', uri: 'https://files.fake/abc', mime_type: 'audio/webm' });
+    assert.equal(i.corpo.generation_config.transcription_config.mode.type, 'verbatim'); assert.equal(capGem.length, 0, 'não deve cair no generateContent'); }
+  finally { gemDedicado = false; }
+});
+await teste('transcrição Gemini dedicada com GEMINI_STT_TIMESTAMPS=1: palavras viram segmentos para o karaokê', async () => {
+  limpa(); process.env.GEMINI_API_KEY = 'g'; process.env.GEMINI_STT_TIMESTAMPS = '1'; gemDedicado = true;
+  try { const { j } = await trans(); assert.equal(j.segmentos.length, 2); assert.deepEqual(j.segmentos[0], { ini: 0, fim: 1.1, text: 'Olá turma.' }); assert.equal(j.segmentos[1].text, 'Hoje vemos sepse.'); }
+  finally { gemDedicado = false; delete process.env.GEMINI_STT_TIMESTAMPS; }
+});
+await teste('transcrição Gemini: se o modelo dedicado falhar (sem URL de upload), cai no generateContent', async () => {
+  limpa(); process.env.GEMINI_API_KEY = 'g'; gemDedicado = false; capGem.length = 0;
+  const { status, j } = await trans(); assert.equal(status, 200); assert.equal(j.texto, 'texto do gemini'); assert.equal(capGem.length, 1);
+});
+await teste('transcrição Gemini: GEMINI_STT_MODEL=off usa direto o generateContent', async () => {
+  limpa(); process.env.GEMINI_API_KEY = 'g'; process.env.GEMINI_STT_MODEL = 'off'; gemDedicado = true; capDed.length = 0; capGem.length = 0;
+  try { const { j } = await trans(); assert.equal(j.texto, 'texto do gemini'); assert.equal(capDed.length, 0); } finally { gemDedicado = false; delete process.env.GEMINI_STT_MODEL; }
 });
 
 // ── Fase 2: extração única → derivar sem rereler ──
