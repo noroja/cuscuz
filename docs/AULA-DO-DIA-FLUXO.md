@@ -53,7 +53,11 @@ Novo `/api/aula/extrair` lê a aula por janelas e devolve uma **base** (fatos co
 - flashcards: a IA lê só os fatos extraídos;
 - processar: 1 chamada (título, resumo, tópicos); termos, "cai na prova", dúvidas e assuntos vêm da base.
 Se a extração falhar, o caminho antigo roda sem mudança. Leituras da aula: de ~7 para ~4 (revisar, mapa, extrair, capítulos). Verificado com testes de servidor e E2E com IA **falsa**. **Não medido:** fidelidade da extração com IA real (um fato omitido na base some do fechamento/cartões; os capítulos continuam lendo a aula inteira).
-Também feito: botão **❓ Dúvida** na gravação (marca o ponto na transcrição, a revisão preserva a marca, e a extração registra "[mm:ss] assunto" em "Suas dúvidas na aula"). Pendente: extrair durante a gravação, corte no silêncio (VAD), transcrição de reserva por Gemini.
+Também feito: botão **❓ Dúvida** na gravação (marca o ponto na transcrição, a revisão preserva a marca, e a extração registra "[mm:ss] assunto" em "Suas dúvidas na aula"). Também feito:
+- **Corte no silêncio:** a partir de 65 s o trecho termina na primeira pausa de fala (≥ 0,5 s, nível bem abaixo do pico recente); 90 s continua sendo o limite. Verificado no Chromium com microfone falso (`scripts/e2e/aula-gravacao.py`: trecho fechado em ~64 s em vez de 90 s). Com fala contínua real o corte pode cair em 90 s; a eficácia com a voz de um professor não foi medida.
+- **Transcrição de reserva pelo Gemini:** se a Groq não tem chave, está no limite (429) ou falha, o áudio vai inline ao Gemini (só texto: sem marcas de tempo, então o karaokê não sincroniza essas linhas). `/api/aula/status` informa `transcricaoReserva`. Testado só com Gemini simulado: **não sei se o Gemini aceita o `audio/webm` do Chrome** (a documentação lista WAV, MP3, AAC, OGG e FLAC); se recusar, volta erro de formato.
+- **Fechar o ciclo conclui a "Prévia da aula"** pendente da mesma matéria no Mentor (a mais recente até hoje, preferindo a do mesmo tema), com registro no histórico.
+Pendente: extrair durante a gravação.
 
 ### Fase 2 (original) — proposta: ler uma vez, derivar muitas
 Hoje cada saída relê a aula. Proposta:

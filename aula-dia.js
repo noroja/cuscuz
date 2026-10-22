@@ -1,7 +1,7 @@
 /* Aula do dia — grava a aula da faculdade, transcreve por trechos e gera material de estudo */
 (function () {
   'use strict';
-  const VIEW = 'view-auladia', K_SESS = 'aula-dia-sessoes', CHUNK_MS = 90 * 1000;
+  const VIEW = 'view-auladia', K_SESS = 'aula-dia-sessoes', CHUNK_MS = 90 * 1000, CHUNK_SOFT_MS = 65 * 1000, SILENCIO_CORTE_S = 0.5;
   const $ = id => document.getElementById(id);
   const E = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const get = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (_) { return d; } };
@@ -282,6 +282,9 @@
         an.getByteTimeDomainData(buf); let m = 0; for (const v of buf) m = Math.max(m, Math.abs(v - 128));
         const nv = Math.min(100, m * 1.6); const el = $('ad-meter'); if (el) el.style.width = nv + '%';
         rec.silencio = nv < 3 ? rec.silencio + 0.1 : 0;
+        // pausa de fala = nível bem abaixo do pico recente (funciona com ruído de sala, onde o silêncio absoluto nunca acontece)
+        rec.pico = Math.max(nv, (rec.pico || 0) * 0.997);
+        rec.pausaFala = nv < Math.max(4, rec.pico * 0.25) ? (rec.pausaFala || 0) + 0.1 : 0;
         if (estadoGrav() === 'gravando') {
           const st = $('ad-status'); if (st) st.textContent = rec.silencio > 20 ? '⚠ Sem som há mais de 20 s — verifique o microfone e a distância do professor.' : 'Gravando · trechos enviados à IA a cada ~1,5 min';
         }
@@ -302,6 +305,10 @@
     else toast('A aula continua gravando, mas o iPhone pode pausar a gravação com a tela em segundo plano.', 'warning');
   }
 
+  // Corte no silêncio: a partir de CHUNK_SOFT_MS o trecho termina na primeira pausa de fala (≥ 0,5 s), em vez de partir a frase no
+  // meio aos 90 s fixos (que seguem como limite máximo). `gravadoMs` conta só o tempo realmente gravado (sem pausas).
+  const deveCortar = (gravadoMs, silencioS) => gravadoMs >= CHUNK_SOFT_MS && silencioS >= SILENCIO_CORTE_S;
+
   function iniciarTrecho() {
     if (!rec || rec.parar || rec.pausado || rec.parado) return;
     const idx = rec.chunkIdx++;
@@ -321,6 +328,13 @@
     mr.start();
     clearTimeout(rec.tChunk);
     rec.tChunk = setTimeout(() => { try { if (mr.state !== 'inactive') mr.stop(); } catch (_) {} }, CHUNK_MS);
+    clearInterval(rec.vad); let gravado = 0;
+    rec.vad = setInterval(() => {
+      if (!rec || rec.mr !== mr) return clearInterval(rec && rec.vad);
+      if (mr.state !== 'recording') return; // pausado/parado: não conta
+      gravado += 250;
+      if (deveCortar(gravado, rec.pausaFala || 0)) { clearInterval(rec.vad); try { mr.stop(); } catch (_) {} }
+    }, 250);
   }
 
   function iniciarLegendaAoVivo() {
@@ -409,7 +423,7 @@
   function finalizar() { // ✅ Encerra a gravação e dispara o processo secundário (revisão → resumo → flashcards)
     if (!rec || rec.parar) return;
     rec.parar = true; rec.pausado = false; rec.parado = false;
-    rec.timers.forEach(clearInterval); clearTimeout(rec.tChunk);
+    rec.timers.forEach(clearInterval); clearTimeout(rec.tChunk); clearInterval(rec.vad);
     try { rec.sr && rec.sr.stop(); } catch (_) {}
     sessAtual.duracao = Math.round(decorridoMs() / 1000);
     try { if (rec.mr && rec.mr.state !== 'inactive') rec.mr.stop(); else finalizarDepois(); } catch (_) { finalizarDepois(); }
@@ -1056,7 +1070,7 @@
     pausar, continuar, parar, retomar, finalizar,
     gerar() { if (sessAtual) pipeline(sessAtual); }, reenviar: reenviarFalhas, parteAuto: atualizarParteSugerida,
     kVai, fecharCiclo, testar: testarAgora,
-    _pool: pool, _limitador: limitador, _revisoes: revisoesParaPlano, _previa: concluirPrevia,
+    _deveCortar: deveCortar, _chunksProntos: () => (sessAtual && sessAtual.chunks ? sessAtual.chunks.length : 0), _CHUNK: { SOFT: CHUNK_SOFT_MS, HARD: CHUNK_MS }, _pool: pool, _limitador: limitador, _revisoes: revisoesParaPlano, _previa: concluirPrevia,
     gerarRQ: gerarResumoGeral,
     mmGerar, mmToggle: mmClique, mmZoom, mmFit, mmTudo, mmPNG,
     ancora(id) { const el = document.getElementById('adh-' + id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
