@@ -12,6 +12,7 @@ http.createServer((req, res) => {
     else if (/Escreva SOMENTE o capítulo (\d+)/.test(txt) || /escreva SOMENTE o capítulo (\d+)/.test(txt)) { tipo = 'cap'; const n = (/capítulo (\d+) de/.exec(txt) || [])[1]; saida = `## ${n}.0 — Cap ${n}\n\nconteúdo do capítulo ${n}`; await dormir(500); }
     else if (/Síntese do trecho/.test(txt)) { tipo = 'fech'; saida = '### Síntese do trecho\n- ligação\n### Memória do trecho\n- fato'; await dormir(200); }
     else if (/Crie flashcards/.test(txt)) { tipo = 'fc'; saida = JSON.stringify([{ frente: 'F1', verso: 'V1', tema: 'Tema 1' }, { frente: 'F2', verso: 'V2' }]); await dormir(300); }
+    else if (/Extraia, SOMENTE do TRECHO/.test(txt)) { tipo = 'ext'; saida = JSON.stringify({ fatos: [{ tipo: 'dose', texto: 'Fato A', capitulo: 'Tema 1' }, { tipo: 'conduta', texto: 'Fato B', capitulo: 'Tema 2' }], sintese: ['Ligação X'], termos: [], caiNaProva: ['cai isto'], duvidas: [], assuntosCobertos: [] }); await dormir(200); }
     else if (/monitor de Medicina/.test(txt)) { tipo = 'proc'; saida = JSON.stringify({ titulo: 'T', resumo: 'r', topicos: [{ titulo: 'a', pontos: ['x'] }], caiNaProva: ['cai isto'], assuntosCobertos: [] }); await dormir(300); }
     else if (/revisa transcrições/.test(txt)) { tipo = 'rev'; saida = 'TEXTO REVISADO\n\n' + txt.slice(txt.indexOf('TEXTO:\n') + 7); await dormir(300); }
     log.push(tipo);

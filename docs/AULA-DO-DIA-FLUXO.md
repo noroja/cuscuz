@@ -47,7 +47,15 @@ A aula termina em material (resumo, cartões), mas **não fecha o ciclo**: não 
 3. **Pipeline paralelo com teto global:** revisão e capítulos em paralelo; mapa primeiro; depois resumo ∥ flashcards ∥ "cai na prova". Teto de chamadas simultâneas = `paralelo` (1 só com Groq, por causa do limite por minuto; 3 com Gemini/OpenRouter). Retomada por índice: capítulos já prontos não são refeitos.
 Verificado: testes de servidor (status e prompt) e E2E no navegador contra IA **falsa** (`scripts/e2e/aula-pipeline.py`): ordem dos capítulos, retomada, concorrência ≤ 3 (e = 1 no modo só-Groq). Tempo real depende da IA; o ganho esperado é redução do tempo de espera, não medida.
 
-### Fase 2 — proposta: ler uma vez, derivar muitas
+### Fase 2 — implementada (parte): ler uma vez, derivar muitas
+Novo `/api/aula/extrair` lê a aula por janelas e devolve uma **base** (fatos com tipo e capítulo, sínteses, termos, "cai na prova", dúvidas, assuntos cobertos). O pipeline chama a extração depois do mapa; `fechamento`, `flashcards` e `processar` aceitam `base` e **não releem a aula**:
+- fechamento: montado sem IA (sínteses = Considerações Finais; fatos = Revisão Final);
+- flashcards: a IA lê só os fatos extraídos;
+- processar: 1 chamada (título, resumo, tópicos); termos, "cai na prova", dúvidas e assuntos vêm da base.
+Se a extração falhar, o caminho antigo roda sem mudança. Leituras da aula: de ~7 para ~4 (revisar, mapa, extrair, capítulos). Verificado com testes de servidor e E2E com IA **falsa**. **Não medido:** fidelidade da extração com IA real (um fato omitido na base some do fechamento/cartões; os capítulos continuam lendo a aula inteira).
+Pendente: extrair durante a gravação, corte no silêncio (VAD), transcrição de reserva por Gemini e botão ❓.
+
+### Fase 2 (original) — proposta: ler uma vez, derivar muitas
 Hoje cada saída relê a aula. Proposta:
 1. **Extração única por janela**, feita já *durante* a gravação (a cada ~5 min de texto): JSON com capítulos, fatos (número, conduta, critério, pegadinha, definição), termos, questões lidas, candidatos a flashcard e o que o professor marcou como "cai".
 2. **Derivar da base**, sem reler a aula: mapa, fechamento, flashcards, "cai na prova", cobertura do plano, mapa mental. Só os **capítulos Crônicas** continuam lendo o trecho original (fidelidade).

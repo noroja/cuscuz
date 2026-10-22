@@ -574,6 +574,16 @@
         est.res = 'go'; est.resInfo = 'mapeando tópicos'; passos(s, est);
         if (!s.mapa) { s.mapa = (await postL('/api/aula/mapa', Object.assign({ transcricao: fonte, parte: s.parte }, ctx))).mapa; await salvarAgora(s); }
       }
+      // 2b) Extração única (fase 2): lê a aula UMA vez e deriva fechamento/flashcards/"cai na prova" da base.
+      //     Se falhar, segue o caminho antigo (cada etapa relendo a aula) — nada deixa de ser gerado.
+      if (!s.base && (!s.fechamento || !s.flashcards || !s.resultado)) {
+        try {
+          est.res = est.res === 'ok' ? 'ok' : 'go'; est.resInfo = 'extraindo fatos da aula'; passos(s, est);
+          s.base = (await postL('/api/aula/extrair', { transcricao: fonte, area: s.disciplina, conteudo: ctx.conteudo, capitulos: (s.mapa && s.mapa.capitulos) || [], assuntosPlano: assuntosPlano(s.disciplina), marcas: s.marcas })).base;
+          await salvarAgora(s);
+        } catch (_) { s.base = null; }
+      }
+      const baseOpt = () => (s.base && Array.isArray(s.base.fatos) && s.base.fatos.length ? { base: s.base } : {});
       const frenteResumo = async () => {
         if (s.resumoMd) return;
         const caps = (s.mapa && s.mapa.capitulos) || []; s.caps = Array.isArray(s.caps) ? s.caps : [];
@@ -584,19 +594,19 @@
           s.caps[i] = j.markdown; await salvarAgora(s);
           est.resInfo = (++prontos) + '/' + caps.length + ' capítulos'; passos(s, est);
         });
-        if (!s.fechamento) { est.resInfo = 'considerações finais e revisão'; passos(s, est); s.fechamento = (await postL('/api/aula/fechamento', Object.assign({ transcricao: fonte, capitulos: caps, temQuestoes: !!s.mapa.temQuestoes }, ctx))).markdown; await salvarAgora(s); }
+        if (!s.fechamento) { est.resInfo = 'considerações finais e revisão'; passos(s, est); s.fechamento = (await postL('/api/aula/fechamento', Object.assign({ transcricao: fonte, capitulos: caps, temQuestoes: !!s.mapa.temQuestoes }, baseOpt(), ctx))).markdown; await salvarAgora(s); }
         s.resumoMd = montarResumoMd(s); est.res = 'ok'; est.resInfo = ''; await salvarAgora(s); passos(s, est);
       };
       const frenteFlash = async () => {
         if (s.flashcards) return;
         est.fc = 'go'; passos(s, est);
-        s.flashcards = (await postL('/api/aula/flashcards', Object.assign({ transcricao: fonte, capitulos: (s.mapa && s.mapa.capitulos) || [] }, ctx))).flashcards || [];
+        s.flashcards = (await postL('/api/aula/flashcards', Object.assign({ transcricao: fonte, capitulos: (s.mapa && s.mapa.capitulos) || [] }, baseOpt(), ctx))).flashcards || [];
         est.fc = 'ok'; est.fcInfo = s.flashcards.length + ' cartões'; await salvarAgora(s); passos(s, est);
       };
       const frenteMaterial = async () => {
         if (s.resultado) return;
         est.mat = 'go'; passos(s, est);
-        try { s.resultado = (await postL('/api/aula/processar', { transcricao: fonte, disciplina: s.disciplina, tema: ctx.conteudo, assuntosPlano: assuntosPlano(s.disciplina), marcas: s.marcas })).resultado; } catch (_) { s.resultado = { caiNaProva: [], assuntosCobertos: [] }; }
+        try { s.resultado = (await postL('/api/aula/processar', Object.assign({ transcricao: fonte, disciplina: s.disciplina, tema: ctx.conteudo, assuntosPlano: assuntosPlano(s.disciplina), marcas: s.marcas }, baseOpt()))).resultado; } catch (_) { s.resultado = { caiNaProva: [], assuntosCobertos: [] }; }
         est.mat = 'ok'; await salvarAgora(s); passos(s, est);
       };
       const frentes = [frenteResumo, frenteFlash, frenteMaterial];

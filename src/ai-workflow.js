@@ -9,6 +9,7 @@ export const AI_TASKS = {
   aula_capitulo: { label: 'Escrever capítulos', providers: writing, families: ['nvidia/', 'minimax/', 'google/gemma'] },
   aula_fechamento: { label: 'Sintetizar e fechar o material', providers: writing, families: ['minimax/', 'nvidia/', 'google/gemma'] },
   aula_flashcards: { label: 'Gerar flashcards', providers: writing, families: ['google/gemma', 'nvidia/', 'minimax/'] },
+  aula_extrair: { label: 'Extrair fatos da aula (uma leitura)', providers: context },
   aula_processar: { label: 'Extrair pontos de prova', providers: fast },
   aula_resumo: { label: 'Produzir visão geral', providers: context },
   aula_mapa_mental: { label: 'Estruturar mapa mental', providers: context },

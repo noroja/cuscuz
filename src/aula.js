@@ -110,6 +110,18 @@ export function promptWhisper({ disciplina = '', tema = '', termos = [], anterio
   return [cabeca, ponta].filter(Boolean).join(' ').slice(-700);
 }
 
+
+// ── Fase 2: "ler uma vez, derivar muitas" ──
+// /api/aula/extrair lê a transcrição UMA vez e devolve uma base estruturada (fatos, sínteses, termos, "cai na prova"…).
+// Fechamento, flashcards e processar aceitam `base` e trabalham a partir dela, sem reler a aula.
+const baseValida = (b) => !!b && typeof b === 'object' && Array.isArray(b.fatos) && b.fatos.length > 0;
+const baseEmTexto = (b) => [
+  ...(b.sintese || []).map(x => 'SÍNTESE: ' + x),
+  ...b.fatos.map(f => `[${f.capitulo || 'geral'}] (${f.tipo || 'fato'}) ${f.texto}`),
+  ...(b.termos || []).map(t => `TERMO: ${t.termo} = ${t.definicao}`),
+  ...(b.caiNaProva || []).map(x => 'CAI NA PROVA: ' + x)
+].join('\n');
+
 export function registerAula(app, { generateAI, aiConfigured }) {
   const exigeIA = (res) => { if (!aiConfigured()) { res.status(503).json({ success: false, msg: 'GROQ_API_KEY não configurada.' }); return false; } return true; };
 
@@ -295,6 +307,17 @@ ${fonte}`,
       const { transcricao = '', area = '', conteudo = '', capitulos = [], temQuestoes = false } = req.body || {};
       const t = String(transcricao).trim();
       if (t.length < 100) return res.status(400).json({ success: false, msg: 'Transcrição curta demais.' });
+      if (baseValida(req.body.base)) {
+        // Sem IA: as sínteses e os fatos já foram extraídos da aula (fiéis ao que foi dito).
+        const b = req.body.base;
+        const bl = (x) => '- ' + String(x).replace(/^\s*[-•]\s*/, '');
+        const cons = (b.sintese || []).map(bl).join('\n') || '*(nada a sintetizar)*';
+        const rev = b.fatos.map(f => `- ${f.tipo ? '**' + f.tipo + ':** ' : ''}${f.texto}`).join('\n');
+        let md = `## Considerações Finais\n\n${cons}\n\n## Revisão Final — Fatos e Relações Essenciais\n\n${rev}`;
+        if (temQuestoes) md += '\n\n## Gabarito Geral\n(as questões reais lidas na aula estão comentadas nos capítulos, nas caixas "BANCA | ANO" com gabarito em negrito)';
+        md += `\n\n— Fim deste volume das Crônicas · @cuscuz-klan —`;
+        return res.json({ success: true, markdown: md.trim(), semIA: true });
+      }
       const partes = fatiarComOffsets(t, janelaChars(2200));
       const separa = (md) => { const cons = [], rev = []; let alvo = null; for (const l of String(md).split('\n')) { if (/^#{1,4}.*(considera|síntese|sintese)/i.test(l)) alvo = cons; else if (/^#{1,4}.*(revis|fatos|memoriz)/i.test(l)) alvo = rev; else if (alvo) alvo.push(l); } return { cons, rev }; };
       const cons = [], rev = [];
@@ -334,12 +357,13 @@ ${partes[i].texto}`,
       const palavras = t.split(/\s+/).length;
       const alvo = Math.max(10, Math.min(80, Math.round(palavras / 90)));
       const nomeCaps = capitulos.map(c => c.titulo || c).filter(Boolean);
-      const partes = fatiarComOffsets(t, janelaChars(1800));
+      const usaBase = baseValida(req.body.base);
+      const partes = fatiarComOffsets(usaBase ? baseEmTexto(req.body.base).replace(/\n/g, '\n\n') : t, janelaChars(1800));
       const porParte = Math.max(6, Math.round(alvo / partes.length));
       const cartoes = []; const vistos = new Set();
       for (let i = 0; i < partes.length; i++) {
         const r = await generateAI({ task: "aula_flashcards",
-          contents: `Crie flashcards de REVISÃO para residência médica a partir EXCLUSIVAMENTE deste TRECHO de aula (trecho ${i + 1} de ${partes.length}; área: ${area || 'n/i'}; conteúdo: ${conteudo || 'n/i'}).
+          contents: `Crie flashcards de REVISÃO para residência médica a partir EXCLUSIVAMENTE deste ${usaBase ? 'RESUMO ESTRUTURADO de fatos extraídos da aula' : 'TRECHO de aula'} (parte ${i + 1} de ${partes.length}; área: ${area || 'n/i'}; conteúdo: ${conteudo || 'n/i'}).
 Regras: cerca de ${porParte} cartões cobrindo os pontos importantes NA ORDEM do trecho; um fato por cartão (pergunta direta na frente, resposta curta e completa no verso); inclua números, doses, critérios, classificações, condutas de escolha e pegadinhas ditas pelo professor; use "____" (lacuna) quando for melhor para memorizar; sem duplicar; sem conhecimento externo; português do Brasil. Em "tema" coloque o capítulo/tópico ao qual o cartão pertence${nomeCaps.length ? ' (preferir um destes: ' + JSON.stringify(nomeCaps) + ')' : ''}.
 TRECHO:
 ${partes[i].texto}`,
@@ -376,6 +400,25 @@ ${partes[i].texto}`,
       const ctx = `Você é um monitor de Medicina. Com base SOMENTE no trecho da aula abaixo (disciplina: ${disciplina || 'não informada'}${tema ? '; tema: ' + tema : ''}), produza material de estudo fiel ao que foi dito. Não acrescente informação que o professor não tenha dito; se algo parecer errado ou impreciso na fala, sinalize em "duvidas". Português do Brasil.\n`;
       const ctxAss = assuntosPlano.length ? `Assuntos esperados na prova (do manual do aluno): ${JSON.stringify(assuntosPlano.slice(0, 60))}. Em "assuntosCobertos" liste, copiando exatamente, apenas os que foram realmente abordados NESTE TRECHO.\n` : '';
       const ctxMarcas = marcas.length ? `O aluno marcou estes momentos como importantes (mm:ss): ${marcas.join(', ')}.\n` : '';
+      if (baseValida(req.body.base)) {
+        const b = req.body.base;
+        const r = await generateAI({ task: "aula_processar",
+          contents: `${ctx}Abaixo está um RESUMO ESTRUTURADO de fatos já extraídos da aula (não a transcrição). Produza o título, um resumo de 5 a 10 linhas e os tópicos agrupando os pontos, usando SOMENTE esses fatos.\n${baseEmTexto(b)}`,
+          config: {
+            temperature: 0.3, responseMimeType: 'application/json',
+            responseSchema: { type: Type.OBJECT, required: ['titulo', 'resumo', 'topicos'], properties: {
+              titulo: { type: S }, resumo: { type: S },
+              topicos: { type: Type.ARRAY, items: { type: Type.OBJECT, required: ['titulo', 'pontos'], properties: { titulo: { type: S }, pontos: { type: Type.ARRAY, items: { type: S } } } } }
+            } }
+          }
+        });
+        const j = JSON.parse(String(r.text).trim());
+        const outB = { titulo: String(j.titulo || ''), resumo: String(j.resumo || ''),
+          topicos: (j.topicos || []).filter(tp => tp && tp.titulo).map(tp => ({ titulo: String(tp.titulo), pontos: (tp.pontos || []).map(String) })),
+          termos: (b.termos || []).filter(x => x && x.termo), caiNaProva: (b.caiNaProva || []).map(String), duvidas: (b.duvidas || []).map(String),
+          assuntosCobertos: (b.assuntosCobertos || []).map(String).filter(a => assuntosPlano.includes(a)) };
+        return res.json({ success: true, resultado: outB, semLerAula: true });
+      }
       const partes = fatiarComOffsets(t, janelaChars(2000));
       const out = { titulo: '', resumo: '', topicos: [], termos: [], caiNaProva: [], duvidas: [], assuntosCobertos: [] };
       const vistos = { termo: new Set(), prova: new Set(), assunto: new Set() };
@@ -409,6 +452,53 @@ ${partes[i].texto}`,
       res.json({ success: true, resultado: out });
     } catch (err) {
       console.error('[Aula processar]', err);
+      res.status(500).json({ success: false, msg: err.message });
+    }
+  });
+
+  // 7b) EXTRAÇÃO ÚNICA (fase 2): lê a transcrição por janelas e devolve a base de fatos para derivar o resto sem reler.
+  app.post('/api/aula/extrair', async (req, res) => {
+    try {
+      if (!exigeIA(res)) return;
+      const { transcricao = '', area = '', conteudo = '', capitulos = [], assuntosPlano = [], marcas = [] } = req.body || {};
+      const t = String(transcricao).trim();
+      if (t.length < 100) return res.status(400).json({ success: false, msg: 'Transcrição curta demais.' });
+      const nomeCaps = capitulos.map(c => c.titulo || c).filter(Boolean);
+      const partes = fatiarComOffsets(t, janelaChars(2400));
+      const base = { fatos: [], sintese: [], termos: [], caiNaProva: [], duvidas: [], assuntosCobertos: [] };
+      const vistos = { fato: new Set(), termo: new Set(), prova: new Set() };
+      const ass = assuntosPlano.length ? `Assuntos esperados na prova: ${JSON.stringify(assuntosPlano.slice(0, 60))}. Em "assuntosCobertos" copie exatamente só os realmente abordados NESTE TRECHO.\n` : '';
+      const mk = marcas.length ? `O aluno marcou estes momentos como importantes (mm:ss): ${marcas.join(', ')}.\n` : '';
+      for (let i = 0; i < partes.length; i++) {
+        const r = await generateAI({ task: "aula_extrair",
+          contents: `Você é um monitor de Medicina. Extraia, SOMENTE do TRECHO ${i + 1} de ${partes.length} desta aula (área: ${area || 'n/i'}; conteúdo: ${conteudo || 'n/i'}), uma base de estudo fiel ao que o professor disse. Nada de conhecimento externo; preserve números, doses, cortes e ressalvas exatamente. Português do Brasil.
+- "fatos": um item por fato memorizável, com "tipo" (numero, dose, criterio, conduta, classificacao, pegadinha, definicao, mnemonico ou questao), "texto" curto e completo e "capitulo"${nomeCaps.length ? ' (preferir um destes: ' + JSON.stringify(nomeCaps) + ')' : ''}.
+- "sintese": 3 a 6 bullets amarrando os conceitos centrais do trecho entre si.
+- "termos": termo e definição dados na aula. "caiNaProva": o que o professor indicou que cai ou enfatizou. "duvidas": falas que pareçam imprecisas.
+${ass}${mk}TRECHO:
+${partes[i].texto}`,
+          config: { temperature: 0.2, responseMimeType: 'application/json',
+            responseSchema: { type: Type.OBJECT, required: ['fatos', 'sintese'], properties: {
+              fatos: { type: Type.ARRAY, items: { type: Type.OBJECT, required: ['texto'], properties: { tipo: { type: S }, texto: { type: S }, capitulo: { type: S } } } },
+              sintese: { type: Type.ARRAY, items: { type: S } },
+              termos: { type: Type.ARRAY, items: { type: Type.OBJECT, required: ['termo', 'definicao'], properties: { termo: { type: S }, definicao: { type: S } } } },
+              caiNaProva: { type: Type.ARRAY, items: { type: S } },
+              duvidas: { type: Type.ARRAY, items: { type: S } },
+              assuntosCobertos: { type: Type.ARRAY, items: { type: S } }
+            } } }
+        });
+        const j = JSON.parse(String(r.text).trim());
+        for (const f of (j.fatos || [])) { const k = String(f?.texto || '').trim().toLowerCase(); if (k && !vistos.fato.has(k)) { vistos.fato.add(k); base.fatos.push({ tipo: String(f.tipo || ''), texto: String(f.texto), capitulo: String(f.capitulo || '') }); } }
+        for (const x of (j.sintese || [])) if (String(x).trim()) base.sintese.push(String(x));
+        for (const tm of (j.termos || [])) { const k = String(tm?.termo || '').trim().toLowerCase(); if (k && !vistos.termo.has(k)) { vistos.termo.add(k); base.termos.push({ termo: String(tm.termo), definicao: String(tm.definicao || '') }); } }
+        for (const p of (j.caiNaProva || [])) { const k = String(p).trim().toLowerCase(); if (k && !vistos.prova.has(k)) { vistos.prova.add(k); base.caiNaProva.push(String(p)); } }
+        for (const d of (j.duvidas || [])) base.duvidas.push(String(d));
+        for (const a of (j.assuntosCobertos || [])) if (assuntosPlano.includes(String(a)) && !base.assuntosCobertos.includes(String(a))) base.assuntosCobertos.push(String(a));
+      }
+      if (!base.fatos.length) return res.status(502).json({ success: false, msg: 'A extração não encontrou fatos.' });
+      res.json({ success: true, base });
+    } catch (err) {
+      console.error('[Aula extrair]', err);
       res.status(500).json({ success: false, msg: err.message });
     }
   });

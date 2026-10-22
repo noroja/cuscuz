@@ -71,6 +71,7 @@ try:
         b.close()
     stt=json.loads(urllib.request.urlopen(f'http://127.0.0.1:{FP}/__stats').read())
     print('chamadas por tipo:', {k:stt['log'].count(k) for k in set(stt['log'])}, 'máx em voo:', stt['max'])
+    chk('fase 2: extração feita e fechamento/flashcards derivados da base (flashcards leem fatos, fechamento sem IA)', stt['log'].count('ext')>=1 and stt['log'].count('fech')==0, str(stt['log']))
     chk('concorrência coerente com o modo', (2<=stt['max']<=3) if MODO=='paralelo' else (stt['max']==1), 'max=%d'%stt['max'])
 finally:
     srv.terminate(); fake.terminate()

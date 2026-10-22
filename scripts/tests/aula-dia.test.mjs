@@ -56,6 +56,47 @@ await teste('/transcrever envia o trecho anterior no prompt do Whisper', async (
   assert.ok(c, 'chamada ao Whisper simulado'); assert.ok(c.corpo.includes('hipotensão refratária') || c.corpo.includes('hipotens'), 'prompt deve conter o fim do trecho anterior');
   assert.ok(c.corpo.includes('lactato'));
 });
+
+// ── Fase 2: extração única → derivar sem rereler ──
+const tarefas = []; let promptsDerivados = [];
+const gaiFake = async ({ task, contents }) => {
+  tarefas.push(task);
+  if (task === 'aula_extrair') return { text: JSON.stringify({ fatos: [{ tipo: 'dose', texto: 'Adrenalina 1 mg a cada 3-5 min', capitulo: 'PCR' }, { tipo: 'conduta', texto: 'Choque em ritmo chocável', capitulo: 'PCR' }], sintese: ['Ritmo define a conduta'], termos: [{ termo: 'FV', definicao: 'fibrilação ventricular' }], caiNaProva: ['dose da adrenalina'], duvidas: [], assuntosCobertos: ['PCR', 'Inexistente'] }) };
+  promptsDerivados.push(contents);
+  if (task === 'aula_flashcards') return { text: JSON.stringify([{ frente: 'Dose de adrenalina na PCR?', verso: '1 mg a cada 3-5 min', tema: 'PCR' }]) };
+  return { text: JSON.stringify({ titulo: 'PCR', resumo: 'r', topicos: [{ titulo: 'a', pontos: ['x'] }] }) };
+};
+const app2 = express(); app2.use(express.json({ limit: '40mb' })); registerAula(app2, { generateAI: gaiFake, aiConfigured: () => true });
+const srv2 = await new Promise(r => { const s2 = app2.listen(0, () => r(s2)); });
+const B2 = `http://127.0.0.1:${srv2.address().port}`;
+const post2 = async (u, c) => (await fetch(B2 + u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(c) })).json();
+const aulaTxt = 'Na parada cardiorrespiratória a adrenalina 1 mg a cada 3 a 5 minutos. '.repeat(10);
+let base;
+await teste('/extrair devolve a base e filtra assuntosCobertos que não estão no plano', async () => {
+  const j = await post2('/api/aula/extrair', { transcricao: aulaTxt, area: 'Emergência', assuntosPlano: ['PCR'] });
+  assert.equal(j.success, true); base = j.base; assert.equal(base.fatos.length, 2); assert.deepEqual(base.assuntosCobertos, ['PCR']);
+});
+await teste('/extrair rejeita transcrição curta', async () => { assert.equal((await fetch(B2 + '/api/aula/extrair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ transcricao: 'curta' }) })).status, 400); });
+await teste('/fechamento com base: sem IA, usa sínteses e fatos', async () => {
+  tarefas.length = 0; const j = await post2('/api/aula/fechamento', { transcricao: aulaTxt, base });
+  assert.equal(j.success, true); assert.equal(j.semIA, true); assert.equal(tarefas.length, 0);
+  assert.ok(j.markdown.includes('Ritmo define a conduta') && j.markdown.includes('Adrenalina 1 mg') && j.markdown.includes('Revisão Final'));
+});
+await teste('/flashcards com base: prompt contém os fatos, não a transcrição', async () => {
+  promptsDerivados = []; const j = await post2('/api/aula/flashcards', { transcricao: aulaTxt, base });
+  assert.equal(j.success, true); assert.equal(j.flashcards.length, 1);
+  assert.ok(promptsDerivados[0].includes('Adrenalina 1 mg a cada 3-5 min')); assert.ok(!promptsDerivados[0].includes('parada cardiorrespiratória'));
+});
+await teste('/processar com base: 1 chamada, copia cai na prova/termos e filtra assuntos', async () => {
+  tarefas.length = 0; promptsDerivados = []; const j = await post2('/api/aula/processar', { transcricao: aulaTxt, assuntosPlano: ['PCR'], base });
+  assert.equal(j.success, true); assert.equal(j.semLerAula, true); assert.equal(tarefas.length, 1);
+  assert.deepEqual(j.resultado.caiNaProva, ['dose da adrenalina']); assert.equal(j.resultado.termos[0].termo, 'FV'); assert.deepEqual(j.resultado.assuntosCobertos, ['PCR']);
+  assert.ok(!promptsDerivados[0].includes('parada cardiorrespiratória'));
+});
+await teste('sem base, o caminho antigo continua funcionando (fechamento usa IA)', async () => {
+  tarefas.length = 0; await post2('/api/aula/fechamento', { transcricao: aulaTxt + aulaTxt }); assert.ok(tarefas.includes('aula_fechamento'));
+});
+srv2.close();
 srv.close(); fake.closeAllConnections?.(); fake.close();
 for (const l of t) console.log(l.join(' — '));
 process.exit(t.every(l => l[0] === 'OK ') ? 0 : 1);
