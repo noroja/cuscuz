@@ -125,13 +125,13 @@ const baseEmTexto = (b) => [
 export function registerAula(app, { generateAI, aiConfigured }) {
   const exigeIA = (res) => { if (!aiConfigured()) { res.status(503).json({ success: false, msg: 'GROQ_API_KEY não configurada.' }); return false; } return true; };
 
-  // gemini = há IA de TEXTO (qualquer provedor; nome legado). transcricao = há Whisper (exige GROQ_API_KEY).
+  // gemini = há IA de TEXTO (qualquer provedor; nome legado). transcricao = há transcrição (Whisper da Groq ou, de reserva, áudio no Gemini; sem Gemini/Groq não há).
   // paralelo = quantas chamadas de texto o cliente pode disparar juntas sem estourar o teto por minuto:
   // só Groq (8000 TPM no free tier) → 1; com Gemini/OpenRouter na fila → 3.
   app.get('/api/aula/status', (_req, res) => {
     const st = aiStatus();
     const soGroq = st.provider === 'groq' || (st.provider === 'auto' && st.groq && !st.gemini && !st.openrouter);
-    res.json({ success: true, gemini: !!aiConfigured(), texto: !!aiConfigured(), transcricao: !!st.groq, paralelo: soGroq ? 1 : st.workflow.fila.limites.total, ia: st });
+    res.json({ success: true, gemini: !!aiConfigured(), texto: !!aiConfigured(), transcricao: !!(st.groq || st.gemini), transcricaoReserva: !!(st.groq && st.gemini), paralelo: soGroq ? 1 : st.workflow.fila.limites.total, ia: st });
   });
 
   // 1) Transcreve um trecho de áudio fielmente

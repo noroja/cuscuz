@@ -986,6 +986,19 @@
     return novas;
   }
 
+  // A aula foi assistida: marca como feita a "Prévia da aula" pendente dessa matéria (a mais recente até hoje), com registro no histórico.
+  function concluirPrevia(s, plano, hoje) {
+    const disc = normTxt(s.disciplina); if (!disc) return null;
+    const cand = (plano.tarefas || []).filter(t => t.status === 'pendente' && /^Prévia da aula/i.test(t.titulo || '') && t.data <= hoje && t.origem !== 'aula-dia'
+      && (normTxt(t.materia).includes(disc) || disc.includes(normTxt(t.materia))) && normTxt(t.materia));
+    if (!cand.length) return null;
+    const tm = normTxt(s.tema);
+    cand.sort((a, b) => (tm && normTxt(b.titulo).includes(tm) ? 1 : 0) - (tm && normTxt(a.titulo).includes(tm) ? 1 : 0) || String(b.data).localeCompare(String(a.data)));
+    const t = cand[0]; t.status = 'feito'; t.feitoEm = new Date().toISOString(); t.observacoes = ((t.observacoes || '') + ' Concluída pela Aula do dia (' + s.data + ').').trim();
+    plano.historico = (plano.historico || []).concat([{ ts: t.feitoEm, acao: 'concluir', id: t.id, titulo: t.titulo, origem: 'aula-dia' }]).slice(-500);
+    return t;
+  }
+
   async function fecharCiclo() {
     const s = sessAtual; if (!s || !s.flashcards) return toast('Gere o resumo e os flashcards primeiro.', 'warning');
     const out = s.ciclo = Object.assign({}, s.ciclo);
@@ -997,7 +1010,9 @@
     else {
       out.semPlano = false;
       const novas = revisoesParaPlano(s, plano, hojeISO());
-      if (novas.length) {
+      const previa = (s.ciclo && s.ciclo.previa) ? null : concluirPrevia(s, plano, hojeISO());
+      if (previa) out.previa = previa.titulo;
+      if (novas.length || previa) {
         plano.tarefas = plano.tarefas.concat(novas).sort((a, b) => String(a.data).localeCompare(String(b.data)));
         I.set('planner-v2-plan', plano);
         try { if (window.plv3 && plv3.anotar) { const p2 = await plv3.anotar(plano); if (p2 && Array.isArray(p2.tarefas)) { plano = p2; I.set('planner-v2-plan', plano); } } } catch (_) { /* sem prioridade calculada agora; o próximo replanejamento calcula */ }
@@ -1030,6 +1045,7 @@
       <div class="sub" style="margin:4px 0 8px">Ler não basta: testar e revisar nos intervalos certos é o que fixa. Um toque faz tudo.</div>
       ${linha(c && c.cartoes != null, c && c.cartoes != null ? (c.cartoes + ' cartões novos no Treino (de ' + (c.cartoesTotal || (s.flashcards || []).length) + ')') : 'Flashcards da aula no Treino (revisão espaçada)')}
       ${linha(c && c.revisoes > 0, c && c.semPlano ? 'Sem plano no Mentor: crie um para agendar revisões' : (c && c.revisoes != null ? c.revisoes + ' revisões agendadas no Mentor (24 h, 7 e 30 dias)' : 'Revisões em 24 h, 7 e 30 dias no seu plano do Mentor'))}
+      ${c && c.previa ? linha(true, 'Tarefa concluída no Mentor: ' + E(c.previa)) : ''}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="b pri" onclick="auladia.fecharCiclo()"><i class="ph ph-arrows-clockwise"></i> ${c ? 'Atualizar' : 'Fechar o ciclo'}</button><button class="b" onclick="auladia.testar()"><i class="ph ph-exam"></i> Testar agora (questões do tema)</button></div></div>`;
   }
   async function abrirSess(id) { if (rec) return toast('Fim da gravação primeiro — finalize ou aguarde terminar.', 'warning'); const s = await carregarSess(id); if (!s) return; sessAtual = s; abaRes = s.resumoMd ? 'resumo' : 'transcricao'; desenharResultado(); }
@@ -1040,7 +1056,7 @@
     pausar, continuar, parar, retomar, finalizar,
     gerar() { if (sessAtual) pipeline(sessAtual); }, reenviar: reenviarFalhas, parteAuto: atualizarParteSugerida,
     kVai, fecharCiclo, testar: testarAgora,
-    _pool: pool, _limitador: limitador, _revisoes: revisoesParaPlano,
+    _pool: pool, _limitador: limitador, _revisoes: revisoesParaPlano, _previa: concluirPrevia,
     gerarRQ: gerarResumoGeral,
     mmGerar, mmToggle: mmClique, mmZoom, mmFit, mmTudo, mmPNG,
     ancora(id) { const el = document.getElementById('adh-' + id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); },

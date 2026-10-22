@@ -4,8 +4,10 @@ import http from 'node:http';
 import express from 'express';
 import assert from 'node:assert/strict';
 const capt = [];
+let groqFalha = 0;
 const fake = http.createServer((req, res) => {
   const partes = []; req.on('data', d => partes.push(d)); req.on('end', () => {
+    if (groqFalha) { res.writeHead(groqFalha, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: { message: 'limite' } })); return; }
     capt.push({ url: req.url, corpo: Buffer.concat(partes).toString('latin1') });
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ text: 'ola mundo', segments: [{ start: 0, end: 1, text: 'ola mundo' }] }));
@@ -14,6 +16,11 @@ const fake = http.createServer((req, res) => {
 await new Promise(r => fake.listen(0, r));
 process.env.GROQ_BASE_URL = `http://127.0.0.1:${fake.address().port}/openai/v1`;
 process.env.AI_LOG = '0';
+const capGem = [];
+const fakeGem = http.createServer((req, res) => { const p = []; req.on('data', d => p.push(d)); req.on('end', () => { capGem.push({ url: req.url, key: req.headers['x-goog-api-key'], corpo: JSON.parse(Buffer.concat(p).toString()) }); res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'texto do gemini' }] } }] })); }); });
+await new Promise(r => fakeGem.listen(0, r));
+process.env.GEMINI_BASE_URL = `http://127.0.0.1:${fakeGem.address().port}/v1beta`;
+process.env.GROQ_MAX_RETRIES = '0';
 const limpa = () => { for (const k of ['AI_PROVIDER', 'GROQ_API_KEY', 'GEMINI_API_KEY', 'OPENROUTER_API_KEY']) delete process.env[k]; };
 const { registerAula, promptWhisper } = await import('../../src/aula.js');
 const { generateAI, aiConfigured } = await import('../../src/ai-provider.js');
@@ -31,8 +38,8 @@ await teste('status: Groq + Gemini → paralelo 3', async () => {
   limpa(); process.env.GROQ_API_KEY = 'gsk_x'; process.env.GEMINI_API_KEY = 'g'; const j = await st();
   assert.equal(j.transcricao, true); assert.equal(j.paralelo, 3);
 });
-await teste('status: só Gemini/OpenRouter → texto sim, transcrição NÃO (Whisper é da Groq)', async () => {
-  limpa(); process.env.GEMINI_API_KEY = 'g'; let j = await st(); assert.equal(j.texto, true); assert.equal(j.transcricao, false); assert.equal(j.paralelo, 3);
+await teste('status: só Gemini → transcrição pela reserva; só OpenRouter → NÃO', async () => {
+  limpa(); process.env.GEMINI_API_KEY = 'g'; let j = await st(); assert.equal(j.texto, true); assert.equal(j.transcricao, true); assert.equal(j.transcricaoReserva, false); assert.equal(j.paralelo, 3);
   limpa(); process.env.OPENROUTER_API_KEY = 'o'; j = await st(); assert.equal(j.transcricao, false); assert.equal(j.gemini, true);
 });
 await teste('status: nada configurado → tudo falso', async () => {
@@ -55,6 +62,28 @@ await teste('/transcrever envia o trecho anterior no prompt do Whisper', async (
   const c = capt.find(x => x.url.endsWith('/audio/transcriptions'));
   assert.ok(c, 'chamada ao Whisper simulado'); assert.ok(c.corpo.includes('hipotensão refratária') || c.corpo.includes('hipotens'), 'prompt deve conter o fim do trecho anterior');
   assert.ok(c.corpo.includes('lactato'));
+});
+
+const audioB64 = Buffer.alloc(5000, 1).toString('base64');
+const trans = () => fetch(B + '/api/aula/transcrever', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ audio: audioB64, mime: 'audio/webm;codecs=opus', disciplina: 'Cardio' }) }).then(async r => ({ status: r.status, j: await r.json() }));
+await teste('transcrição: só Gemini → usa o Gemini com o áudio inline, sem segmentos', async () => {
+  limpa(); process.env.GEMINI_API_KEY = 'g'; capGem.length = 0;
+  const { status, j } = await trans(); assert.equal(status, 200); assert.equal(j.texto, 'texto do gemini'); assert.deepEqual(j.segmentos, []);
+  assert.equal(capGem[0].key, 'g'); assert.equal(capGem[0].corpo.contents[0].parts[1].inlineData.mimeType, 'audio/webm');
+  assert.ok(capGem[0].corpo.contents[0].parts[1].inlineData.data.length > 100);
+});
+await teste('transcrição: Groq no limite (429) com Gemini configurado → cai para o Gemini', async () => {
+  limpa(); process.env.GROQ_API_KEY = 'gsk_x'; process.env.GEMINI_API_KEY = 'g'; capGem.length = 0; groqFalha = 429;
+  const { status, j } = await trans(); groqFalha = 0;
+  assert.equal(status, 200); assert.equal(j.texto, 'texto do gemini'); assert.equal(capGem.length, 1);
+  const s2 = await st(); assert.equal(s2.transcricaoReserva, true);
+});
+await teste('transcrição: Groq ok → não chama o Gemini (segmentos preservados)', async () => {
+  limpa(); process.env.GROQ_API_KEY = 'gsk_x'; process.env.GEMINI_API_KEY = 'g'; capGem.length = 0; groqFalha = 0;
+  const { j } = await trans(); assert.equal(capGem.length, 0); assert.equal(j.segmentos.length, 1);
+});
+await teste('transcrição: Groq falha e sem Gemini → erro (sem reserva)', async () => {
+  limpa(); process.env.GROQ_API_KEY = 'gsk_x'; groqFalha = 429; const { status } = await trans(); groqFalha = 0; assert.ok(status >= 400);
 });
 
 // ── Fase 2: extração única → derivar sem rereler ──
@@ -104,6 +133,6 @@ await teste('sem base, o caminho antigo continua funcionando (fechamento usa IA)
   tarefas.length = 0; await post2('/api/aula/fechamento', { transcricao: aulaTxt + aulaTxt }); assert.ok(tarefas.includes('aula_fechamento'));
 });
 srv2.close();
-srv.close(); fake.closeAllConnections?.(); fake.close();
+srv.close(); fake.closeAllConnections?.(); fake.close(); fakeGem.closeAllConnections?.(); fakeGem.close();
 for (const l of t) console.log(l.join(' — '));
 process.exit(t.every(l => l[0] === 'OK ') ? 0 : 1);

@@ -44,7 +44,7 @@ try:
         chk('flashcards e cai na prova', len(doc['flashcards'])==2 and doc['resultado']['caiNaProva']==['cai isto'])
         # ── fechar o ciclo ──
         hoje=datetime.date.today(); d=lambda n:(hoje+datetime.timedelta(days=n)).isoformat()
-        plano={'inicio':d(0),'fim':d(40),'perfil':{'objetivo':'graduacao','horas':[0,120,120,120,120,120,60],'provasFaculdade':[{'disciplina':'Clínica','data':d(10),'tipo':'P1','assuntos':['Sepse']}],'aulasFaculdade':[]},'tarefas':[],'resumo':''}
+        plano={'inicio':d(0),'fim':d(40),'perfil':{'objetivo':'graduacao','horas':[0,120,120,120,120,120,60],'provasFaculdade':[{'disciplina':'Clínica','data':d(10),'tipo':'P1','assuntos':['Sepse']}],'aulasFaculdade':[]},'tarefas':[{'id':'prev-ok','data':d(0),'tipo':'estudo','trilha':'faculdade','titulo':'Prévia da aula — Clínica: Sepse','materia':'Clínica','minutos':20,'status':'pendente'},{'id':'prev-outra','data':d(0),'tipo':'estudo','trilha':'faculdade','titulo':'Prévia da aula — Cirurgia: Hérnias','materia':'Cirurgia','minutos':20,'status':'pendente'}],'resumo':''}
         pg.evaluate("(p)=>{plv2._i.set('planner-v2-plan',p)}", plano)
         pg.evaluate("(h)=>{ /* a aula é de hoje */ }", d(0))
         # a sessão do seed tem data fixa; ajusta para hoje no documento aberto e salva
@@ -61,9 +61,11 @@ try:
         chk('revisão marcada como destaque (cai na prova) e com prioridade calculada', all(t.get('destaque') for t in rv) and all(isinstance(t.get('prioridade'),(int,float)) for t in rv), str([(t.get('destaque'),t.get('prioridade')) for t in rv]))
         chk('fator destaque aparece na justificativa', any('cai na prova' in (t.get('justificativa') or '') for t in rv), str([t.get('justificativa') for t in rv]))
         chk('cartões entraram no Treino', pg.evaluate("(typeof FCS!=='undefined'?FCS.length:-1)")==n0+2, 'antes=%d'%n0)
+        tk={t['id']:t for t in pl['tarefas']}
+        chk('Prévia da matéria concluída no Mentor (e só ela)', tk['prev-ok']['status']=='feito' and tk['prev-outra']['status']=='pendente' and any(h.get('id')=='prev-ok' and h.get('origem')=='aula-dia' for h in pl.get('historico',[])), str([(t['id'],t['status']) for t in pl['tarefas']][:3]))
         pg.evaluate("auladia.fecharCiclo()"); pg.wait_for_timeout(1500)
         pl2=pg.evaluate("plv2._i.get('planner-v2-plan',null)")
-        chk('idempotente: 2º clique não duplica revisões nem cartões', len([t for t in pl2['tarefas'] if t.get('origem')=='aula-dia'])==2 and pg.evaluate("(typeof FCS!=='undefined'?FCS.length:-1)")==n0+2)
+        chk('idempotente: 2º clique não duplica revisões nem cartões', len([t for t in pl2['tarefas'] if t.get('origem')=='aula-dia'])==2 and len([h for h in pl2.get('historico',[]) if h.get('id')=='prev-ok'])==1 and pg.evaluate("(typeof FCS!=='undefined'?FCS.length:-1)")==n0+2)
         # replanejar pelo Mentor mantém as revisões da aula
         pg.evaluate("plv2._i.gerar && 0")
         chk('sem erros de JS', not errs, str(errs))

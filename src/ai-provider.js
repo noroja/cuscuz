@@ -503,7 +503,46 @@ export async function generateAI(params) {
 // Transcrição de áudio (Groq Whisper). audioBase64 sem prefixo data:.
 // Com timestamps:true usa verbose_json e devolve { texto, segmentos: [{ ini, fim, text }] } — é o que
 // sincroniza o "karaoke" da Aula do Dia; sem a flag, segue devolvendo só o texto (compatibilidade).
-export async function transcribeAudio({ audioBase64, mime = 'audio/webm', prompt = '', language = 'pt', timestamps = false }) {
+// Transcrição: Whisper da Groq primeiro (traz marcas de tempo); se a Groq não tem chave, está no limite ou falha
+// por limite/rede/5xx, tenta o Gemini com o áudio inline (só texto, sem marcas de tempo → o karaokê fica sem sincronia).
+export async function transcribeAudio(args) {
+  const g = cfg().groq, gm = cfg().gemini;
+  const temReserva = !!gm.key && cfg().provider !== 'groq';
+  if (!g.key && !temReserva) throw new AIError('GROQ_API_KEY não configurada no servidor (transcrição usa o Whisper da Groq).', { status: 503, code: 'no_key' });
+  if (g.key) {
+    try { return await transcribeGroq(args); }
+    catch (e) {
+      const recuperavel = e && (['rate_limit', 'timeout', 'network', 'server', 'upstream', 'auth', 'no_key'].includes(e.code) || e.status === 429 || e.status >= 500 || !e.status);
+      if (!temReserva || !recuperavel) throw e;
+      if (process.env.AI_LOG !== '0') console.log('[ia] transcrição: Groq indisponível (' + (e.code || e.status) + '), usando o Gemini');
+    }
+  }
+  return transcribeGemini(args);
+}
+
+async function transcribeGemini({ audioBase64, mime = 'audio/webm', prompt = '', language = 'pt', timestamps = false }) {
+  const c = cfg().gemini;
+  if (!c.key) throw new AIError('GEMINI_API_KEY não configurada.', { status: 503, code: 'no_key', provider: 'gemini' });
+  if (!disponivel('gemini')) throw new AIError('Limite do Gemini atingido — tente novamente em instantes.', { status: 429, code: 'rate_limit', provider: 'gemini' });
+  const t0 = Date.now();
+  const body = {
+    contents: [{ role: 'user', parts: [
+      { text: `Transcreva fielmente este áudio de uma aula de Medicina em português do Brasil. Responda SOMENTE com a fala transcrita, sem comentários, sem rótulos de falante e sem resumir. Se não houver fala, responda exatamente [sem fala].${prompt ? ' Contexto e termos prováveis: ' + String(prompt).slice(0, 600) : ''}` },
+      { inlineData: { mimeType: mime, data: audioBase64 } }
+    ] }],
+    generationConfig: { temperature: 0, maxOutputTokens: c.maxOut }
+  };
+  try {
+    const r = await chamar(`${c.base}/models/${c.model}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': c.key }, body: JSON.stringify(body) }, { ...c, nome: 'gemini', timeout: Math.max(c.timeout, 90000) }, 'transcrição (reserva)');
+    const j = await r.json();
+    const cand = (j.candidates || [])[0];
+    const texto = ((cand && cand.content && cand.content.parts) || []).map(p => p.text || '').join('').trim();
+    registrar('gemini', true, Date.now() - t0, null, c.model, 'transcricao');
+    return timestamps ? { texto, segmentos: [] } : texto;
+  } catch (e) { registrar('gemini', false, Date.now() - t0, e, c.model, 'transcricao'); throw e; }
+}
+
+async function transcribeGroq({ audioBase64, mime = 'audio/webm', prompt = '', language = 'pt', timestamps = false }) {
   const c = cfg().groq;
   if (!c.key) throw new AIError('GROQ_API_KEY não configurada no servidor (transcrição usa o Whisper da Groq).', { status: 503, code: 'no_key' });
   if (!disponivel('groq')) throw new AIError('Limite da Groq atingido — tente novamente em instantes.', { status: 429, code: 'rate_limit', provider: 'groq' });
