@@ -43,3 +43,6 @@ assert.doesNotMatch(html,/contentWindow\.eval/);
 for(const [,code] of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)) new vm.Script(code);
 console.log('Console regressions: mindmap, flashcards, reader sandbox and inline syntax OK');
 
+
+const musicConfig=html.slice(html.indexOf("  const playerVars = {",html.indexOf("window.onYouTubeIframeAPIReady")),html.indexOf("  if (cfg.playlistId)",html.indexOf("window.onYouTubeIframeAPIReady")));
+assert.equal(vm.runInNewContext(musicConfig+";playerVars.origin",{window:{location:{origin:"https://cuscuz-nu.vercel.app"}}}),"https://cuscuz-nu.vercel.app");

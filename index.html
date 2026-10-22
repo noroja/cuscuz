@@ -4102,7 +4102,8 @@ window.onYouTubeIframeAPIReady = function() {
   const playerVars = {
     autoplay: 0,
     controls: 0,
-    loop: 1
+    loop: 1,
+    origin: window.location.origin
   };
   if (cfg.playlistId) {
     playerVars.listType = 'playlist';
