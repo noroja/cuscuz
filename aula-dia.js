@@ -212,7 +212,7 @@
       : (transcOk ? 'Gravando · trechos enviados à IA a cada ~1,5 min' : 'Gravando · legenda ao vivo do navegador');
     r.innerHTML = `<div class="ad"><h2><span class="ad-dot" style="display:inline-block;margin-right:8px;${est === 'gravando' ? '' : 'animation:none;background:var(--amber)'}"></span>${est === 'gravando' ? 'Gravando' : est === 'pausada' ? 'Pausado' : est === 'parada' ? 'Gravação parada' : 'Finalizando'} — ${E(rec.sess.disciplina || 'aula')}</h2><div class="sub">${E(rec.sess.tema || '')}</div>
     <div class="card"><div class="ad-big" style="margin-top:0"><span class="ad-timer" id="ad-timer">${mmss(decorridoMs() / 1000)}</span><div class="ad-meter"><i id="ad-meter"></i></div>
-    <button class="b" onclick="auladia.marcar()">⭐ Marcar momento</button>${bPausa}${bParada}${est !== 'finalizando' ? `<button class="b pri" onclick="auladia.finalizar()"><i class="ph ph-check-circle"></i> Finalizar</button>` : ''}</div>
+    <button class="b" onclick="auladia.marcar()">⭐ Marcar momento</button><button class="b" onclick="auladia.duvida()" title="Marque o ponto que você não entendeu; ele vira dúvida no resultado">❓ Dúvida</button>${bPausa}${bParada}${est !== 'finalizando' ? `<button class="b pri" onclick="auladia.finalizar()"><i class="ph ph-check-circle"></i> Finalizar</button>` : ''}</div>
     <div class="sub" id="ad-status" style="margin:8px 0 0">${E(stTxt)}</div></div>
     <div class="card"><b>Transcrição ao vivo</b><div class="ad-tr" id="ad-tr"></div></div></div>`;
   }
@@ -220,7 +220,7 @@
   function textoHtml(s) {
     const partes = (s.chunks || []).slice().sort((a, b) => a.i - b.i).map(c => c.status === 'ok' ? E(c.texto) : c.status === 'erro' ? '<span class="pend">[trecho ' + (c.i + 1) + ' sem transcrição — toque em "Tentar novamente"]</span>' : '<span class="pend">[transcrevendo trecho ' + (c.i + 1) + '…]</span>');
     const live = s.live ? E(s.live) : '';
-    return (partes.join('\n\n') + (live ? (partes.length ? '\n\n' : '') + live : '')).replace(/⭐ \[(\d\d:\d\d)\]/g, '<span class="mk">⭐ [$1]</span>') || '<span class="pend">A transcrição aparecerá aqui…</span>';
+    return (partes.join('\n\n') + (live ? (partes.length ? '\n\n' : '') + live : '')).replace(/([⭐❓]) \[(\d\d:\d\d)\]/g, '<span class="mk">$1 [$2]</span>') || '<span class="pend">A transcrição aparecerá aqui…</span>';
   }
   function textoPuro(s) {
     const t = (s.chunks || []).slice().sort((a, b) => a.i - b.i).filter(c => c.status === 'ok').map(c => c.texto).join('\n\n');
@@ -341,15 +341,19 @@
     try { sr.start(); } catch (_) {}
   }
 
-  function marcar() {
+  // ⭐ momento importante (sobe a prioridade da revisão) e ❓ dúvida (vai para "dúvidas" no resultado). Ambos viram uma linha na transcrição.
+  function marcarTipo(emoji) {
     if (!rec) return;
     const t = mmss(decorridoMs() / 1000);
-    sessAtual.marcas.push(t);
+    if (emoji === '⭐') sessAtual.marcas.push(t); else (sessAtual.duvidasMarcas = sessAtual.duvidasMarcas || []).push(t);
+    const n = sessAtual.marcas.length + (sessAtual.duvidasMarcas || []).length;
     // insere a marca no ponto atual da transcrição ao vivo / entre trechos
-    if (!transcOk) sessAtual.live = (sessAtual.live ? sessAtual.live + '\n' : '') + '⭐ [' + t + ']\n';
-    else sessAtual.chunks.push({ i: rec.chunkIdx - 0.5 + sessAtual.marcas.length * 0.001, status: 'ok', texto: '⭐ [' + t + ']' });
-    atualizarTexto(); toast('Momento marcado em ' + t, 'success');
+    if (!transcOk) sessAtual.live = (sessAtual.live ? sessAtual.live + '\n' : '') + emoji + ' [' + t + ']\n';
+    else sessAtual.chunks.push({ i: rec.chunkIdx - 0.5 + n * 0.001, status: 'ok', texto: emoji + ' [' + t + ']' });
+    atualizarTexto(); toast((emoji === '⭐' ? 'Momento marcado em ' : 'Dúvida marcada em ') + t, 'success');
   }
+  const marcar = () => marcarTipo('⭐');
+  const duvida = () => marcarTipo('❓');
 
   function pausar() {
     if (!rec || rec.pausado || rec.parado || rec.parar) return;
@@ -579,7 +583,7 @@
       if (!s.base && (!s.fechamento || !s.flashcards || !s.resultado)) {
         try {
           est.res = est.res === 'ok' ? 'ok' : 'go'; est.resInfo = 'extraindo fatos da aula'; passos(s, est);
-          s.base = (await postL('/api/aula/extrair', { transcricao: fonte, area: s.disciplina, conteudo: ctx.conteudo, capitulos: (s.mapa && s.mapa.capitulos) || [], assuntosPlano: assuntosPlano(s.disciplina), marcas: s.marcas })).base;
+          s.base = (await postL('/api/aula/extrair', { transcricao: fonte, area: s.disciplina, conteudo: ctx.conteudo, capitulos: (s.mapa && s.mapa.capitulos) || [], assuntosPlano: assuntosPlano(s.disciplina), marcas: s.marcas, duvidasMarcas: s.duvidasMarcas || [] })).base;
           await salvarAgora(s);
         } catch (_) { s.base = null; }
       }
@@ -897,13 +901,15 @@
     tabs.push(['mm', '🗺 Mapa mental']);
     if (!tabs.some(t => t[0] === abaRes)) abaRes = tabs[0][0];
     let corpo = '';
-    if (abaRes === 'transcricao') corpo = `<div class="ad-tr">${s.textoRevisado ? E(s.textoRevisado).replace(/⭐ \[(\d\d:\d\d)\]/g, '<span class="mk">⭐ [$1]</span>') : textoHtml(s)}</div>`;
+    if (abaRes === 'transcricao') corpo = `<div class="ad-tr">${s.textoRevisado ? E(s.textoRevisado).replace(/([⭐❓]) \[(\d\d:\d\d)\]/g, '<span class="mk">$1 [$2]</span>') : textoHtml(s)}</div>`;
     else if (abaRes === 'audio') corpo = `<div id="ak-box"><div class="sub">Montando o player do karaoke…</div></div>`;
     else if (abaRes === 'resumo') corpo = `<div class="ad-md" id="ad-md">${mdParaHtml(s.resumoMd)}</div>`;
     else if (abaRes === 'flash') {
       const grupos = {}; (s.flashcards || []).forEach(f => { (grupos[f.tema || 'Geral'] = grupos[f.tema || 'Geral'] || []).push(f); });
       corpo = `<button class="b pri" onclick="auladia.enviarFlash()"><i class="ph ph-cards"></i> Adicionar ao Treino (revisão espaçada)</button><div style="margin-top:10px">${Object.keys(grupos).map(g => `<div class="grp2">${E(g)}</div>` + grupos[g].map(f => `<div class="fc"><b>${E(f.frente)}</b>${E(f.verso)}</div>`).join('')).join('')}</div>`;
-    } else if (res && abaRes === 'prova') corpo = `${(res.caiNaProva || []).length ? '<ul>' + res.caiNaProva.map(p => `<li>${E(p)}</li>`).join('') + '</ul>' : '<div class="sub">O professor não indicou explicitamente o que cai na prova.</div>'}${(s.marcas || []).length ? '<h4>Momentos que você marcou</h4><div class="sub">' + s.marcas.map(E).join(' · ') + '</div>' : ''}${(res.assuntosCobertos || []).length ? '<h4>Assuntos do manual abordados nesta aula</h4><ul>' + res.assuntosCobertos.map(a => `<li>${E(a)}</li>`).join('') + '</ul>' : ''}${(res.duvidas || []).length ? '<h4>Para conferir (possíveis imprecisões)</h4><ul>' + res.duvidas.map(d => `<li>${E(d)}</li>`).join('') + '</ul>' : ''}`;
+    } else if (res && abaRes === 'prova') corpo = `${(res.caiNaProva || []).length ? '<ul>' + res.caiNaProva.map(p => `<li>${E(p)}</li>`).join('') + '</ul>' : '<div class="sub">O professor não indicou explicitamente o que cai na prova.</div>'}${(s.marcas || []).length ? '<h4>Momentos que você marcou</h4><div class="sub">' + s.marcas.map(E).join(' · ') + '</div>' : ''}${(res.assuntosCobertos || []).length ? '<h4>Assuntos do manual abordados nesta aula</h4><ul>' + res.assuntosCobertos.map(a => `<li>${E(a)}</li>`).join('') + '</ul>' : ''}${(() => { const ehAluno = d => /^\s*\[\d\d:\d\d\]/.test(d); const dv = res.duvidas || []; const meus = dv.filter(ehAluno), conf = dv.filter(d => !ehAluno(d));
+      return ((s.duvidasMarcas || []).length ? '<h4>❓ Suas dúvidas na aula</h4>' + (meus.length ? '<ul>' + meus.map(d => `<li>${E(d)}</li>`).join('') + '</ul>' : '<div class="sub">' + s.duvidasMarcas.map(E).join(' · ') + '</div>') : '')
+        + (conf.length ? '<h4>Para conferir (possíveis imprecisões)</h4><ul>' + conf.map(d => `<li>${E(d)}</li>`).join('') + '</ul>' : ''); })()}}`;
     else if (abaRes === 'resumo_g') corpo = rqRodando
       ? `<div class="card"><div class="ad-step go">⏳ Gerando o Resumo Geral — examinando TODA a aula e escrevendo o material autossuficiente (índice, hierarquia completa, tabelas, Síntese Integradora e Revisão de Véspera). Pode levar 1–3 min; não feche a página.</div></div>`
       : s.resumoGeral
@@ -1030,7 +1036,7 @@
   function apagarSess(id) { if (!confirm('Apagar esta aula gravada?')) return; salvarSessoes(sessoes().filter(x => x.id !== id)); idbDel(id + ':'); idbDelKey('doc:' + id); if (sessAtual && sessAtual.id === id) sessAtual = null; render(); }
 
   window.auladia = {
-    iniciar, marcar, abrir: abrirSess, apagar: apagarSess, enviarFlash, baixar, copiar,
+    iniciar, marcar, duvida, abrir: abrirSess, apagar: apagarSess, enviarFlash, baixar, copiar,
     pausar, continuar, parar, retomar, finalizar,
     gerar() { if (sessAtual) pipeline(sessAtual); }, reenviar: reenviarFalhas, parteAuto: atualizarParteSugerida,
     kVai, fecharCiclo, testar: testarAgora,

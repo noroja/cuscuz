@@ -53,7 +53,7 @@ Novo `/api/aula/extrair` lê a aula por janelas e devolve uma **base** (fatos co
 - flashcards: a IA lê só os fatos extraídos;
 - processar: 1 chamada (título, resumo, tópicos); termos, "cai na prova", dúvidas e assuntos vêm da base.
 Se a extração falhar, o caminho antigo roda sem mudança. Leituras da aula: de ~7 para ~4 (revisar, mapa, extrair, capítulos). Verificado com testes de servidor e E2E com IA **falsa**. **Não medido:** fidelidade da extração com IA real (um fato omitido na base some do fechamento/cartões; os capítulos continuam lendo a aula inteira).
-Pendente: extrair durante a gravação, corte no silêncio (VAD), transcrição de reserva por Gemini e botão ❓.
+Também feito: botão **❓ Dúvida** na gravação (marca o ponto na transcrição, a revisão preserva a marca, e a extração registra "[mm:ss] assunto" em "Suas dúvidas na aula"). Pendente: extrair durante a gravação, corte no silêncio (VAD), transcrição de reserva por Gemini.
 
 ### Fase 2 (original) — proposta: ler uma vez, derivar muitas
 Hoje cada saída relê a aula. Proposta:

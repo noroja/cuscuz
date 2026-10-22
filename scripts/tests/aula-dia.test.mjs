@@ -61,6 +61,7 @@ await teste('/transcrever envia o trecho anterior no prompt do Whisper', async (
 const tarefas = []; let promptsDerivados = [];
 const gaiFake = async ({ task, contents }) => {
   tarefas.push(task);
+  if (task === 'aula_extrair') { global.__ultimoExtrair = contents; }
   if (task === 'aula_extrair') return { text: JSON.stringify({ fatos: [{ tipo: 'dose', texto: 'Adrenalina 1 mg a cada 3-5 min', capitulo: 'PCR' }, { tipo: 'conduta', texto: 'Choque em ritmo chocável', capitulo: 'PCR' }], sintese: ['Ritmo define a conduta'], termos: [{ termo: 'FV', definicao: 'fibrilação ventricular' }], caiNaProva: ['dose da adrenalina'], duvidas: [], assuntosCobertos: ['PCR', 'Inexistente'] }) };
   promptsDerivados.push(contents);
   if (task === 'aula_flashcards') return { text: JSON.stringify([{ frente: 'Dose de adrenalina na PCR?', verso: '1 mg a cada 3-5 min', tema: 'PCR' }]) };
@@ -77,6 +78,12 @@ await teste('/extrair devolve a base e filtra assuntosCobertos que não estão n
   assert.equal(j.success, true); base = j.base; assert.equal(base.fatos.length, 2); assert.deepEqual(base.assuntosCobertos, ['PCR']);
 });
 await teste('/extrair rejeita transcrição curta', async () => { assert.equal((await fetch(B2 + '/api/aula/extrair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ transcricao: 'curta' }) })).status, 400); });
+await teste('/extrair leva as dúvidas marcadas (❓) ao prompt', async () => {
+  const antes = promptsDerivados.length; tarefas.length = 0; const ps = [];
+  const j = await post2('/api/aula/extrair', { transcricao: aulaTxt + '\n\n❓ [05:10]\n\n' + aulaTxt, duvidasMarcas: ['05:10'] });
+  assert.equal(j.success, true);
+  assert.ok(global.__ultimoExtrair.includes('❓ [mm:ss]') && global.__ultimoExtrair.includes('05:10'), 'prompt deve citar a dúvida');
+});
 await teste('/fechamento com base: sem IA, usa sínteses e fatos', async () => {
   tarefas.length = 0; const j = await post2('/api/aula/fechamento', { transcricao: aulaTxt, base });
   assert.equal(j.success, true); assert.equal(j.semIA, true); assert.equal(tarefas.length, 0);

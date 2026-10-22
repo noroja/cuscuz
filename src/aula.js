@@ -168,7 +168,7 @@ export function registerAula(app, { generateAI, aiConfigured }) {
 Revise o texto abaixo SEM mudar o significado nem remover informação:
 - corrija erros de reconhecimento de fala e a grafia de termos médicos, siglas e fármacos (use o contexto da aula);
 - una frases cortadas na emenda entre trechos, remova repetições acidentais da emenda e reconstrua pontuação e parágrafos;
-- mantenha números, doses e unidades exatamente como estão; não resuma; não acrescente conteúdo; mantenha [inaudível] onde o trecho é irrecuperável;
+- mantenha números, doses e unidades exatamente como estão; não resuma; não acrescente conteúdo; mantenha [inaudível] onde o trecho é irrecuperável; mantenha INTACTAS, cada uma na própria linha, as marcas do aluno "⭐ [mm:ss]" e "❓ [mm:ss]";
 - se uma palavra for duvidosa e o contexto não permitir certeza, mantenha como está e marque com [?].
 ${(glossario || []).length ? 'Grafia preferida: ' + glossario.slice(0, 80).join(', ') + '.\n' : ''}Responda SOMENTE com o texto revisado.
 
@@ -460,7 +460,7 @@ ${partes[i].texto}`,
   app.post('/api/aula/extrair', async (req, res) => {
     try {
       if (!exigeIA(res)) return;
-      const { transcricao = '', area = '', conteudo = '', capitulos = [], assuntosPlano = [], marcas = [] } = req.body || {};
+      const { transcricao = '', area = '', conteudo = '', capitulos = [], assuntosPlano = [], marcas = [], duvidasMarcas = [] } = req.body || {};
       const t = String(transcricao).trim();
       if (t.length < 100) return res.status(400).json({ success: false, msg: 'Transcrição curta demais.' });
       const nomeCaps = capitulos.map(c => c.titulo || c).filter(Boolean);
@@ -468,7 +468,7 @@ ${partes[i].texto}`,
       const base = { fatos: [], sintese: [], termos: [], caiNaProva: [], duvidas: [], assuntosCobertos: [] };
       const vistos = { fato: new Set(), termo: new Set(), prova: new Set() };
       const ass = assuntosPlano.length ? `Assuntos esperados na prova: ${JSON.stringify(assuntosPlano.slice(0, 60))}. Em "assuntosCobertos" copie exatamente só os realmente abordados NESTE TRECHO.\n` : '';
-      const mk = marcas.length ? `O aluno marcou estes momentos como importantes (mm:ss): ${marcas.join(', ')}.\n` : '';
+      const mk = (marcas.length ? `O aluno marcou estes momentos como importantes (mm:ss): ${marcas.join(', ')}.\n` : '') + (duvidasMarcas.length ? `Linhas "❓ [mm:ss]" no texto são momentos em que o ALUNO teve dúvida (${duvidasMarcas.join(', ')}): em "duvidas" registre, para cada uma que aparecer neste trecho, o ponto que o professor explicava logo antes, no formato "[mm:ss] assunto".\n` : '');
       for (let i = 0; i < partes.length; i++) {
         const r = await generateAI({ task: "aula_extrair",
           contents: `Você é um monitor de Medicina. Extraia, SOMENTE do TRECHO ${i + 1} de ${partes.length} desta aula (área: ${area || 'n/i'}; conteúdo: ${conteudo || 'n/i'}), uma base de estudo fiel ao que o professor disse. Nada de conhecimento externo; preserve números, doses, cortes e ressalvas exatamente. Português do Brasil.
