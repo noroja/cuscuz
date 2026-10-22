@@ -30,7 +30,8 @@
       } catch (e) {}
     }
     return _f(u, o).then(function(r){
-      if (isApi && r.status === 401) {
+      // 401 do Hardworq (login no serviço externo falhou) NÃO é sessão do app expirada: não desloga o aluno
+      if (isApi && r.status === 401 && s.indexOf('/api/questions/hardworq/') !== 0) {
         var tinha = false;
         try { tinha = !!localStorage.getItem('cuscuz_token'); localStorage.removeItem('cuscuz_token'); localStorage.removeItem('medplan_logged'); } catch (e) {}
         if (window.cuscuzPauseAll) cuscuzPauseAll();
