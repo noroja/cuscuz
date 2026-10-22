@@ -849,6 +849,7 @@
         y = (ys[0] + ys[ys.length - 1]) / 2;
         fil.forEach((f, k) => lig.push({ x1: x + no.w, y1: y, x2: f.x, y2: f.y }));
       } else { y = cur; cur += MM_H + MM_GAP; }
+      no.x = x; no.y = y;
       maxX = Math.max(maxX, x + no.w);
       nos.push({ t: no.t, d, x, y, w: no.w, p: path.join('-'), temFilhos: fil.length > 0, aberto });
       return y;

@@ -2533,7 +2533,7 @@ mark.exam-highlight {
                     <i class="ph ph-book-open" aria-hidden="true" style="font-size:40px;color:var(--teal);animation:pulse 1.5s ease-in-out infinite"></i>
                     <span>Carregando apostila…</span>
                   </div>
-                  <iframe class="apostila-reader-frame" id="apostila-inline-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock" style="width:100%;height:100%;border:0;background:var(--bg-base);display:none"></iframe>
+                  <iframe class="apostila-reader-frame" id="apostila-inline-frame" sandbox="allow-same-origin allow-modals" style="width:100%;height:100%;border:0;background:var(--bg-base);display:none"></iframe>
 
                   <!-- Painel lateral de TOC inline -->
                   <div class="apostila-inline-toc-panel" id="apostila-inline-toc-panel" style="position:absolute;top:0;right:0;width:300px;height:100%;background:var(--bg-surface);border-left:1px solid var(--border-muted);box-shadow:var(--shadow-glass-lg);z-index:10;transform:translateX(100%);transition:transform .3s cubic-bezier(0.16,1,0.3,1);display:flex;flex-direction:column">
@@ -2865,6 +2865,7 @@ mark.exam-highlight {
 
         <!-- CONTEÚDO DA ABA 3: FLASHCARDS SRS & DECKS -->
         <div id="treino-tab-flashcards" role="tabpanel" aria-labelledby="tab-btn-flashcards" tabindex="0" class="treino-tab-content" style="display:none">
+          <div id="quiz-list-screen">
           <div id="bank-panel" class="imp-box" style="margin-bottom:24px">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
               <b style="font-size:15px">🗂️ Revisão Ativa (Active Recall & SRS)</b>
@@ -2882,6 +2883,8 @@ mark.exam-highlight {
             </div>
           </div>
           <div class="cards-grid" id="decks-grid"></div>
+          </div>
+          <div id="quiz-runner-screen" style="display:none"><div class="quiz-runner" id="quiz-runner" aria-live="polite"></div></div>
         </div>
 
         <!-- MODAL: Importar flashcards do Anki -->
@@ -3247,7 +3250,7 @@ Sintomas de pneumonia\tFebre, tosse, dispneia\tPneumologia"></textarea>
         <i class="ph ph-book-open"></i>
         <span>Carregando conteúdo da apostila...</span>
       </div>
-      <iframe class="apostila-reader-frame" id="apostila-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock" style="display:none"></iframe>
+      <iframe class="apostila-reader-frame" id="apostila-frame" sandbox="allow-same-origin allow-modals" style="display:none"></iframe>
     </div>
   </div>
   
@@ -3776,32 +3779,23 @@ function openApostilaSearch() {
           if (!found) toast('Termo não encontrado', 'error');
         }
       } else {
-        // Fallback: injeta script de busca
-        const searchScript = `
-          (function() {
-            const term = prompt('Buscar no texto:');
-            if (!term) return;
-            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-            let found = false;
-            while (walker.nextNode()) {
-              const node = walker.currentNode;
-              if (node.textContent.toLowerCase().includes(term.toLowerCase())) {
-                const range = document.createRange();
-                range.selectNodeContents(node.parentElement);
-                const sel = window.getSelection();
-                sel.removeAllRanges();
-                sel.addRange(range);
-                node.parentElement.scrollIntoView({behavior:'smooth', block:'center'});
-                node.parentElement.style.background = 'rgba(251,191,36,0.3)';
-                setTimeout(() => node.parentElement.style.background = '', 3000);
-                found = true;
-                break;
-              }
-            }
-            if (!found) alert('Termo não encontrado');
-          })();
-        `;
-        frame.contentWindow.eval(searchScript);
+        // A busca usa o DOM do leitor sem executar scripts dentro da apostila.
+        const term = prompt('Buscar no texto:');
+        if (!term) return;
+        const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+        let found = false;
+        while (walker.nextNode()) {
+          const node = walker.currentNode;
+          if (!node.textContent.toLowerCase().includes(term.toLowerCase())) continue;
+          const range = doc.createRange();
+          range.selectNodeContents(node.parentElement);
+          const sel = frame.contentWindow.getSelection();
+          sel.removeAllRanges(); sel.addRange(range);
+          node.parentElement.scrollIntoView({behavior:'smooth', block:'center'});
+          found = true;
+          break;
+        }
+        if (!found) toast('Termo não encontrado', 'error');
       }
     }
   } catch (err) {
