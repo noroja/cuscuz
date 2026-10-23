@@ -4591,11 +4591,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       const res = await fetch('/api/auth/google', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: gUser.email,
-          name: gUser.user_metadata?.full_name || gUser.email,
-          providerId: gUser.id
-        })
+        body: JSON.stringify({ accessToken: session.access_token }) // o servidor valida no Supabase; e-mail/nome do navegador não são aceitos
       });
       const data = await res.json();
       if (data.success && data.token) {

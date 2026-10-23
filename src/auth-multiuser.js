@@ -318,14 +318,36 @@ export function setupAuthRoutes(app) {
     }
   });
 
+  // Login com Google (via Supabase Auth). O servidor NÃO confia em e-mail/nome vindos do navegador: valida o access_token da
+  // sessão do Supabase consultando /auth/v1/user e só então usa o e-mail verificado devolvido pelo próprio Supabase.
   app.post('/api/auth/google', async (req, res) => {
     try {
-      const { email, name, providerId } = req.body;
-      if (!email) return res.status(400).json({ success: false, error: 'E-mail do Google não fornecido' });
+      const accessToken = String(req.body?.accessToken || '');
+      if (!supabaseUrl || !supabaseKey) return res.status(503).json({ success: false, error: 'Login com Google indisponível: Supabase não configurado no servidor.' });
+      if (!accessToken) return res.status(400).json({ success: false, error: 'Token do Google não fornecido' });
+      let gu = null;
+      try {
+        const r = await fetch(supabaseUrl.replace(/\/+$/, '') + '/auth/v1/user', { headers: { Authorization: 'Bearer ' + accessToken, apikey: supabaseKey } });
+        if (r.ok) gu = await r.json();
+      } catch (_) { /* cai na recusa abaixo */ }
+      const ident = gu && Array.isArray(gu.identities) ? gu.identities.find(i => i.provider === 'google') : null;
+      const provider = gu && gu.app_metadata && gu.app_metadata.provider;
+      const verificado = gu && (gu.email_confirmed_at || (ident && ident.identity_data && ident.identity_data.email_verified));
+      if (!gu || !gu.email || !(ident || provider === 'google') || !verificado) return res.status(401).json({ success: false, error: 'Login com Google inválido ou não verificado' });
+      const email = String(gu.email).toLowerCase();
+      const name = (gu.user_metadata && (gu.user_metadata.full_name || gu.user_metadata.name)) || email;
+      const providerId = gu.id;
 
-      const baseName = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      await ensureAuthLoaded();
+      const baseName = email.split('@')[0].replace(/[^a-z0-9_-]/g, '') || 'user';
       let username = baseName + '_g';
-      let user = usersDb.get(username);
+      let user = usersDb.get(username) || await buscarUsuarioSupabase(username);
+      // Mesmo começo de e-mail em contas diferentes (a@gmail.com x a@outlook.com) não pode compartilhar a conta
+      // (e conta criada por cadastro com senha, p.ex. alguém registrando "fulano_g" antes, nunca é reaproveitada)
+      if (user && (user.passwordHash !== 'GOOGLE_AUTH' || (user.settings && user.settings.email && String(user.settings.email).toLowerCase() !== email))) {
+        username = baseName + '_g' + crypto.createHash('sha256').update(email).digest('hex').slice(0, 6);
+        user = usersDb.get(username) || await buscarUsuarioSupabase(username);
+      }
 
       if (!user) {
         user = {
