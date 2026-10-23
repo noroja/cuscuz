@@ -508,6 +508,10 @@ export async function generateAI(params) {
 export async function transcribeAudio(args) {
   const g = cfg().groq, gm = cfg().gemini;
   const temReserva = !!gm.key && cfg().provider !== 'groq';
+  if (args.preferGemini) {
+    if (!temReserva) throw new AIError('Áudios acima do limite da Groq precisam de GEMINI_API_KEY e AI_PROVIDER diferente de groq.', { status: 503, code: 'no_key', provider: 'gemini' });
+    return transcribeGemini(args);
+  }
   if (!g.key && !temReserva) throw new AIError('GROQ_API_KEY não configurada no servidor (transcrição usa o Whisper da Groq).', { status: 503, code: 'no_key' });
   if (g.key) {
     try { return await transcribeGroq(args); }
@@ -528,10 +532,13 @@ async function transcribeGemini(args) {
   const stt = process.env.GEMINI_STT_MODEL === undefined ? 'gemini-3.5-transcribe' : process.env.GEMINI_STT_MODEL;
   if (!c.key) throw new AIError('GEMINI_API_KEY não configurada.', { status: 503, code: 'no_key', provider: 'gemini' });
   if (!disponivel('gemini')) throw new AIError('Limite do Gemini atingido — tente novamente em instantes.', { status: 429, code: 'rate_limit', provider: 'gemini' });
+  const bytes = args.audioBuffer ? args.audioBuffer.length : Math.floor(String(args.audioBase64 || '').length * 0.75);
+  if ((!stt || stt === 'off') && bytes > 15 * 1024 * 1024) throw new AIError('Este áudio exige o modelo dedicado do Gemini; GEMINI_STT_MODEL está desligado.', { status: 413, code: 'unsupported_media', provider: 'gemini' });
   if (stt && stt !== 'off') {
     try { return await transcribeGeminiDedicado(args, stt); }
     catch (e) {
       if (e && (e.code === 'rate_limit' || e.status === 429)) throw e;
+      if (bytes > 15 * 1024 * 1024) throw e;
       if (process.env.AI_LOG !== '0') console.log('[ia] transcrição: ' + stt + ' falhou (' + (e.code || e.status || e.message) + '), tentando generateContent');
     }
   }
@@ -551,10 +558,10 @@ export function palavrasEmSegmentos(palavras) {
   return segs;
 }
 
-async function transcribeGeminiDedicado({ audioBase64, mime = 'audio/webm', language = 'pt', timestamps = false }, modelo) {
+async function transcribeGeminiDedicado({ audioBase64, audioBuffer, mime = 'audio/webm', language = 'pt', timestamps = false }, modelo) {
   const c = cfg().gemini, t0 = Date.now();
   const origem = new URL(c.base).origin, v = new URL(c.base).pathname.replace(/\/+$/, '') || '/v1beta';
-  const buf = Buffer.from(audioBase64, 'base64');
+  const buf = audioBuffer ? Buffer.from(audioBuffer) : Buffer.from(audioBase64, 'base64');
   try {
     // 1) Files API (upload resumível em 2 passos)
     const ini = await chamar(`${origem}/upload${v}/files`, { method: 'POST', headers: { 'x-goog-api-key': c.key, 'X-Goog-Upload-Protocol': 'resumable', 'X-Goog-Upload-Command': 'start', 'X-Goog-Upload-Header-Content-Length': String(buf.length), 'X-Goog-Upload-Header-Content-Type': mime, 'Content-Type': 'application/json' }, body: JSON.stringify({ file: { display_name: 'trecho-aula' } }) }, { ...c, nome: 'gemini' }, 'transcrição (upload)');
@@ -585,15 +592,18 @@ async function transcribeGeminiDedicado({ audioBase64, mime = 'audio/webm', lang
 // "1.5s", "1500ms" ou número (segundos) → segundos
 const parseOffset = (v) => { if (typeof v === 'number') return v; const m = /^([\d.]+)\s*(ms|s)?$/.exec(String(v || '').trim()); return m ? (m[2] === 'ms' ? +m[1] / 1000 : +m[1]) : 0; };
 
-async function transcribeGeminiGenerate({ audioBase64, mime = 'audio/webm', prompt = '', language = 'pt', timestamps = false }) {
+async function transcribeGeminiGenerate({ audioBase64, audioBuffer, mime = 'audio/webm', prompt = '', language = 'pt', timestamps = false }) {
   const c = cfg().gemini;
   if (!c.key) throw new AIError('GEMINI_API_KEY não configurada.', { status: 503, code: 'no_key', provider: 'gemini' });
   if (!disponivel('gemini')) throw new AIError('Limite do Gemini atingido — tente novamente em instantes.', { status: 429, code: 'rate_limit', provider: 'gemini' });
+  const bytes = audioBuffer ? audioBuffer.length : Math.floor(String(audioBase64 || '').length * 0.75);
+  if (bytes > 15 * 1024 * 1024) throw new AIError('Áudio grande demais para o envio inline do Gemini; use o modelo dedicado.', { status: 413, code: 'unsupported_media', provider: 'gemini' });
   const t0 = Date.now();
+  const dadosAudio = audioBuffer ? Buffer.from(audioBuffer).toString('base64') : audioBase64;
   const body = {
     contents: [{ role: 'user', parts: [
       { text: `Transcreva fielmente este áudio de uma aula de Medicina em português do Brasil. Responda SOMENTE com a fala transcrita, sem comentários, sem rótulos de falante e sem resumir. Se não houver fala, responda exatamente [sem fala].${prompt ? ' Contexto e termos prováveis: ' + String(prompt).slice(0, 600) : ''}` },
-      { inlineData: { mimeType: mime, data: audioBase64 } }
+      { inlineData: { mimeType: mime, data: dadosAudio } }
     ] }],
     generationConfig: { temperature: 0, maxOutputTokens: c.maxOut }
   };
@@ -607,12 +617,12 @@ async function transcribeGeminiGenerate({ audioBase64, mime = 'audio/webm', prom
   } catch (e) { registrar('gemini', false, Date.now() - t0, e, c.model, 'transcricao'); throw e; }
 }
 
-async function transcribeGroq({ audioBase64, mime = 'audio/webm', prompt = '', language = 'pt', timestamps = false }) {
+async function transcribeGroq({ audioBase64, audioBuffer, mime = 'audio/webm', prompt = '', language = 'pt', timestamps = false }) {
   const c = cfg().groq;
   if (!c.key) throw new AIError('GROQ_API_KEY não configurada no servidor (transcrição usa o Whisper da Groq).', { status: 503, code: 'no_key' });
   if (!disponivel('groq')) throw new AIError('Limite da Groq atingido — tente novamente em instantes.', { status: 429, code: 'rate_limit', provider: 'groq' });
   const ext = ({ 'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/flac': 'flac' })[mime] || 'webm';
-  const buf = Buffer.from(audioBase64, 'base64');
+  const buf = audioBuffer ? Buffer.from(audioBuffer) : Buffer.from(audioBase64, 'base64');
   const form = new FormData();
   form.append('file', new Blob([buf], { type: mime }), `trecho.${ext}`);
   form.append('model', c.stt);
@@ -625,7 +635,12 @@ async function transcribeGroq({ audioBase64, mime = 'audio/webm', prompt = '', l
   const texto = String(j.text || '').trim();
   if (!timestamps) return texto;
   const segmentos = (Array.isArray(j.segments) ? j.segments : [])
-    .map(s => ({ ini: Number(s.start) || 0, fim: Number(s.end) || 0, text: String(s.text || '').replace(/[\r\n]+/g, ' ').trim() }))
+    .map(s => {
+      const out = { ini: Number(s.start) || 0, fim: Number(s.end) || 0, text: String(s.text || '').replace(/[\r\n]+/g, ' ').trim() };
+      if (s.avg_logprob != null && Number.isFinite(Number(s.avg_logprob))) out.avgLogprob = Number(s.avg_logprob);
+      if (s.no_speech_prob != null && Number.isFinite(Number(s.no_speech_prob))) out.noSpeechProb = Number(s.no_speech_prob);
+      return out;
+    })
     .filter(s => s.text && fimIni(s.fim, s.ini) >= 0);
   return { texto, segmentos };
 }

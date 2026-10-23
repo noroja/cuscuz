@@ -39,6 +39,28 @@ for(const tag of html.match(/<iframe[^>]+class="apostila-reader-frame"[^>]*>/g))
  assert.match(tag,/allow-same-origin/);assert.doesNotMatch(tag,/allow-scripts/);
 }
 assert.doesNotMatch(html,/contentWindow\.eval/);
+// Aula do Dia: upload, limites transparentes e preferências estão conectados ao fluxo.
+assert.match(aula,/id="ad-audio-file" name="audio" type="file"/);
+assert.match(aula,/let audioUploadDireto = false/);
+assert.match(aula,/limiteAudioBytes/);
+assert.match(aula,/const AUDIO_MAX_BYTES = \(\) => audioUploadDireto \? audioMaxBytes/);
+assert.match(aula,/function obterDuracaoAudio\(file\)/);
+assert.match(aula,/b\.size > AUDIO_MAX_BYTES\(\)/);
+assert.match(aula,/uploadToSignedUrl\(init\.path, init\.token, blob/);
+assert.match(aula,/\/api\/aula\/audio\/transcrever/);
+assert.match(aula,/Cada arquivo pode ter até 60 minutos/);
+assert.match(aula,/await idbPut\(sess\.id \+ ':0', file\)/);
+assert.match(aula,/transcreverTrecho\(sess, 0, file\)/);
+assert.match(aula,/id="ad-audio-meta" class="file-meta" role="status" aria-live="polite"/);
+assert.match(aula,/name="tipoAula" onchange="auladia\.salvarPreferencias\(\)"/);
+assert.match(aula,/name="preferenciaMaterial" onchange="auladia\.salvarPreferencias\(\)"/);
+assert.match(aula,/tipoAula: pref\.tipoAula, preferenciaMaterial: pref\.preferenciaMaterial/);
+assert.match(aula,/baixaConfianca: Number\.isFinite\(avg\) && avg <= -1 \|\| Number\.isFinite\(semFala\) && semFala >= 0\.6/);
+assert.match(aula,/Isso não avalia precisão médica/);
+assert.match(aula,/const regenerarCartoes = tipo === 'flash' \|\| tipo === 'flashcards'/);
+assert.match(aula,/auladia\.verOrigem\(\$\{i\}\)/);
+assert.match(aula,/Aprovar \$\{s\.flashcards\.length\} cartões para o Treino/);
+assert.match(aula,/Indicadores automáticos \(heurísticos\)/);
 // Parse every inline script to catch syntax errors in the edited search fallback.
 for(const [,code] of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)) new vm.Script(code);
 console.log('Console regressions: mindmap, flashcards, reader sandbox and inline syntax OK');

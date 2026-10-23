@@ -20,12 +20,13 @@ teste('cobertura: fato com dose ausente ou conceito ausente vira não coberto (d
   assert.ok(r.naoCobertos.some(x => /Amiodarona/.test(x.texto) && x.motivo === 'número/dose ausente'));
 });
 teste('cartões: duplicata, verso longo, frente sem contexto e dose inventada', () => {
+  const origem = { tipo: 'transcricao', inicio: 0, fim: fonte.length };
   const r = avaliarCartoes([
-    { frente: 'Qual a dose de adrenalina na PCR?', verso: '1 mg a cada 3-5 min' },
-    { frente: 'Qual é a dose de adrenalina na PCR', verso: '1 mg a cada 3 a 5 minutos' },
-    { frente: 'Dose?', verso: '1 mg' },
-    { frente: 'Qual a dose de amiodarona na segunda dose?', verso: '500 mg' },
-    { frente: 'Explique a RCP', verso: 'x'.repeat(320) }
+    { frente: 'Qual a dose de adrenalina na PCR?', verso: '1 mg a cada 3-5 min', origem },
+    { frente: 'Qual é a dose de adrenalina na PCR', verso: '1 mg a cada 3 a 5 minutos', origem },
+    { frente: 'Dose?', verso: '1 mg', origem },
+    { frente: 'Qual a dose de amiodarona na segunda dose?', verso: '500 mg', origem },
+    { frente: 'Explique a RCP', verso: 'x'.repeat(320), origem }
   ], fonte);
   assert.deepEqual(r.duplicatas, [[0, 1]]);
   assert.ok(r.itens[1].flags.some(f => f.includes('semelhante')));
@@ -33,10 +34,19 @@ teste('cartões: duplicata, verso longo, frente sem contexto e dose inventada', 
   assert.ok(r.itens[3].flags.some(f => f.includes('500 mg')));
   assert.ok(r.itens[4].flags.some(f => f.includes('verso longo')));
   assert.equal(r.itens[0].flags.length, 0);
+  assert.equal(r.dimensoes.length, 5);
+  assert.equal(r.dimensoes.find(d => d.id === 'rastreabilidade').nota, 10);
+  assert.equal(r.revisaoHumana.length, 4);
 });
 teste('relatório junta resumo e cartões e avisa que não prova correção clínica', () => {
-  const r = relatorio({ fonte, resumoMd: 'Adrenalina 1 mg. Amiodarona 600 mg.', flashcards: [{ frente: 'Qual a dose de adrenalina na PCR?', verso: '1 mg' }], base: { fatos: [{ texto: 'Adrenalina 1 mg a cada 3-5 min' }] } });
+  const r = relatorio({ fonte, fonteRastreio: fonte, resumoMd: 'Adrenalina 1 mg. Amiodarona 600 mg.', flashcards: [{ frente: 'Qual a dose de adrenalina na PCR?', verso: '1 mg', origem: { tipo: 'transcricao', inicio: 0, fim: fonte.length } }], base: { fatos: [{ texto: 'Adrenalina 1 mg a cada 3-5 min' }] } });
   assert.deepEqual(r.resumo.numerosParaConferir, ['600 mg']); assert.ok(r.aviso.includes('não prova')); assert.equal(r.flashcards.comAlerta, 0);
+});
+teste('origem inválida é alertada, mas sinal de revisão clínica não é um erro confirmado', () => {
+  const r = avaliarCartoes([{ frente: 'Qual a conduta na PCR?', verso: 'Adrenalina 1 mg', formato: 'vinheta', origem: { tipo: 'transcricao', inicio: 5, fim: 9999 } }], fonte, { transcricao: fonte });
+  assert.ok(r.itens[0].flags.includes('sem referência de origem verificável'));
+  assert.equal(r.revisaoHumana.length, 1);
+  assert.ok(r.revisaoHumana[0].motivos.some(m => m.includes('Vinheta clínica')));
 });
 teste('WER/CER/erros críticos contra referência humana', () => {
   assert.equal(wer('o paciente tem sepse grave', 'o paciente tem sepse grave'), 0);

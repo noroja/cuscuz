@@ -3888,7 +3888,7 @@ app.post('/api/planner/deck', (req, res) => {
 
 registerPlanner(app, { generateAI, aiConfigured, getBank: () => readQuestionsBank() });
 
-registerAula(app, { generateAI, aiConfigured });
+registerAula(app, { generateAI, aiConfigured, supabaseStorage: supabase, supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY });
 
 // Mentor IA acadêmico (Faculdade + Residência) — rotas novas em /api/planner/v3/*
 registerPlannerV3(app, {

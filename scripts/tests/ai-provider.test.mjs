@@ -6,7 +6,7 @@ const srv = http.createServer((req, res) => {
   let b = ''; req.on('data', d => b += d); req.on('end', () => {
     calls.push({ url: req.url, auth: req.headers.authorization, body: b.startsWith('{') ? JSON.parse(b) : b.slice(0, 40), cru: b.slice(0, 4000) });
     const j = (st, o, h = {}) => { res.writeHead(st, { 'content-type': 'application/json', ...h }); res.end(JSON.stringify(o)); };
-    if (req.url.endsWith('/audio/transcriptions')) return j(200, { text: 'transcrito', segments: [{ start: 0, end: 1.5, text: 'olá' }, { start: 1.5, end: 2.5, text: '' }] });
+    if (req.url.endsWith('/audio/transcriptions')) return j(200, { text: 'transcrito', segments: [{ start: 0, end: 1.5, text: 'olá', avg_logprob: -1.2, no_speech_prob: 0.1 }, { start: 1.5, end: 2.5, text: '' }] });
     if (modo === '429') return j(429, { error: { message: 'rate limit' } }, { 'retry-after': '120' });
     if (modo === 'tpm' && calls.length % 2 === 1) return j(429, { error: { message: 'Rate limit reached on tokens per minute (TPM): Limit 8000, Requested 12425, please reduce your message size and try again' } }, { 'retry-after': '1' });
     if (modo === 'tpmlongo') return j(429, { error: { message: 'Request too large on tokens per minute (TPM): Limit 8000, Requested 12425' } }, { 'retry-after': '80' });
@@ -103,17 +103,28 @@ await teste('400 no json_schema: cai para json_object com o schema no prompt', a
   assert.equal(JSON.parse(r.text).ok, true); assert.equal(calls[1].body.response_format.type, 'json_object'); assert.ok(calls[1].body.messages.at(-1).content.includes('JSON Schema'));
 });
 await teste('transcrição de áudio usa /audio/transcriptions', async () => { reset('ok'); const t1 = await P.transcribeAudio({ audioBase64: Buffer.from('abc').toString('base64'), mime: 'audio/webm;codecs=opus'.split(';')[0] }); assert.equal(t1, 'transcrito'); assert.ok(calls[0].url.endsWith('/audio/transcriptions')); assert.ok(!String(calls[0].cru).includes('verbose_json')); });
+await teste('transcrição aceita Buffer binário sem exigir base64', async () => { reset('ok'); const r = await P.transcribeAudio({ audioBuffer: Buffer.from('audio-binario'), mime: 'audio/mpeg' }); assert.equal(r, 'transcrito'); assert.ok(calls[0].url.endsWith('/audio/transcriptions')); });
 await teste('transcrição com timestamps: verbose_json + segmentos [ini,fim,text]', async () => {
   reset('ok');
   const r = await P.transcribeAudio({ audioBase64: Buffer.from('abc').toString('base64'), mime: 'audio/webm', timestamps: true });
   assert.equal(r.texto, 'transcrito');
-  assert.deepEqual(r.segmentos, [{ ini: 0, fim: 1.5, text: 'olá' }]); // segmento vazio/filtra fora
+  assert.deepEqual(r.segmentos, [{ ini: 0, fim: 1.5, text: 'olá', avgLogprob: -1.2, noSpeechProb: 0.1 }]); // confiança e segmento vazio/filtra fora
   assert.ok(String(calls[0].cru || calls[0].body).includes('verbose_json'));
 });
 await teste('imagem/áudio inline em generateAI: rejeita com 415 claro', async () => { reset('ok'); try { await P.generateAI({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'image/png', data: 'AA==' } }, { text: 'x' }] }] }); assert.fail(); } catch (e) { assert.equal(e.status, 415); } });
 
 // ── modos híbridos (GEMINI_API_KEY ativada de aqui em diante) ──
 process.env.GEMINI_API_KEY = 'gm_teste_segredo';
+await teste('transcrição pode priorizar Gemini e converter Buffer para inline quando pequeno', async () => {
+  reset('ok'); process.env.GEMINI_STT_MODEL = 'off';
+  try {
+    const audioBuffer = Buffer.from('audio-gemini-binario');
+    await P.transcribeAudio({ audioBuffer, mime: 'audio/mpeg', preferGemini: true });
+    assert.equal(calls.length, 0, 'não deve enviar o áudio à Groq');
+    assert.ok(gcalls[0].url.includes(':generateContent'));
+    assert.equal(gcalls[0].body.contents[0].parts[1].inlineData.data, audioBuffer.toString('base64'));
+  } finally { delete process.env.GEMINI_STT_MODEL; }
+});
 await teste('auto híbrido: prompt GRANDE vai ao Gemini, sem tocar na Groq', async () => {
   reset('ok');
   const r = await P.generateAI({ contents: 'x'.repeat(45000), config: { responseMimeType: 'application/json', responseSchema: schema } });

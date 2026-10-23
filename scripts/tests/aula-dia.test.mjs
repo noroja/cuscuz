@@ -33,6 +33,7 @@ const fakeGem = http.createServer((req, res) => { const p = []; req.on('data', d
 await new Promise(r => fakeGem.listen(0, r));
 process.env.GEMINI_BASE_URL = `http://127.0.0.1:${fakeGem.address().port}/v1beta`;
 process.env.GROQ_MAX_RETRIES = '0';
+process.env.GROQ_STT_MAX_FILE_BYTES = '1000000'; // reduzido no teste para validar o roteamento sem arquivo médico real
 const limpa = () => { for (const k of ['AI_PROVIDER', 'GROQ_API_KEY', 'GEMINI_API_KEY', 'OPENROUTER_API_KEY']) delete process.env[k]; };
 const { registerAula, promptWhisper } = await import('../../src/aula.js');
 const { generateAI, aiConfigured } = await import('../../src/ai-provider.js');
@@ -62,7 +63,7 @@ await teste('promptWhisper: glossário antes, ponta do trecho anterior por últi
   const p = promptWhisper({ disciplina: 'Psiquiatria', tema: 'Humor', termos: ['lítio', 'valproato'], anterior });
   assert.ok(p.length <= 700, String(p.length)); assert.ok(p.startsWith('Aula de Psiquiatria: Humor.'));
   assert.ok(p.endsWith('valproato')); assert.ok(p.indexOf('Termos:') < p.indexOf('fim da frase'));
-  assert.equal(promptWhisper({}), '');
+  assert.ok(promptWhisper({}).includes('Transcreva literalmente'));
   const longo = promptWhisper({ disciplina: 'D', termos: Array.from({ length: 80 }, (_, i) => 'termo' + i), anterior: 'ponta final' });
   assert.ok(longo.length <= 700 && longo.endsWith('ponta final'));
 });
@@ -111,6 +112,37 @@ await teste('transcrição Gemini dedicada com GEMINI_STT_TIMESTAMPS=1: palavras
   try { const { j } = await trans(); assert.equal(j.segmentos.length, 2); assert.deepEqual(j.segmentos[0], { ini: 0, fim: 1.1, text: 'Olá turma.' }); assert.equal(j.segmentos[1].text, 'Hoje vemos sepse.'); }
   finally { gemDedicado = false; delete process.env.GEMINI_STT_TIMESTAMPS; }
 });
+await teste('upload de áudio longo: URL assinada, Gemini dedicado sem timestamps e remoção temporária', async () => {
+  limpa(); process.env.GROQ_API_KEY = 'gsk_x'; process.env.GEMINI_API_KEY = 'g'; process.env.AI_PROVIDER = 'auto';
+  gemDedicado = true; capDed.length = 0;
+  const audio = Buffer.alloc(4 * 1024 * 1024, 7), removidos = [], buckets = [];
+  const storage = { storage: {
+    listBuckets: async () => ({ data: [], error: null }),
+    createBucket: async (name, options) => { buckets.push({ name, options }); return { error: null }; },
+    from: name => ({
+      createSignedUploadUrl: async path => ({ data: { path, token: 'assinado' }, error: null }),
+      download: async () => ({ data: new Blob([audio], { type: 'audio/mpeg' }), error: null }),
+      remove: async paths => { removidos.push(...paths); return { error: null }; }
+    })
+  } };
+  const appUpload = express(); appUpload.use(express.json()); appUpload.use((req, _res, next) => { req.user = { username: 'aluno' }; next(); });
+  registerAula(appUpload, { generateAI, aiConfigured, supabaseStorage: storage, supabaseServiceRole: true });
+  const srvUpload = await new Promise(resolve => { const s = appUpload.listen(0, () => resolve(s)); });
+  const url = `http://127.0.0.1:${srvUpload.address().port}/api/aula/audio`;
+  try {
+    const upload = await fetch(url + '/upload-url', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bytes: audio.length, mime: 'audio/mpeg' }) });
+    const info = await upload.json(); assert.equal(upload.status, 200); assert.equal(info.success, true); assert.match(info.path, /^aluno\/[0-9a-f-]{36}\.mp3$/); assert.equal(info.bucket, 'aula-audio');
+    assert.equal(buckets[0].options.public, false); assert.equal(buckets[0].options.fileSizeLimit, '50MB');
+    const antes = capt.filter(x => x.url.endsWith('/audio/transcriptions')).length;
+    const r = await fetch(url + '/transcrever', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: info.path, mime: 'audio/mpeg', duracao: 3600, disciplina: 'Clínica' }) });
+    const j = await r.json(); assert.equal(r.status, 200); assert.equal(j.texto, 'Olá turma. Hoje vemos sepse.');
+    assert.equal(capt.filter(x => x.url.endsWith('/audio/transcriptions')).length, antes, 'arquivo acima do limite da Groq usa Gemini');
+    assert.equal(capDed[1].bytes, audio.length); assert.equal(capDed[2].corpo.generation_config.transcription_config.mode.timestamp_granularities, undefined, 'aula de 1 hora não pede timestamps incompatíveis');
+    assert.deepEqual(removidos, [info.path], 'o arquivo temporário deve ser removido depois da transcrição');
+    const grande = await fetch(url + '/upload-url', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bytes: 50_000_001, mime: 'audio/mpeg' }) });
+    assert.equal(grande.status, 413);
+  } finally { gemDedicado = false; srvUpload.close(); }
+});
 await teste('transcrição Gemini: se o modelo dedicado falhar (sem URL de upload), cai no generateContent', async () => {
   limpa(); process.env.GEMINI_API_KEY = 'g'; gemDedicado = false; capGem.length = 0;
   const { status, j } = await trans(); assert.equal(status, 200); assert.equal(j.texto, 'texto do gemini'); assert.equal(capGem.length, 1);
@@ -155,7 +187,16 @@ await teste('/fechamento com base: sem IA, usa sínteses e fatos', async () => {
 await teste('/flashcards com base: prompt contém os fatos, não a transcrição', async () => {
   promptsDerivados = []; const j = await post2('/api/aula/flashcards', { transcricao: aulaTxt, base });
   assert.equal(j.success, true); assert.equal(j.flashcards.length, 1);
+  assert.equal(j.flashcards[0].formato, 'pergunta');
   assert.ok(promptsDerivados[0].includes('Adrenalina 1 mg a cada 3-5 min')); assert.ok(!promptsDerivados[0].includes('parada cardiorrespiratória'));
+  assert.ok(promptsDerivados[0].includes('estimativa, não uma cota'));
+  assert.ok(promptsDerivados[0].includes('Não force condutas clínicas em conteúdo básico'));
+  assert.ok(!promptsDerivados[0].includes('residência médica'));
+});
+await teste('/flashcards adapta o foco ao tipo de aula clínica', async () => {
+  promptsDerivados = []; const j = await post2('/api/aula/flashcards', { transcricao: aulaTxt, base, tipoAula: 'caso-clinico' });
+  assert.equal(j.success, true);
+  assert.ok(promptsDerivados[0].includes('decisões clínicas somente quando a aula as sustentar'));
 });
 await teste('/processar com base: 1 chamada, copia cai na prova/termos e filtra assuntos', async () => {
   tarefas.length = 0; promptsDerivados = []; const j = await post2('/api/aula/processar', { transcricao: aulaTxt, assuntosPlano: ['PCR'], base });
@@ -187,6 +228,6 @@ await teste('fechamento: sem rodapé das Crônicas', async () => {
   const f = await post3('/api/aula/fechamento', { transcricao: aulaTxt, base }); assert.ok(!f.markdown.includes('Crônicas') && !f.markdown.includes('cuscuz-klan'));
 });
 srv3.close();
-srv.close(); fake.closeAllConnections?.(); fake.close(); fakeGem.closeAllConnections?.(); fakeGem.close();
+srv.close(); fake.closeAllConnections?.(); fake.close(); fakeGem.closeAllConnections?.(); fakeGem.close(); delete process.env.GROQ_STT_MAX_FILE_BYTES;
 for (const l of t) console.log(l.join(' — '));
 process.exit(t.every(l => l[0] === 'OK ') ? 0 : 1);
