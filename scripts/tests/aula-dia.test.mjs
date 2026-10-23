@@ -168,7 +168,7 @@ await teste('sem base, o caminho antigo continua funcionando (fechamento usa IA)
 });
 srv2.close();
 
-// ── Estilo do resumo: pedagógico (padrão) x Crônicas ──
+// ── Resumo pedagógico ──
 let ultimoCap = '';
 const gaiCap = async ({ task, contents }) => { if (task === 'aula_capitulo') ultimoCap = contents; return { text: '## 1.0 — Tema\n\nconteúdo' }; };
 const app3 = express(); app3.use(express.json({ limit: '40mb' })); registerAula(app3, { generateAI: gaiCap, aiConfigured: () => true });
@@ -180,12 +180,11 @@ await teste('capítulo: padrão é o estilo pedagógico (conceito → mecanismo 
   for (const x of ['### Conceito central', '### Fundamentos', '### Mecanismo explicado', 'Causa → Mecanismo', '### Aplicação clínica', '### Pontos para a prova', '### Revisão final do capítulo', 'Complemento (não dito na aula)', 'Não invente diretrizes']) assert.ok(ultimoCap.includes(x), x);
   assert.ok(!ultimoCap.includes('CAIXA-HISTÓRIA') && !ultimoCap.includes('Cor de Magia'), 'sem o formato Crônicas');
 });
-await teste('capítulo: estilo "cronicas" continua disponível', async () => {
-  await post3('/api/aula/capitulo', { ...capBody, estilo: 'cronicas' }); assert.ok(ultimoCap.includes('CAIXA-HISTÓRIA') && ultimoCap.includes('Cor de Magia'));
+await teste('capítulo: o formato Crônicas foi removido (mesmo pedindo estilo "cronicas")', async () => {
+  await post3('/api/aula/capitulo', { ...capBody, estilo: 'cronicas' }); assert.ok(!ultimoCap.includes('CAIXA-HISTÓRIA') && !ultimoCap.includes('Cor de Magia') && ultimoCap.includes('### Mecanismo explicado'));
 });
-await teste('fechamento com base: rodapé das Crônicas só no estilo cronicas', async () => {
-  const ped = await post3('/api/aula/fechamento', { transcricao: aulaTxt, base }); const cro = await post3('/api/aula/fechamento', { transcricao: aulaTxt, base, estilo: 'cronicas' });
-  assert.ok(!ped.markdown.includes('Crônicas')); assert.ok(cro.markdown.includes('Crônicas'));
+await teste('fechamento: sem rodapé das Crônicas', async () => {
+  const f = await post3('/api/aula/fechamento', { transcricao: aulaTxt, base }); assert.ok(!f.markdown.includes('Crônicas') && !f.markdown.includes('cuscuz-klan'));
 });
 srv3.close();
 srv.close(); fake.closeAllConnections?.(); fake.close(); fakeGem.closeAllConnections?.(); fakeGem.close();

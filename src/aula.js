@@ -1,46 +1,11 @@
-// Aula do dia — transcrição fiel por trechos, revisão do texto, resumo (estilo pedagógico por padrão; "Crônicas de Residência" opcional) e flashcards
+// Aula do dia — transcrição fiel por trechos, revisão do texto, resumo pedagógico por capítulos e flashcards
 import { Type, transcribeAudio, aiJanelaChars, aiStatus } from './ai-provider.js';
 import { relatorio as relatorioQualidade } from './aula-qualidade.js';
 
 const S = Type.STRING;
 const COR_PADRAO = 'dourado';
 
-// Regras do prompt "Crônicas de Residência" do aluno, adaptadas para gerar CAPÍTULO a CAPÍTULO (cada chamada cabe no tempo do servidor)
-const REGRAS_CRONICAS = `Você escreve material de estudo médico no estilo "Crônicas de Residência" — resumos narrativos, didáticos e INESQUECÍVEIS para provas de Residência Médica (storytelling + didática visual + neurociência), em MARKDOWN.
-HANDLE fixo: **@cuscuz-klan**.
-
-FIDELIDADE (inviolável):
-- Baseie TODAS as afirmações na transcrição da aula. Não invente dados nem acrescente conhecimento externo ao conteúdo clínico; não apresente inferência como fato.
-- Preserve números, nomes, unidades, condições e ressalvas EXATAMENTE como ditos (doses, janelas de tempo, escores, percentuais, faixas etárias).
-- Cobertura 100% do tema: conceitos, classificações, casos, exemplos, comentários do professor, tabelas e listas completas (vetado "entre outros"/"etc." que implique omissão). Condensar é reescrever melhor, NUNCA omitir. Síntese curta é proibida.
-- Explique termos técnicos na primeira ocorrência. Se a fonte for omissa/contraditória/incerta, sinalize: "⚠️ A fonte não detalha..." / "⚠️ As fontes divergem sobre...". Trecho incompreensível: "[trecho não recuperável]".
-- NÃO invente questões. Só inclua "Veja como CAIU" se o professor tiver lido/comentado uma questão real na aula (com banca/ano se citados).
-- Analogias, nomes de personagens e mnemônicos são ferramentas didáticas explícitas e não alteram o conteúdo técnico.
-
-FORMATAÇÃO MARKDOWN (padrão fixo):
-- CAIXA-HISTÓRIA → blockquote de cena iniciado pelo emoji do "ator" (> 🫀 **[Cena]** ...) — UMA ideia por bloco.
-- FALAS → itálico com falante: *"Doutor, o que está acontecendo comigo?"* — **Sr. Paulo**.
-- PERSONAGENS/ÓRGÃOS → emoji + nome próprio em bold na 1ª aparição.
-- MARCA-TEXTO → **negrito** para termos-chave e dados de prova; ***negrito-itálico*** para relações que costumam ser confundidas.
-- CAIXAS DE GURU (blockquotes, títulos fixos): > 💡 **DICA SALVADORA:** · > 🧪 **SE LIGA:** · > ⚠️ **ATENÇÃO:** (pegadinhas) · > 📖 **SAIBA MAIS:** · > 🎁 **BÔNUS:** · > 🐾 **O PULO DO GATO:** · > 🧠 **MNEMÔNICO:** [LETRAS] — explicação. Use pontualmente, só quando sustentado pela aula.
-- FLUXOGRAMAS/ALGORITMOS → sequência com setas (1 → 2 → 3; "Se X → conduta A / Se Y → conduta B") ou tabela de decisão. PROIBIDO espremer algoritmo em parágrafo.
-- TABELAS em Markdown legível para comparações, classificações, escores e doses.
-- Parágrafos curtos, linha em branco entre blocos.
-
-FÓRMULA DO CAPÍTULO (aplicar os atos que couberem ao conteúdo):
-Ato 1 Abertura: PACIENTE COM NOME PRÓPRIO (use o da aula; se não houver, crie nome brasileiro simples e rotule "(personagem didático)") em 2–4 frases com a queixa principal — cena + falas.
-Ato 2 A Virada: a história avança e CADA informação da aula entra como cena, com PERGUNTAS NORTEADORAS como títulos "###" ("Mas o que é X?", "Como se manifesta?", "Beleza, mas como RESOLVER???", "E agora, [nome]?").
-Ato 3 O Mecanismo: tabela/lista com setas (lado técnico 100% fiel) + analogia personificada (camada didática explícita).
-Ato 4 O Guru: caixas de guru pontuais; crie um mnemônico SE a aula não trouxer, declarando-o "mnemônico didático".
-Ato 5 O Recap: "Recapitulando: estamos atendendo o Sr./a Sra. [nome]...".
-Ato 6: blockquote final do capítulo:
-> 🎯 **RESUMO PARA A PROVA**
-> - ✓ ponto-chave...
-(complementa, NUNCA substitui o conteúdo integral)
-Ato 7 Veja como CAIU: somente se houver questão real na aula; título + \`> 📋 **BANCA | ANO**\` + enunciado íntegro + alternativas A–E + "✅ **Gabarito: X**" com justificativa de 2–3 linhas.
-Ato 8: "#### ✏️ Anotações" com 3 linhas de underscore (______).`;
-
-// Estilo PEDAGÓGICO (padrão): material de estudo hierárquico, fiel à aula, com mecanismos explicados em cadeia causal.
+// Regras do resumo: material de estudo hierárquico, fiel à aula, com mecanismos explicados em cadeia causal.
 const REGRAS_PEDAGOGICAS = `Você escreve material de estudo médico APROFUNDADO, esquematizado e didático para provas de Residência e para o raciocínio clínico. Português do Brasil, Markdown.
 
 FIDELIDADE (inviolável):
@@ -290,12 +255,11 @@ ${JSON.stringify(frgs.map(f => ({ titulo: f.titulo, de: f.de, ate: f.ate, pontos
     }
   });
 
-  // 4) Um capítulo do resumo Crônicas
+  // 4) Um capítulo do resumo
   app.post('/api/aula/capitulo', async (req, res) => {
     try {
       if (!exigeIA(res)) return;
-      const { transcricao = '', area = '', conteudo = '', capitulo = {}, numero = 1, total = 1, cor = COR_PADRAO, estilo = 'pedagogico' } = req.body || {};
-      const cronicas = estilo === 'cronicas';
+      const { transcricao = '', area = '', conteudo = '', capitulo = {}, numero = 1, total = 1 } = req.body || {};
       const t = String(transcricao).trim();
       if (t.length < 100 || !capitulo || !capitulo.titulo) return res.status(400).json({ success: false, msg: 'Dados insuficientes.' });
       // Fonte do capítulo: o mapa marca "de"/"ate" (offsets em caracteres) onde o capítulo começa e termina;
@@ -310,13 +274,13 @@ ${JSON.stringify(frgs.map(f => ({ titulo: f.titulo, de: f.de, ate: f.ate, pontos
         fonte = recortePorPalavras(t, capitulo, maxFonte);
       }
       const r = await generateAI({ task: "aula_capitulo",
-        contents: `${cronicas ? REGRAS_CRONICAS : REGRAS_PEDAGOGICAS}
+        contents: `${REGRAS_PEDAGOGICAS}
 
 TAREFA: escreva SOMENTE o capítulo ${numero} de ${total} do volume (área: ${area || 'n/i'}; conteúdo da aula: ${conteudo || 'n/i'}). Comece direto por:
 ## ${numero}.0 — ${capitulo.titulo}
-(breadcrumb em itálico logo abaixo: *${area || 'Aula'} — ${capitulo.titulo}*) e desenvolva ${cronicas ? 'a fórmula completa (Atos 1–8 que couberem)' : 'a estrutura pedagógica completa (blocos que couberem ao conteúdo)'}.
+(breadcrumb em itálico logo abaixo: *${area || 'Aula'} — ${capitulo.titulo}*) e desenvolva a estrutura pedagógica completa (blocos que couberem ao conteúdo).
 Pontos que este capítulo DEVE cobrir integralmente (do mapa prévio): ${JSON.stringify(capitulo.pontos || [])}.
-${cronicas ? 'Cor de Magia do volume: ' + cor + ' (apenas registro; não altera o texto).\n' : ''}Não repita o que pertence a outros capítulos. Não escreva capa, índice, considerações finais nem gabarito geral. Sem preâmbulo e sem "CONTINUA".
+Não repita o que pertence a outros capítulos. Não escreva capa, índice, considerações finais nem gabarito geral. Sem preâmbulo e sem "CONTINUA".
 
 TRECHO DA TRANSCRIÇÃO (fonte única — cobre integralmente este capítulo):
 ${fonte}`,
@@ -333,7 +297,7 @@ ${fonte}`,
   app.post('/api/aula/fechamento', async (req, res) => {
     try {
       if (!exigeIA(res)) return;
-      const { transcricao = '', area = '', conteudo = '', capitulos = [], temQuestoes = false, estilo = 'pedagogico' } = req.body || {};
+      const { transcricao = '', area = '', conteudo = '', capitulos = [], temQuestoes = false } = req.body || {};
       const t = String(transcricao).trim();
       if (t.length < 100) return res.status(400).json({ success: false, msg: 'Transcrição curta demais.' });
       if (baseValida(req.body.base)) {
@@ -344,7 +308,6 @@ ${fonte}`,
         const rev = b.fatos.map(f => `- ${f.tipo ? '**' + f.tipo + ':** ' : ''}${f.texto}`).join('\n');
         let md = `## Considerações Finais\n\n${cons}\n\n## Revisão Final — Fatos e Relações Essenciais\n\n${rev}`;
         if (temQuestoes) md += '\n\n## Gabarito Geral\n(as questões reais lidas na aula estão comentadas nos capítulos, nas caixas "BANCA | ANO" com gabarito em negrito)';
-        if (estilo === 'cronicas') md += `\n\n— Fim deste volume das Crônicas · @cuscuz-klan —`;
         return res.json({ success: true, markdown: md.trim(), semIA: true });
       }
       const partes = fatiarComOffsets(t, janelaChars(2200));
@@ -368,7 +331,6 @@ ${partes[i].texto}`,
       const limpa = (a) => a.join('\n').replace(/^\s+|\s+$/g, '').replace(/\n{3,}/g, '\n\n');
       let md = `## Considerações Finais\n\n${limpa(cons) || '*(nada a sintetizar)*'}\n\n## Revisão Final — Fatos e Relações Essenciais\n\n${limpa(rev) || '*(nada listado)*'}`;
       if (temQuestoes) md += '\n\n## Gabarito Geral\n(as questões reais lidas na aula estão comentadas nos capítulos, nas caixas "BANCA | ANO" com gabarito em negrito)';
-      if (estilo === 'cronicas') md += `\n\n— Fim deste volume das Crônicas · @cuscuz-klan —`;
       res.json({ success: true, markdown: md.trim() });
     } catch (err) {
       console.error('[Aula fechamento]', err);

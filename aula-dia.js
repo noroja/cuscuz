@@ -183,11 +183,11 @@
     const aulaHoje = hoje.find(a => a.data === hojeISO());
     const d0 = aulaHoje ? aulaHoje.disciplina : '', t0 = aulaHoje ? aulaHoje.tema : '';
     const partes = ['Única'].concat([1, 2, 3, 4, 5, 6, 7, 8].map(n => 'Parte ' + n));
-    r.innerHTML = `<div class="ad"><h2>Aula do dia</h2><div class="sub">Grave a aula da faculdade: transcrição fiel, revisada e arquivada por Área › Conteúdo › Parte. No fim eu gero o resumo completo (Crônicas) e os flashcards de revisão.</div>
+    r.innerHTML = `<div class="ad"><h2>Aula do dia</h2><div class="sub">Grave a aula da faculdade: transcrição fiel, revisada e arquivada por Área › Conteúdo › Parte. No fim eu gero o resumo completo e os flashcards de revisão.</div>
     <div class="card"><div class="row"><div><label>Área / disciplina</label><input id="ad-disc" list="ad-discs" placeholder="Ex.: Psiquiatria" value="${E(d0)}" oninput="auladia.parteAuto()"><datalist id="ad-discs">${opts.map(o => `<option value="${E(o)}">`).join('')}</datalist></div>
     <div><label>Conteúdo da aula</label><input id="ad-tema" placeholder="Ex.: Transtornos de humor" value="${E(t0)}" oninput="auladia.parteAuto()"></div></div>
     <div class="row3"><div><label>Parte</label><select id="ad-parte" onchange="this.dataset.manual=1">${partes.map(p => `<option${p === sugerirParte(d0, t0) ? ' selected' : ''}>${p}</option>`).join('')}</select></div>
-    <div><label>Cor de magia do resumo</label><select id="ad-cor">${['dourado', 'turquesa', 'âmbar', 'violeta', 'esmeralda', 'coral'].map(c => `<option>${c}</option>`).join('')}</select></div><div></div></div>
+<div></div></div>
     <div class="ad-big"><button class="b rec" id="ad-start" onclick="auladia.iniciar()"><i class="ph ph-record"></i> Iniciar gravação</button>
     <span class="sub" style="margin:0">${transcOk ? 'Transcrição por IA (a cada ~1,5 min)' + (geminiOk ? ', revisão e resumo automáticos no fim.' : '; sem IA de texto para revisar e resumir.') : (geminiOk ? 'Sem GROQ_API_KEY no servidor (transcrição por Whisper): usarei a legenda ao vivo do navegador e guardarei o áudio para transcrever depois; resumo e flashcards saem do texto da legenda.' : 'Sem chave de IA no servidor: usarei a legenda ao vivo do navegador (Chrome/Safari), sem revisão nem resumo por IA.')}</span></div>
     <div class="aviso">Deixe a tela ligada e o navegador aberto durante a aula — no iPhone, bloquear a tela ou trocar de app pausa a gravação. Posicione o aparelho perto de quem fala e use o botão ⭐ quando o professor disser "isso cai na prova". Grave apenas se a faculdade/professor permitirem.</div></div>
@@ -512,7 +512,7 @@
     toast('Pronto.', 'success');
   }
 
-  /* ───────────── pipeline: revisão → resumo Crônicas → flashcards → material ───────────── */
+  /* ───────────── pipeline: revisão → resumo → flashcards → material ───────────── */
   let pipelineRodando = false, htmlPassos = '';
   const post = async (url, corpo, tent = 3) => {
     let ultimo = null;
@@ -557,7 +557,7 @@
   }
 
   function passos(s, estado) {
-    const L = [['rev', 'Revisando a transcrição (termos médicos, emendas, parágrafos)'], ['res', 'Escrevendo o resumo completo (Crônicas de Residência)'], ['fc', 'Criando os flashcards de revisão'], ['mat', 'Montando "cai na prova" e assuntos do plano']];
+    const L = [['rev', 'Revisando a transcrição (termos médicos, emendas, parágrafos)'], ['res', 'Escrevendo o resumo completo ()'], ['fc', 'Criando os flashcards de revisão'], ['mat', 'Montando "cai na prova" e assuntos do plano']];
     const html = L.map(([k, n]) => { const e = estado[k] || ''; return `<div class="ad-step ${e === 'ok' ? 'ok' : e === 'go' ? 'go' : e === 'er' ? 'er' : ''}">${e === 'ok' ? '✔' : e === 'go' ? '⏳' : e === 'er' ? '✖' : '○'} ${n}${estado[k + 'Info'] ? ' — ' + E(estado[k + 'Info']) : ''}</div>`; }).join('');
     htmlPassos = html; const el = $('ad-proc'); if (el && sessAtual === s) el.innerHTML = html;
   }
@@ -566,7 +566,6 @@
     if (pipelineRodando) return toast('Já estou processando esta aula.', 'info');
     if (!geminiOk) return toast('Para revisar e resumir é preciso uma chave de IA (Gemini ou Groq) no servidor.', 'warning');
     pipelineRodando = true;
-    if (!s.estilo) s.estilo = estiloDe(s);
     const est = { rev: s.textoRevisado ? 'ok' : '', res: s.resumoMd ? 'ok' : '', fc: s.flashcards ? 'ok' : '', mat: s.resultado ? 'ok' : '' };
     passos(s, est);
     const ctx = { area: s.disciplina, conteudo: [s.tema, s.parte && s.parte !== 'Única' ? s.parte : ''].filter(Boolean).join(' — '), glossario: assuntosPlano(s.disciplina).slice(0, 60) };
@@ -588,7 +587,7 @@
       }
       const fonte = s.textoRevisado || s.texto;
       // 2) O mapa vem primeiro (os flashcards usam os capítulos como "tema"); depois as três frentes são independentes:
-      //    A) capítulos Crônicas + fechamento, B) flashcards, C) "cai na prova"/assuntos. Em paralelo quando N > 1.
+      //    A) capítulos + fechamento, B) flashcards, C) "cai na prova"/assuntos. Em paralelo quando N > 1.
       if (!s.resumoMd) {
         est.res = 'go'; est.resInfo = 'mapeando tópicos'; passos(s, est);
         if (!s.mapa) { s.mapa = (await postL('/api/aula/mapa', Object.assign({ transcricao: fonte, parte: s.parte }, ctx))).mapa; await salvarAgora(s); }
@@ -609,11 +608,11 @@
         const faltam = caps.map((_, i) => i).filter(i => !s.caps[i]); let prontos = caps.length - faltam.length;
         est.resInfo = prontos + '/' + caps.length + ' capítulos'; passos(s, est);
         await pool(N, faltam, async (i) => {
-          const j = await postL('/api/aula/capitulo', Object.assign({ transcricao: fonte, capitulo: caps[i], numero: i + 1, total: caps.length, cor: s.cor || 'dourado', estilo: estiloDe(s) }, ctx), 3);
+          const j = await postL('/api/aula/capitulo', Object.assign({ transcricao: fonte, capitulo: caps[i], numero: i + 1, total: caps.length }, ctx), 3);
           s.caps[i] = j.markdown; await salvarAgora(s);
           est.resInfo = (++prontos) + '/' + caps.length + ' capítulos'; passos(s, est);
         });
-        if (!s.fechamento) { est.resInfo = 'considerações finais e revisão'; passos(s, est); s.fechamento = (await postL('/api/aula/fechamento', Object.assign({ transcricao: fonte, capitulos: caps, temQuestoes: !!s.mapa.temQuestoes, estilo: estiloDe(s) }, baseOpt(), ctx))).markdown; await salvarAgora(s); }
+        if (!s.fechamento) { est.resInfo = 'considerações finais e revisão'; passos(s, est); s.fechamento = (await postL('/api/aula/fechamento', Object.assign({ transcricao: fonte, capitulos: caps, temQuestoes: !!s.mapa.temQuestoes }, baseOpt(), ctx))).markdown; await salvarAgora(s); }
         s.resumoMd = montarResumoMd(s); est.res = 'ok'; est.resInfo = ''; await salvarAgora(s); passos(s, est);
       };
       const frenteFlash = async () => {
@@ -644,14 +643,11 @@
     pipelineRodando = false;
   }
 
-  // Estilo do resumo: pedagógico (padrão, estrutura conceito→mecanismo→aplicação) ou Crônicas. Aulas antigas com resumo e sem campo seguem como Crônicas.
-  const estiloDe = s => s.estilo || (s.resumoMd ? 'cronicas' : 'pedagogico');
   function montarResumoMd(s) {
     const caps = (s.mapa && s.mapa.capitulos) || [];
     const titulos = caps.map((c, i) => `${i + 1}.0 — ${c.titulo}`);
     const nome = nomeCompleto(s);
-    const ped = estiloDe(s) !== 'cronicas';
-    let md = ped ? `# ${s.tema || s.disciplina || 'Aula'} — material de estudo\n\n> **${nome}**\n> Disciplina: ${s.disciplina || '—'}\n> ${new Date().getFullYear()}\n> Gerado por IA a partir da transcrição; confira doses, condutas e critérios antes de usar em prova.\n\n## Índice\n\n` : `# Crônicas de Residência — ${s.tema || s.disciplina || 'Aula'}\n\n> **${nome}**\n> Disciplina: ${s.disciplina || '—'}\n> As Crônicas de @cuscuz-klan — Resumos Inesquecíveis para a Residência Médica\n> ${new Date().getFullYear()}\n> Cor de Magia: ${s.cor || 'dourado'}\n\n## Índice\n\n`;
+    let md = `# ${s.tema || s.disciplina || 'Aula'} — material de estudo\n\n> **${nome}**\n> Disciplina: ${s.disciplina || '—'}\n> ${new Date().getFullYear()}\n> Gerado por IA a partir da transcrição; confira doses, condutas e critérios antes de usar em prova.\n\n## Índice\n\n`;
     md += titulos.map(t => `- [${t}](#${slug(t)})`).join('\n') + `\n- [Considerações Finais](#considerações-finais)\n- [Revisão Final — Fatos e Relações Essenciais](#revisão-final--fatos-e-relações-essenciais)\n\n`;
     md += (s.caps || []).join('\n\n---\n\n') + '\n\n---\n\n' + (s.fechamento || '');
     return md.trim() + '\n';
@@ -924,7 +920,7 @@
     let corpo = '';
     if (abaRes === 'transcricao') corpo = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="b" id="ad-ed-btn" onclick="auladia.editarTexto()"><i class="ph ph-pencil-simple"></i> Editar transcrição</button>${s.texto && s.textoRevisado ? '<button class="b" onclick="auladia.verOriginal()">Ver original (sem revisão)</button>' : ''}</div><div class="ad-tr" id="ad-tr-txt">${s.textoRevisado ? E(s.textoRevisado).replace(/([⭐❓]) \[(\d\d:\d\d)\]/g, '<span class="mk">$1 [$2]</span>') : textoHtml(s)}</div>`;
     else if (abaRes === 'audio') corpo = `<div id="ak-box"><div class="sub">Montando o player do karaoke…</div></div>`;
-    else if (abaRes === 'resumo') corpo = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="b" onclick="auladia.regenerar('resumo')"><i class="ph ph-arrows-clockwise"></i> Regenerar resumo</button><button class="b" onclick="auladia.regenerar('resumo','${estiloDe(s) === 'cronicas' ? 'pedagogico' : 'cronicas'}')">Regenerar no estilo ${estiloDe(s) === 'cronicas' ? 'pedagógico' : 'Crônicas'}</button></div>${versoesHtml(s, 'resumoMd')}<div class="ad-md" id="ad-md">${mdParaHtml(s.resumoMd)}</div>`;
+    else if (abaRes === 'resumo') corpo = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="b" onclick="auladia.regenerar('resumo')"><i class="ph ph-arrows-clockwise"></i> Regenerar resumo</button></div>${versoesHtml(s, 'resumoMd')}<div class="ad-md" id="ad-md">${mdParaHtml(s.resumoMd)}</div>`;
     else if (abaRes === 'qual') corpo = qualidadeHtml(s);
     else if (abaRes === 'flash') {
       const grupos = {}; (s.flashcards || []).forEach(f => { (grupos[f.tema || 'Geral'] = grupos[f.tema || 'Geral'] || []).push(f); });
@@ -984,12 +980,12 @@
     if (!valor || (Array.isArray(valor) && !valor.length)) return;
     s.versoes = s.versoes || {}; s.versoes[tipo] = [{ em: new Date().toISOString(), valor: JSON.parse(JSON.stringify(valor)) }].concat(s.versoes[tipo] || []).slice(0, 3);
   }
-  async function regenerar(tipo, estilo) {
+  async function regenerar(tipo) {
     const s = sessAtual; if (!s || pipelineRodando) return toast('Aguarde o processamento atual terminar.', 'warning');
     if (!geminiOk) return toast('Preciso de uma chave de IA no servidor para regenerar.', 'warning');
     if (!confirm(tipo === 'flash' ? 'Regenerar os flashcards? A versão atual fica guardada em "Versões anteriores".' : 'Regenerar o resumo? A versão atual fica guardada em "Versões anteriores".')) return;
     if (tipo === 'flash') { guardarVersao(s, 'flashcards', s.flashcards); s.flashcards = null; s.qualidade = null; }
-    else { guardarVersao(s, 'resumoMd', s.resumoMd); s.resumoMd = ''; s.caps = []; s.fechamento = ''; s.qualidade = null; if (estilo) s.estilo = estilo; }
+    else { guardarVersao(s, 'resumoMd', s.resumoMd); s.resumoMd = ''; s.caps = []; s.fechamento = ''; s.qualidade = null; }
     await salvarAgora(s); pipeline(s);
   }
   async function restaurar(tipo, i) {
