@@ -43,6 +43,12 @@ try:
         chk('resumo montado com os 4 capítulos', all(f'Cap {i}' in doc['resumoMd'] for i in range(1,nc+1)) and 'Considerações Finais' in doc['resumoMd'])
         chk('flashcards e cai na prova', len(doc['flashcards'])==2 and doc['resultado']['caiNaProva']==['cai isto'])
         # ── qualidade, edição e versões ──
+        def espera(cond, seg=40):
+            for _ in range(seg*2):
+                dd=lerdoc()
+                if cond(dd): return dd
+                pg.wait_for_timeout(500)
+            return lerdoc()
         lerdoc=lambda: pg.evaluate("""async()=>new Promise((ok)=>{const r=indexedDB.open('aulaDia',1);r.onsuccess=()=>{const q=r.result.transaction('audio').objectStore('audio').get('doc:a1');q.onsuccess=()=>ok(q.result)}})""")
         pg.wait_for_timeout(1500); d2=lerdoc()
         chk('qualidade verificada automaticamente ao fim do pipeline', bool(d2.get('qualidade')) and 'cobertura' in d2['qualidade']['resumo'] and d2['qualidade']['flashcards']['itens'] is not None, str(d2.get('qualidade'))[:200])
@@ -53,8 +59,14 @@ try:
         chk('remover cartão guarda a versão anterior', len(d3['flashcards'])==1 and len(d3['versoes']['flashcards'])>=1 and len(d3['versoes']['flashcards'][0]['valor'])==2)
         pg.evaluate("auladia.restaurar('flashcards',0)"); pg.wait_for_timeout(1200); d4=lerdoc()
         chk('restaurar versão devolve os 2 cartões', len(d4['flashcards'])==2)
-        pg.evaluate("auladia.regenerar('flash')"); pg.wait_for_function("document.body.innerText.includes('Aula pronta')", timeout=30000); pg.wait_for_timeout(800); d5=lerdoc()
+        pg.evaluate("auladia.regenerar('flash')"); d5=espera(lambda x: x.get('flashcards') and len(x['flashcards'])==2 and not x.get('qualidade') is None)
         chk('regenerar só os cartões: novos cartões e resumo intacto', len(d5['flashcards'])==2 and d5['resumoMd']==d4['resumoMd'] and len(d5['versoes']['flashcards'])>=1)
+        chk('resumo novo no estilo pedagógico (sem cabeçalho Crônicas)', d5['estilo']=='pedagogico' and d5['resumoMd'].startswith('# ') and 'Crônicas de Residência' not in d5['resumoMd'].split('\n')[0], d5['resumoMd'][:80])
+        pg.evaluate("auladia.aba('resumo')"); pg.wait_for_timeout(300)
+        chk('botão para regenerar no outro estilo', 'Regenerar no estilo Crônicas' in pg.inner_text('#ad-root'))
+        pg.evaluate("auladia.regenerar('resumo','cronicas')"); dc=espera(lambda x: x.get('estilo')=='cronicas' and str(x.get('resumoMd','')).startswith('# Crônicas') and x.get('qualidade'))
+        pg.wait_for_timeout(500)
+        chk('regenerar resumo em Crônicas guarda a versão pedagógica', dc['estilo']=='cronicas' and dc['resumoMd'].startswith('# Crônicas') and len(dc['versoes']['resumoMd'])>=1)
         pg.evaluate("auladia.aba('transcricao')"); pg.wait_for_timeout(300)
         pg.evaluate("auladia.editarTexto()"); pg.wait_for_timeout(300)
         pg.evaluate("document.getElementById('ad-tr-txt').innerText='TEXTO CORRIGIDO PELO ALUNO com mais de vinte caracteres'"); pg.evaluate("auladia.editarTexto()"); pg.wait_for_timeout(1000); d6=lerdoc()

@@ -566,6 +566,7 @@
     if (pipelineRodando) return toast('Já estou processando esta aula.', 'info');
     if (!geminiOk) return toast('Para revisar e resumir é preciso uma chave de IA (Gemini ou Groq) no servidor.', 'warning');
     pipelineRodando = true;
+    if (!s.estilo) s.estilo = estiloDe(s);
     const est = { rev: s.textoRevisado ? 'ok' : '', res: s.resumoMd ? 'ok' : '', fc: s.flashcards ? 'ok' : '', mat: s.resultado ? 'ok' : '' };
     passos(s, est);
     const ctx = { area: s.disciplina, conteudo: [s.tema, s.parte && s.parte !== 'Única' ? s.parte : ''].filter(Boolean).join(' — '), glossario: assuntosPlano(s.disciplina).slice(0, 60) };
@@ -608,11 +609,11 @@
         const faltam = caps.map((_, i) => i).filter(i => !s.caps[i]); let prontos = caps.length - faltam.length;
         est.resInfo = prontos + '/' + caps.length + ' capítulos'; passos(s, est);
         await pool(N, faltam, async (i) => {
-          const j = await postL('/api/aula/capitulo', Object.assign({ transcricao: fonte, capitulo: caps[i], numero: i + 1, total: caps.length, cor: s.cor || 'dourado' }, ctx), 3);
+          const j = await postL('/api/aula/capitulo', Object.assign({ transcricao: fonte, capitulo: caps[i], numero: i + 1, total: caps.length, cor: s.cor || 'dourado', estilo: estiloDe(s) }, ctx), 3);
           s.caps[i] = j.markdown; await salvarAgora(s);
           est.resInfo = (++prontos) + '/' + caps.length + ' capítulos'; passos(s, est);
         });
-        if (!s.fechamento) { est.resInfo = 'considerações finais e revisão'; passos(s, est); s.fechamento = (await postL('/api/aula/fechamento', Object.assign({ transcricao: fonte, capitulos: caps, temQuestoes: !!s.mapa.temQuestoes }, baseOpt(), ctx))).markdown; await salvarAgora(s); }
+        if (!s.fechamento) { est.resInfo = 'considerações finais e revisão'; passos(s, est); s.fechamento = (await postL('/api/aula/fechamento', Object.assign({ transcricao: fonte, capitulos: caps, temQuestoes: !!s.mapa.temQuestoes, estilo: estiloDe(s) }, baseOpt(), ctx))).markdown; await salvarAgora(s); }
         s.resumoMd = montarResumoMd(s); est.res = 'ok'; est.resInfo = ''; await salvarAgora(s); passos(s, est);
       };
       const frenteFlash = async () => {
@@ -643,11 +644,14 @@
     pipelineRodando = false;
   }
 
+  // Estilo do resumo: pedagógico (padrão, estrutura conceito→mecanismo→aplicação) ou Crônicas. Aulas antigas com resumo e sem campo seguem como Crônicas.
+  const estiloDe = s => s.estilo || (s.resumoMd ? 'cronicas' : 'pedagogico');
   function montarResumoMd(s) {
     const caps = (s.mapa && s.mapa.capitulos) || [];
     const titulos = caps.map((c, i) => `${i + 1}.0 — ${c.titulo}`);
     const nome = nomeCompleto(s);
-    let md = `# Crônicas de Residência — ${s.tema || s.disciplina || 'Aula'}\n\n> **${nome}**\n> Disciplina: ${s.disciplina || '—'}\n> As Crônicas de @cuscuz-klan — Resumos Inesquecíveis para a Residência Médica\n> ${new Date().getFullYear()}\n> Cor de Magia: ${s.cor || 'dourado'}\n\n## Índice\n\n`;
+    const ped = estiloDe(s) !== 'cronicas';
+    let md = ped ? `# ${s.tema || s.disciplina || 'Aula'} — material de estudo\n\n> **${nome}**\n> Disciplina: ${s.disciplina || '—'}\n> ${new Date().getFullYear()}\n> Gerado por IA a partir da transcrição; confira doses, condutas e critérios antes de usar em prova.\n\n## Índice\n\n` : `# Crônicas de Residência — ${s.tema || s.disciplina || 'Aula'}\n\n> **${nome}**\n> Disciplina: ${s.disciplina || '—'}\n> As Crônicas de @cuscuz-klan — Resumos Inesquecíveis para a Residência Médica\n> ${new Date().getFullYear()}\n> Cor de Magia: ${s.cor || 'dourado'}\n\n## Índice\n\n`;
     md += titulos.map(t => `- [${t}](#${slug(t)})`).join('\n') + `\n- [Considerações Finais](#considerações-finais)\n- [Revisão Final — Fatos e Relações Essenciais](#revisão-final--fatos-e-relações-essenciais)\n\n`;
     md += (s.caps || []).join('\n\n---\n\n') + '\n\n---\n\n' + (s.fechamento || '');
     return md.trim() + '\n';
@@ -920,7 +924,7 @@
     let corpo = '';
     if (abaRes === 'transcricao') corpo = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="b" id="ad-ed-btn" onclick="auladia.editarTexto()"><i class="ph ph-pencil-simple"></i> Editar transcrição</button>${s.texto && s.textoRevisado ? '<button class="b" onclick="auladia.verOriginal()">Ver original (sem revisão)</button>' : ''}</div><div class="ad-tr" id="ad-tr-txt">${s.textoRevisado ? E(s.textoRevisado).replace(/([⭐❓]) \[(\d\d:\d\d)\]/g, '<span class="mk">$1 [$2]</span>') : textoHtml(s)}</div>`;
     else if (abaRes === 'audio') corpo = `<div id="ak-box"><div class="sub">Montando o player do karaoke…</div></div>`;
-    else if (abaRes === 'resumo') corpo = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="b" onclick="auladia.regenerar('resumo')"><i class="ph ph-arrows-clockwise"></i> Regenerar resumo</button></div>${versoesHtml(s, 'resumoMd')}<div class="ad-md" id="ad-md">${mdParaHtml(s.resumoMd)}</div>`;
+    else if (abaRes === 'resumo') corpo = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="b" onclick="auladia.regenerar('resumo')"><i class="ph ph-arrows-clockwise"></i> Regenerar resumo</button><button class="b" onclick="auladia.regenerar('resumo','${estiloDe(s) === 'cronicas' ? 'pedagogico' : 'cronicas'}')">Regenerar no estilo ${estiloDe(s) === 'cronicas' ? 'pedagógico' : 'Crônicas'}</button></div>${versoesHtml(s, 'resumoMd')}<div class="ad-md" id="ad-md">${mdParaHtml(s.resumoMd)}</div>`;
     else if (abaRes === 'qual') corpo = qualidadeHtml(s);
     else if (abaRes === 'flash') {
       const grupos = {}; (s.flashcards || []).forEach(f => { (grupos[f.tema || 'Geral'] = grupos[f.tema || 'Geral'] || []).push(f); });
@@ -980,12 +984,12 @@
     if (!valor || (Array.isArray(valor) && !valor.length)) return;
     s.versoes = s.versoes || {}; s.versoes[tipo] = [{ em: new Date().toISOString(), valor: JSON.parse(JSON.stringify(valor)) }].concat(s.versoes[tipo] || []).slice(0, 3);
   }
-  async function regenerar(tipo) {
+  async function regenerar(tipo, estilo) {
     const s = sessAtual; if (!s || pipelineRodando) return toast('Aguarde o processamento atual terminar.', 'warning');
     if (!geminiOk) return toast('Preciso de uma chave de IA no servidor para regenerar.', 'warning');
     if (!confirm(tipo === 'flash' ? 'Regenerar os flashcards? A versão atual fica guardada em "Versões anteriores".' : 'Regenerar o resumo? A versão atual fica guardada em "Versões anteriores".')) return;
     if (tipo === 'flash') { guardarVersao(s, 'flashcards', s.flashcards); s.flashcards = null; s.qualidade = null; }
-    else { guardarVersao(s, 'resumoMd', s.resumoMd); s.resumoMd = ''; s.caps = []; s.fechamento = ''; s.qualidade = null; }
+    else { guardarVersao(s, 'resumoMd', s.resumoMd); s.resumoMd = ''; s.caps = []; s.fechamento = ''; s.qualidade = null; if (estilo) s.estilo = estilo; }
     await salvarAgora(s); pipeline(s);
   }
   async function restaurar(tipo, i) {

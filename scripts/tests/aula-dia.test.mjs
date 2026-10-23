@@ -167,6 +167,27 @@ await teste('sem base, o caminho antigo continua funcionando (fechamento usa IA)
   tarefas.length = 0; await post2('/api/aula/fechamento', { transcricao: aulaTxt + aulaTxt }); assert.ok(tarefas.includes('aula_fechamento'));
 });
 srv2.close();
+
+// ── Estilo do resumo: pedagógico (padrão) x Crônicas ──
+let ultimoCap = '';
+const gaiCap = async ({ task, contents }) => { if (task === 'aula_capitulo') ultimoCap = contents; return { text: '## 1.0 — Tema\n\nconteúdo' }; };
+const app3 = express(); app3.use(express.json({ limit: '40mb' })); registerAula(app3, { generateAI: gaiCap, aiConfigured: () => true });
+const srv3 = await new Promise(r => { const s3 = app3.listen(0, () => r(s3)); });
+const post3 = async (u, c) => (await fetch(`http://127.0.0.1:${srv3.address().port}${u}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(c) })).json();
+const capBody = { transcricao: aulaTxt, area: 'Emergência', capitulo: { titulo: 'PCR', pontos: ['adrenalina'] }, numero: 1, total: 1 };
+await teste('capítulo: padrão é o estilo pedagógico (conceito → mecanismo → aplicação → prova), com complemento externo sinalizado', async () => {
+  const j = await post3('/api/aula/capitulo', capBody); assert.equal(j.success, true);
+  for (const x of ['### Conceito central', '### Fundamentos', '### Mecanismo explicado', 'Causa → Mecanismo', '### Aplicação clínica', '### Pontos para a prova', '### Revisão final do capítulo', 'Complemento (não dito na aula)', 'Não invente diretrizes']) assert.ok(ultimoCap.includes(x), x);
+  assert.ok(!ultimoCap.includes('CAIXA-HISTÓRIA') && !ultimoCap.includes('Cor de Magia'), 'sem o formato Crônicas');
+});
+await teste('capítulo: estilo "cronicas" continua disponível', async () => {
+  await post3('/api/aula/capitulo', { ...capBody, estilo: 'cronicas' }); assert.ok(ultimoCap.includes('CAIXA-HISTÓRIA') && ultimoCap.includes('Cor de Magia'));
+});
+await teste('fechamento com base: rodapé das Crônicas só no estilo cronicas', async () => {
+  const ped = await post3('/api/aula/fechamento', { transcricao: aulaTxt, base }); const cro = await post3('/api/aula/fechamento', { transcricao: aulaTxt, base, estilo: 'cronicas' });
+  assert.ok(!ped.markdown.includes('Crônicas')); assert.ok(cro.markdown.includes('Crônicas'));
+});
+srv3.close();
 srv.close(); fake.closeAllConnections?.(); fake.close(); fakeGem.closeAllConnections?.(); fakeGem.close();
 for (const l of t) console.log(l.join(' — '));
 process.exit(t.every(l => l[0] === 'OK ') ? 0 : 1);
