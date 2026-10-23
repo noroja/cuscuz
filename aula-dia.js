@@ -634,6 +634,7 @@
         const falha = rs.find(r => r.status === 'rejected'); if (falha) throw falha.reason;
       } else { for (const f of frentes) await f(); }
       if (sessAtual === s) { abaRes = 'resumo'; desenharResultado(); }
+      verificarQualidade(s, true); // sem IA: não atrasa nem pode quebrar o pipeline
       toast('Aula pronta: transcrição revisada, resumo e ' + (s.flashcards || []).length + ' flashcards.', 'success');
     } catch (e) {
       Object.keys(est).forEach(k => { if (est[k] === 'go') est[k] = 'er'; }); passos(s, est);
@@ -911,17 +912,19 @@
     if (s.resumoMd) tabs.push(['resumo', 'Resumo']);
     if (s.flashcards) tabs.push(['flash', 'Flashcards (' + s.flashcards.length + ')']);
     if (res) tabs.push(['prova', 'Cai na prova']);
+    if (s.resumoMd || s.flashcards) tabs.push(['qual', '🔎 Qualidade' + (s.qualidade && s.qualidade.flashcards && s.qualidade.flashcards.comAlerta ? ' ⚠' : '')]);
     if (s.textoRevisado || s.texto) tabs.push(['resumo_g', s.resumoGeral ? '📜 Resumo Geral' : '📜 Resumo Geral ✨']);
     if ((s.chunks || []).some(c => Number.isInteger(c.i))) tabs.push(['audio', '🎤 Áudio · karaoke']);
     tabs.push(['mm', '🗺 Mapa mental']);
     if (!tabs.some(t => t[0] === abaRes)) abaRes = tabs[0][0];
     let corpo = '';
-    if (abaRes === 'transcricao') corpo = `<div class="ad-tr">${s.textoRevisado ? E(s.textoRevisado).replace(/([⭐❓]) \[(\d\d:\d\d)\]/g, '<span class="mk">$1 [$2]</span>') : textoHtml(s)}</div>`;
+    if (abaRes === 'transcricao') corpo = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="b" id="ad-ed-btn" onclick="auladia.editarTexto()"><i class="ph ph-pencil-simple"></i> Editar transcrição</button>${s.texto && s.textoRevisado ? '<button class="b" onclick="auladia.verOriginal()">Ver original (sem revisão)</button>' : ''}</div><div class="ad-tr" id="ad-tr-txt">${s.textoRevisado ? E(s.textoRevisado).replace(/([⭐❓]) \[(\d\d:\d\d)\]/g, '<span class="mk">$1 [$2]</span>') : textoHtml(s)}</div>`;
     else if (abaRes === 'audio') corpo = `<div id="ak-box"><div class="sub">Montando o player do karaoke…</div></div>`;
-    else if (abaRes === 'resumo') corpo = `<div class="ad-md" id="ad-md">${mdParaHtml(s.resumoMd)}</div>`;
+    else if (abaRes === 'resumo') corpo = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="b" onclick="auladia.regenerar('resumo')"><i class="ph ph-arrows-clockwise"></i> Regenerar resumo</button></div>${versoesHtml(s, 'resumoMd')}<div class="ad-md" id="ad-md">${mdParaHtml(s.resumoMd)}</div>`;
+    else if (abaRes === 'qual') corpo = qualidadeHtml(s);
     else if (abaRes === 'flash') {
       const grupos = {}; (s.flashcards || []).forEach(f => { (grupos[f.tema || 'Geral'] = grupos[f.tema || 'Geral'] || []).push(f); });
-      corpo = `<button class="b pri" onclick="auladia.enviarFlash()"><i class="ph ph-cards"></i> Adicionar ao Treino (revisão espaçada)</button><div style="margin-top:10px">${Object.keys(grupos).map(g => `<div class="grp2">${E(g)}</div>` + grupos[g].map(f => `<div class="fc"><b>${E(f.frente)}</b>${E(f.verso)}</div>`).join('')).join('')}</div>`;
+      corpo = `<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="b pri" onclick="auladia.enviarFlash()"><i class="ph ph-cards"></i> Adicionar ao Treino (revisão espaçada)</button><button class="b" onclick="auladia.regenerar('flash')"><i class="ph ph-arrows-clockwise"></i> Regenerar cartões</button></div>${versoesHtml(s, 'flashcards')}<div class="sub" style="margin-top:6px">Revise, edite ou remova antes de enviar ao Treino. Cartões com ⚠ têm algo a conferir.</div><div style="margin-top:10px">${Object.keys(grupos).map(g => `<div class="grp2">${E(g)}</div>` + grupos[g].map(f => { const i = s.flashcards.indexOf(f); const fl = ((s.qualidade && s.qualidade.flashcards && s.qualidade.flashcards.itens[i]) || {}).flags || []; return `<div class="fc"${fl.length ? ' style="border-color:var(--amber)"' : ''}><b>${E(f.frente)}</b>${E(f.verso)}${fl.length ? `<div class="sub" style="color:var(--amber)">⚠ ${fl.map(E).join(' · ')}</div>` : ''}<div style="margin-top:6px"><button class="b" onclick="auladia.cartaoEditar(${i})">✎ Editar</button> <button class="b" onclick="auladia.cartaoRemover(${i})">✕ Remover</button></div></div>`; }).join('')).join('')}</div>`;
     } else if (res && abaRes === 'prova') corpo = `${(res.caiNaProva || []).length ? '<ul>' + res.caiNaProva.map(p => `<li>${E(p)}</li>`).join('') + '</ul>' : '<div class="sub">O professor não indicou explicitamente o que cai na prova.</div>'}${(s.marcas || []).length ? '<h4>Momentos que você marcou</h4><div class="sub">' + s.marcas.map(E).join(' · ') + '</div>' : ''}${(res.assuntosCobertos || []).length ? '<h4>Assuntos do manual abordados nesta aula</h4><ul>' + res.assuntosCobertos.map(a => `<li>${E(a)}</li>`).join('') + '</ul>' : ''}${(() => { const ehAluno = d => /^\s*\[\d\d:\d\d\]/.test(d); const dv = res.duvidas || []; const meus = dv.filter(ehAluno), conf = dv.filter(d => !ehAluno(d));
       return ((s.duvidasMarcas || []).length ? '<h4>❓ Suas dúvidas na aula</h4>' + (meus.length ? '<ul>' + meus.map(d => `<li>${E(d)}</li>`).join('') + '</ul>' : '<div class="sub">' + s.duvidasMarcas.map(E).join(' · ') + '</div>') : '')
         + (conf.length ? '<h4>Para conferir (possíveis imprecisões)</h4><ul>' + conf.map(d => `<li>${E(d)}</li>`).join('') + '</ul>' : ''); })()}}`;
@@ -940,6 +943,88 @@
     if (abaRes === 'audio') desenharKaraoke();
     if (abaRes === 'mm') desenharMindmap();
   }
+
+
+  /* ───────────── qualidade, edição e versões ───────────── */
+  const fonteDe = s => [s.texto, s.textoRevisado].filter(Boolean).join('\n\n'); // números aceitos se estiverem no original OU na revisão
+  async function verificarQualidade(s, silencioso) {
+    if (!s || !(s.resumoMd || (s.flashcards && s.flashcards.length))) return;
+    try {
+      const j = await post('/api/aula/qualidade', { fonte: fonteDe(s), resumoMd: s.resumoMd || '', flashcards: s.flashcards || [], base: s.base || null }, 1);
+      s.qualidade = j.relatorio; await salvarAgora(s);
+      if (sessAtual === s) desenharResultado();
+    } catch (e) { if (!silencioso) toast('Não consegui verificar a qualidade: ' + e.message, 'error'); }
+  }
+  function qualidadeHtml(s) {
+    const q = s.qualidade;
+    const topo = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="b pri" onclick="auladia.verificar()"><i class="ph ph-seal-check"></i> Verificar agora</button></div>`;
+    if (!q) return topo + '<div class="sub">Ainda não verificado. A verificação é automática, sem IA, e leva instantes.</div>';
+    const r = q.resumo, f = q.flashcards; let h = topo;
+    if (r) {
+      const c = r.cobertura;
+      h += '<h4>Resumo</h4>' + (c ? `<div class="card"><b>Cobertura dos fatos extraídos da aula: ${c.percentual}%</b> (${c.cobertos} de ${c.total})</div>` + (c.naoCobertos.length ? '<div class="sub" style="margin:6px 0">Fatos que parecem não estar no resumo (confira na transcrição):</div><ul>' + c.naoCobertos.slice(0, 25).map(x => `<li>${E(x.texto)} <span class="sub">— ${E(x.motivo)}</span></li>`).join('') + '</ul>' : '') : '<div class="sub">Sem base de fatos para medir cobertura (a extração não rodou nesta aula).</div>')
+        + (r.numerosParaConferir.length ? `<div class="card" style="border-color:var(--amber)"><b>⚠ Números/doses no resumo que não aparecem na transcrição:</b> ${r.numerosParaConferir.map(E).join(' · ')}<div class="sub">Podem ser erro de transcrição, de escrita da IA ou apenas outra forma de falar ("um grama"). Confira no áudio antes de estudar.</div></div>` : '<div class="sub">✔ Todo número com unidade do resumo aparece na transcrição.</div>');
+    }
+    if (f) {
+      h += `<h4>Flashcards</h4><div class="card"><b>${f.comAlerta}</b> de ${f.itens.length} cartões com alerta · <b>${f.duplicatas.length}</b> possíveis duplicatas${f.cobertura ? ' · cobertura dos fatos: <b>' + f.cobertura.percentual + '%</b>' : ''}</div>`;
+      if (f.duplicatas.length) h += '<button class="b" onclick="auladia.removerDuplicatas()"><i class="ph ph-copy"></i> Remover duplicatas (mantém o primeiro)</button>';
+    }
+    return h + `<div class="sub" style="margin-top:10px">${E(q.aviso || '')} Material com dose, conduta ou critério clínico deve ser conferido por você antes de ser usado em prova.</div>`;
+  }
+  const verRot = { flashcards: 'cartões', resumoMd: 'resumo' };
+  function versoesHtml(s, tipo) {
+    const v = (s.versoes && s.versoes[tipo]) || []; if (!v.length) return '';
+    return `<details style="margin:6px 0"><summary class="sub">Versões anteriores dos ${verRot[tipo]} (${v.length})</summary>` + v.map((x, i) => `<div class="sub" style="margin:3px 0">${E(new Date(x.em).toLocaleString('pt-BR'))} · ${tipo === 'flashcards' ? x.valor.length + ' cartões' : (x.valor || '').length + ' caracteres'} <button class="b" onclick="auladia.restaurar('${tipo}',${i})">Restaurar</button></div>`).join('') + '</details>';
+  }
+  function guardarVersao(s, tipo, valor) {
+    if (!valor || (Array.isArray(valor) && !valor.length)) return;
+    s.versoes = s.versoes || {}; s.versoes[tipo] = [{ em: new Date().toISOString(), valor: JSON.parse(JSON.stringify(valor)) }].concat(s.versoes[tipo] || []).slice(0, 3);
+  }
+  async function regenerar(tipo) {
+    const s = sessAtual; if (!s || pipelineRodando) return toast('Aguarde o processamento atual terminar.', 'warning');
+    if (!geminiOk) return toast('Preciso de uma chave de IA no servidor para regenerar.', 'warning');
+    if (!confirm(tipo === 'flash' ? 'Regenerar os flashcards? A versão atual fica guardada em "Versões anteriores".' : 'Regenerar o resumo? A versão atual fica guardada em "Versões anteriores".')) return;
+    if (tipo === 'flash') { guardarVersao(s, 'flashcards', s.flashcards); s.flashcards = null; s.qualidade = null; }
+    else { guardarVersao(s, 'resumoMd', s.resumoMd); s.resumoMd = ''; s.caps = []; s.fechamento = ''; s.qualidade = null; }
+    await salvarAgora(s); pipeline(s);
+  }
+  async function restaurar(tipo, i) {
+    const s = sessAtual; const v = s && s.versoes && s.versoes[tipo] && s.versoes[tipo][i]; if (!v) return;
+    guardarVersao(s, tipo, tipo === 'flashcards' ? s.flashcards : s.resumoMd);
+    if (tipo === 'flashcards') s.flashcards = v.valor; else s.resumoMd = v.valor;
+    s.qualidade = null; await salvarAgora(s); desenharResultado(); verificarQualidade(s, true);
+  }
+  async function cartaoRemover(i) {
+    const s = sessAtual; if (!s || !s.flashcards || !s.flashcards[i]) return;
+    guardarVersao(s, 'flashcards', s.flashcards); s.flashcards.splice(i, 1); s.qualidade = null; await salvarAgora(s); desenharResultado(); verificarQualidade(s, true);
+  }
+  async function cartaoEditar(i) {
+    const s = sessAtual; const c = s && s.flashcards && s.flashcards[i]; if (!c) return;
+    const f = prompt('Frente (pergunta):', c.frente); if (f === null) return;
+    const v = prompt('Verso (resposta):', c.verso); if (v === null) return;
+    if (!f.trim() || !v.trim()) return toast('Frente e verso não podem ficar vazios.', 'warning');
+    c.frente = f.trim(); c.verso = v.trim(); c.editado = true; s.qualidade = null; await salvarAgora(s); desenharResultado(); verificarQualidade(s, true);
+  }
+  async function removerDuplicatas() {
+    const s = sessAtual; const d = s && s.qualidade && s.qualidade.flashcards && s.qualidade.flashcards.duplicatas; if (!d || !d.length) return;
+    const fora = new Set(d.map(x => x[1])); guardarVersao(s, 'flashcards', s.flashcards);
+    s.flashcards = s.flashcards.filter((_, i) => !fora.has(i)); s.qualidade = null; await salvarAgora(s); desenharResultado(); verificarQualidade(s, true);
+    toast(fora.size + ' duplicatas removidas.', 'success');
+  }
+  let _editandoTxt = false;
+  async function editarTexto() {
+    const s = sessAtual; const el = $('ad-tr-txt'); const b = $('ad-ed-btn'); if (!s || !el || !b) return;
+    if (!_editandoTxt) { _editandoTxt = true; el.contentEditable = 'true'; el.style.outline = '2px solid var(--amber)'; el.style.whiteSpace = 'pre-wrap'; el.innerText = s.textoRevisado || s.texto || ''; b.innerHTML = '<i class="ph ph-floppy-disk"></i> Salvar edição'; el.focus(); return; }
+    const novo = el.innerText.replace(/\u00a0/g, ' ').trim(); _editandoTxt = false;
+    if (novo.length < 20) { toast('Texto curto demais; edição descartada.', 'warning'); return desenharResultado(); }
+    if (novo !== (s.textoRevisado || s.texto)) {
+      if (!s.textoRevisado) s.textoRevisado = s.texto; // o original (s.texto) nunca é sobrescrito
+      s.textoRevisado = novo; s.textoEditadoEm = new Date().toISOString(); s.qualidade = null; await salvarAgora(s);
+      toast('Transcrição salva. O resumo e os cartões já gerados não mudam: use "Regenerar" se quiser refazê-los com o texto corrigido.', 'success');
+    }
+    desenharResultado();
+  }
+  function verOriginal() { const el = $('ad-tr-txt'); if (!el || !sessAtual) return; el.style.whiteSpace = 'pre-wrap'; el.textContent = sessAtual.texto || ''; }
 
   /* ───────────── ações ───────────── */
   function cabecalho(s) { return `# ${nomeCompleto(s)}\n\nÁrea: ${s.disciplina || '—'} · Conteúdo: ${s.tema || '—'} · ${s.parte || 'Única'}\nData: ${s.data} · Duração: ${hms(s.duracao || 0)}\n\n`; }
@@ -1067,6 +1152,7 @@
   function apagarSess(id) { if (!confirm('Apagar esta aula gravada?')) return; salvarSessoes(sessoes().filter(x => x.id !== id)); idbDel(id + ':'); idbDelKey('doc:' + id); if (sessAtual && sessAtual.id === id) sessAtual = null; render(); }
 
   window.auladia = {
+    regenerar, restaurar, cartaoRemover, cartaoEditar, removerDuplicatas, editarTexto, verOriginal, verificar: () => verificarQualidade(sessAtual, false),
     iniciar, marcar, duvida, abrir: abrirSess, apagar: apagarSess, enviarFlash, baixar, copiar,
     pausar, continuar, parar, retomar, finalizar,
     gerar() { if (sessAtual) pipeline(sessAtual); }, reenviar: reenviarFalhas, parteAuto: atualizarParteSugerida,

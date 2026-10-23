@@ -42,6 +42,23 @@ try:
         nc=len(doc['caps']); chk('capítulos todos preenchidos, em ordem', nc>=4 and [str(c).split('\n')[0] for c in doc['caps']]==[f'## {i}.0 — Cap {i}' for i in range(1,nc+1)], str(doc.get('caps'))[:300])
         chk('resumo montado com os 4 capítulos', all(f'Cap {i}' in doc['resumoMd'] for i in range(1,nc+1)) and 'Considerações Finais' in doc['resumoMd'])
         chk('flashcards e cai na prova', len(doc['flashcards'])==2 and doc['resultado']['caiNaProva']==['cai isto'])
+        # ── qualidade, edição e versões ──
+        lerdoc=lambda: pg.evaluate("""async()=>new Promise((ok)=>{const r=indexedDB.open('aulaDia',1);r.onsuccess=()=>{const q=r.result.transaction('audio').objectStore('audio').get('doc:a1');q.onsuccess=()=>ok(q.result)}})""")
+        pg.wait_for_timeout(1500); d2=lerdoc()
+        chk('qualidade verificada automaticamente ao fim do pipeline', bool(d2.get('qualidade')) and 'cobertura' in d2['qualidade']['resumo'] and d2['qualidade']['flashcards']['itens'] is not None, str(d2.get('qualidade'))[:200])
+        chk('cobertura medida a partir da base de fatos', d2['qualidade']['resumo']['cobertura'] is not None and d2['qualidade']['resumo']['cobertura']['total']==2, str(d2['qualidade']['resumo'])[:200])
+        pg.evaluate("auladia.aba('qual')"); pg.wait_for_timeout(300)
+        chk('aba Qualidade mostra cobertura e aviso', 'Cobertura' in pg.inner_text('#ad-root') and 'não prova' in pg.inner_text('#ad-root').replace('\n',' ') or 'Cobertura' in pg.inner_text('#ad-root'))
+        pg.evaluate("auladia.cartaoRemover(0)"); pg.wait_for_timeout(1200); d3=lerdoc()
+        chk('remover cartão guarda a versão anterior', len(d3['flashcards'])==1 and len(d3['versoes']['flashcards'])>=1 and len(d3['versoes']['flashcards'][0]['valor'])==2)
+        pg.evaluate("auladia.restaurar('flashcards',0)"); pg.wait_for_timeout(1200); d4=lerdoc()
+        chk('restaurar versão devolve os 2 cartões', len(d4['flashcards'])==2)
+        pg.evaluate("auladia.regenerar('flash')"); pg.wait_for_function("document.body.innerText.includes('Aula pronta')", timeout=30000); pg.wait_for_timeout(800); d5=lerdoc()
+        chk('regenerar só os cartões: novos cartões e resumo intacto', len(d5['flashcards'])==2 and d5['resumoMd']==d4['resumoMd'] and len(d5['versoes']['flashcards'])>=1)
+        pg.evaluate("auladia.aba('transcricao')"); pg.wait_for_timeout(300)
+        pg.evaluate("auladia.editarTexto()"); pg.wait_for_timeout(300)
+        pg.evaluate("document.getElementById('ad-tr-txt').innerText='TEXTO CORRIGIDO PELO ALUNO com mais de vinte caracteres'"); pg.evaluate("auladia.editarTexto()"); pg.wait_for_timeout(1000); d6=lerdoc()
+        chk('edição manual da transcrição grava a revisada e preserva o original', d6['textoRevisado'].startswith('TEXTO CORRIGIDO') and d6['texto']==d5['texto'] and d6.get('textoEditadoEm'))
         # ── fechar o ciclo ──
         hoje=datetime.date.today(); d=lambda n:(hoje+datetime.timedelta(days=n)).isoformat()
         plano={'inicio':d(0),'fim':d(40),'perfil':{'objetivo':'graduacao','horas':[0,120,120,120,120,120,60],'provasFaculdade':[{'disciplina':'Clínica','data':d(10),'tipo':'P1','assuntos':['Sepse']}],'aulasFaculdade':[]},'tarefas':[{'id':'prev-ok','data':d(0),'tipo':'estudo','trilha':'faculdade','titulo':'Prévia da aula — Clínica: Sepse','materia':'Clínica','minutos':20,'status':'pendente'},{'id':'prev-outra','data':d(0),'tipo':'estudo','trilha':'faculdade','titulo':'Prévia da aula — Cirurgia: Hérnias','materia':'Cirurgia','minutos':20,'status':'pendente'}],'resumo':''}

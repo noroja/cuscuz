@@ -77,6 +77,15 @@ Na tela do resultado aparece o painel **🔁 Fechar o ciclo** (assim que os flas
 Verificado: testes do motor (preservação, vencidas, destaque) e E2E no navegador com IA falsa (revisões 24 h e 7 dias criadas, a de 30 dias cortada pela prova, idempotência, cartões no Treino, prioridade calculada). Não testado com dados reais.
 Ainda proposto: marcar a tarefa "Prévia/Aula" do dia como concluída, atualizar a cobertura dos assuntos da prova, sincronizar as aulas pela nuvem e mostrar o consumo de tokens por aula.
 
+### Fase 4 — qualidade verificável, edição e versões (implementada)
+Motivo (lido no código): os materiais eram publicados sem conferência; não havia como editar cartões ou a transcrição, nem regenerar um material sem perder o anterior.
+- **Verificação sem IA** (`src/aula-qualidade.js`, `POST /api/aula/qualidade`, aba **🔎 Qualidade**, roda ao fim do pipeline): (1) números com unidade (dose, tempo, %, mmHg…) do resumo/cartões que **não aparecem na transcrição** → "conferir"; (2) **cobertura** dos fatos extraídos da aula no resumo e nos cartões, listando o que falta; (3) cartões **duplicados**, com frente sem contexto, verso longo/lista longa (não atômicos) ou número fora da fonte.
+- **Edição antes de usar:** editar/remover cartões, remover duplicatas, editar a transcrição (o original `texto` nunca é sobrescrito; `textoRevisado` guarda a versão corrigida; "Ver original").
+- **Regenerar um material só** (cartões ou resumo) mantendo os demais; a versão anterior fica em "Versões anteriores" (últimas 3) com **Restaurar**; remover/editar cartões também guarda versão.
+- **Avaliação de transcrição:** `node scripts/avaliacao/transcricao.mjs referencia.txt hipotese.txt` calcula WER, CER e números/doses da referência ausentes na hipótese. Precisa de amostras reais com referência humana: **nenhuma foi medida ainda**.
+Limites honestos: a verificação é lexical (não entende sinônimos: "um grama" ≠ "1 g" gera alerta; um erro clínico escrito sem número não é detectado); mede fidelidade ao que foi dito, não correção médica; cobertura depende da base extraída (se a extração omitir um fato, a cobertura não o enxerga). Testes: `scripts/tests/aula-qualidade.test.mjs` (unitário) e E2E (`aula-pipeline.py`) com IA falsa.
+Pendente do prompt de auditoria: estrutura pedagógica (conceito → fundamentos → mecanismo → aplicação) no lugar do formato Crônicas (decisão de produto sua), classificação de cartões por dificuldade, validação clínica por IA independente, JSON estruturado do mapa mental com relações tipadas, histórico/versão da transcrição, avaliação com aulas reais.
+
 ## 4. Riscos e não verificado
 - Nenhuma chamada real à Groq, ao Gemini ou ao OpenRouter foi feita; os E2E usam uma IA falsa.
 - Qualidade da transcrição com o prompt de continuidade: não medida.

@@ -1,5 +1,6 @@
 // Aula do dia — transcrição fiel por trechos, revisão do texto, resumo "Crônicas de Residência" (MD) e flashcards
 import { Type, transcribeAudio, aiJanelaChars, aiStatus } from './ai-provider.js';
+import { relatorio as relatorioQualidade } from './aula-qualidade.js';
 
 const S = Type.STRING;
 const COR_PADRAO = 'dourado';
@@ -454,6 +455,15 @@ ${partes[i].texto}`,
       console.error('[Aula processar]', err);
       res.status(500).json({ success: false, msg: err.message });
     }
+  });
+
+  // Verificação de fidelidade/cobertura SEM IA (números e doses fora da fonte, fatos não cobertos, cartões duplicados/não atômicos)
+  app.post('/api/aula/qualidade', (req, res) => {
+    try {
+      const { fonte = '', resumoMd = '', flashcards = [], base = null } = req.body || {};
+      if (String(fonte).trim().length < 50) return res.status(400).json({ success: false, msg: 'Fonte (transcrição) ausente.' });
+      res.json({ success: true, relatorio: relatorioQualidade({ fonte: String(fonte), resumoMd: String(resumoMd), flashcards: Array.isArray(flashcards) ? flashcards.slice(0, 300) : [], base }) });
+    } catch (err) { console.error('[Aula qualidade]', err); res.status(500).json({ success: false, msg: err.message }); }
   });
 
   // 7b) EXTRAÇÃO ÚNICA (fase 2): lê a transcrição por janelas e devolve a base de fatos para derivar o resto sem reler.
