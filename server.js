@@ -4102,7 +4102,8 @@ app.get('/api/catalog/events', (req, res) => {
   res.write(': connected\n\n');
   catalogEventClients.add(res);
   const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
-  req.on('close', () => { clearInterval(heartbeat); catalogEventClients.delete(res); });
+  const maxLife = IS_SERVERLESS ? setTimeout(() => res.end(), 240000) : null;
+  req.on('close', () => { clearInterval(heartbeat); if (maxLife) clearTimeout(maxLife); catalogEventClients.delete(res); });
 });
 
 /* ═══ 
