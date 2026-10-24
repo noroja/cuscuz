@@ -838,6 +838,15 @@ async function driveOpen(fileId, start, end, method, client) {
       const resp = await fetch(url, { method, headers, signal: ac.signal });
       clearTimeout(timer);
       const ct = resp.headers.get('content-type') || '';
+      if (start != null && resp.status === 416) return { resp, ac, url };
+      if (start != null) {
+        const cr = /^bytes (\d+)-(\d+)\/(\d+|\*)$/.exec(resp.headers.get('content-range') || '');
+        if (resp.status !== 206 || !cr || Number(cr[1]) !== start) {
+          try { ac.abort(); } catch (_) {}
+          lastErr = new Error('HTTP ' + resp.status + ' (Google Drive não respeitou o intervalo solicitado)');
+          continue;
+        }
+      }
       if ((resp.ok || resp.status === 206) && !ct.includes('text/html')) return { resp, ac, url };
       try { ac.abort(); } catch (_) {}
       lastErr = new Error('HTTP ' + resp.status + (ct.includes('text/html') ? ' (página HTML — arquivo sem link público?)' : ''));
@@ -897,6 +906,7 @@ app.all('/m/:ticket', (req, res) => {
 });
 
 // Streaming de vídeo com HTTP Range. Se a conexão com o Drive cair no meio, retoma sozinho do byte onde parou.
+const MAX_MEDIA_RANGE_BYTES = 8 * 1024 * 1024;
 async function driveStreamHandler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -912,11 +922,24 @@ async function driveStreamHandler(req, res) {
   const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range || '');
   const hasRange = !!(m && m[1] !== '');
   const reqStart = hasRange ? parseInt(m[1], 10) : 0;
-  const reqEnd = hasRange && m[2] !== '' ? parseInt(m[2], 10) : null;
+  const requestedEnd = hasRange && m[2] !== '' ? Number(m[2]) : null;
+  if (hasRange && (!Number.isSafeInteger(reqStart) || reqStart < 0 || (requestedEnd != null && (!Number.isSafeInteger(requestedEnd) || requestedEnd < reqStart)))) {
+    return res.status(416).setHeader('Content-Range', 'bytes */*').end();
+  }
+  // Alguns navegadores enviam bytes=início- para pedir todo o restante do arquivo.
+  // Limitar cada resposta permite que o player solicite o próximo bloco sob demanda.
+  const maxRangeEnd = hasRange ? reqStart + Math.min(MAX_MEDIA_RANGE_BYTES - 1, Number.MAX_SAFE_INTEGER - reqStart) : null;
+  const reqEnd = hasRange ? Math.min(requestedEnd ?? maxRangeEnd, maxRangeEnd) : null;
   const isHead = req.method === 'HEAD';
 
   let up = await driveOpen(fileId, hasRange ? reqStart : null, hasRange ? reqEnd : null, isHead ? 'HEAD' : 'GET', client);
   if (!up) return res.status(502).json({ error: 'Não foi possível conectar ao Google Drive para reproduzir este vídeo.' });
+  if (up.resp.status === 416) {
+    const contentRange = up.resp.headers.get('content-range');
+    try { up.ac.abort(); } catch (_) {}
+    if (contentRange) res.setHeader('Content-Range', contentRange);
+    return res.status(416).end();
+  }
 
   const cr = /bytes (\d+)-(\d+)\/(\d+|\*)/.exec(up.resp.headers.get('content-range') || '');
   const cl = parseInt(up.resp.headers.get('content-length') || '0', 10);
@@ -986,6 +1009,7 @@ async function driveStreamHandler(req, res) {
         }
         try { up.ac.abort(); } catch (_) {}
         if (lido > outEnd || client.signal.aborted) break;
+        pos = lido;
         if (++tentativas > 6) throw new Error('Drive não retomou o stream');
         await new Promise(r => setTimeout(r, 400 * tentativas));
         up = await driveOpen(fileId, lido, outEnd, 'GET', client);
