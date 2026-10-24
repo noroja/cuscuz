@@ -29,7 +29,8 @@ assert.equal(gerado.data.flashcards[0].formato, 'comparativo');
 assert.equal(gerado.data.flashcards[0].dificuldade, 'facil');
 assert.equal(gerado.data.flashcards[1].formato, 'pergunta');
 assert.equal(gerado.data.flashcards[1].dificuldade, 'media');
-assert.ok(prompts[0].includes('decisões clínicas somente quando a aula as sustentar'));
+assert.ok(prompts[0].includes('MOTOR PEDAGÓGICO UNIVERSAL'));
+assert.ok(prompts[0].includes('Não transforme conteúdo básico em decisão clínica'));
 assert.ok(prompts[0].includes('estimativa, não uma cota'));
 assert.ok(!prompts[0].includes('residência médica'));
 

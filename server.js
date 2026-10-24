@@ -17,6 +17,7 @@ import { registerPlanner } from './src/planner-routes.js';
 import { registerPlannerV3 } from './src/planner-v3-routes.js';
 
 import { registerAula } from './src/aula.js';
+import { registerAcervoSemantic } from './src/acervo-semantic.js';
 import { registerApostilaReader } from './src/apostila-reader.js';
 import { registerMedreaderMarcas } from './src/medreader-marcas.js';
 import { materiaisDeIrmaos } from './src/materiais-irmaos.js';
@@ -38,7 +39,7 @@ const __dirname = path.dirname(__filename);
    Na Vercel (serverless) o bundle é somente leitura (/var/task). Todo estado
    efêmero (caches, tokens, bancos de trabalho) vai para /tmp. O estado durável
    continua no Supabase (catálogo/usuários) e no GitHub (.json.gz do banco). */
-const DATA_DIR = writableDir(path.join(__dirname, 'data')) || TMP_DIR;
+const DATA_DIR = writableDir(process.env.APP_DATA_DIR || path.join(__dirname, 'data')) || TMP_DIR;
 
 const app = express();
 const catalogEventClients = new Set();
@@ -3964,6 +3965,7 @@ app.post('/api/planner/deck', (req, res) => {
 registerPlanner(app, { generateAI, aiConfigured, getBank: () => readQuestionsBank() });
 
 registerAula(app, { generateAI, aiConfigured, supabaseStorage: supabase, supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY });
+registerAcervoSemantic(app, { getCatalog: () => CAT, supabase, supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY });
 
 // Mentor IA acadêmico (Faculdade + Residência) — rotas novas em /api/planner/v3/*
 registerPlannerV3(app, {
@@ -4169,7 +4171,8 @@ app.get('/api/catalog/events', (req, res) => {
   res.write(': connected\n\n');
   catalogEventClients.add(res);
   const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
-  req.on('close', () => { clearInterval(heartbeat); catalogEventClients.delete(res); });
+  const maxLife = IS_SERVERLESS ? setTimeout(() => res.end(), 240000) : null;
+  req.on('close', () => { clearInterval(heartbeat); if (maxLife) clearTimeout(maxLife); catalogEventClients.delete(res); });
 });
 
 /* ═══ 

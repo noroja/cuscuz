@@ -1,16 +1,19 @@
 # E2E opcional (Playwright + Chromium): roda o pipeline da Aula do Dia no navegador contra uma IA FALSA.
 # Uso: python3 scripts/e2e/aula-pipeline.py paralelo|sequencial   (não chama nenhuma IA real)
-import json, sys, time, datetime, urllib.request, subprocess, os, signal
+import json, sys, time, datetime, urllib.request, subprocess, os, tempfile, shutil, hashlib
+from http.cookies import SimpleCookie
 from playwright.sync_api import sync_playwright
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _usuario import criar_usuario_local, login_cookie
 MODO=sys.argv[1]; SP=3981; FP=3982; S=os.path.dirname(os.path.abspath(__file__)); ROOT=os.path.abspath(os.path.join(S,'..','..'))
-env=dict(os.environ, PORT=str(SP), AI_LOG='0', APP_PASSWORD='x')
+TEST_TMP=tempfile.mkdtemp(prefix='cuscuz-aula-e2e-')
+env=dict(os.environ, PORT=str(SP), AI_LOG='0', APP_PASSWORD='x', APP_DATA_DIR=TEST_TMP)
+u='aula'+datetime.datetime.now().strftime('%H%M%S'); password='senha-teste-123'; salt=os.urandom(16)
+e2e_user={'username':u,'displayName':'Aula E2E','passwordHash':hashlib.scrypt(password.encode(),salt=salt,n=16384,r=8,p=1,dklen=64).hex(),'salt':salt.hex(),'role':'user','settings':{},'isActive':True}
+with open(os.path.join(TEST_TMP,'users.json'),'w',encoding='utf-8') as f: json.dump([e2e_user],f)
 for k in ['GROQ_API_KEY','GEMINI_API_KEY','OPENROUTER_API_KEY','AI_PROVIDER','SUPABASE_URL','SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY']: env.pop(k,None)
 if MODO=='paralelo': env.update(AI_PROVIDER='openrouter', OPENROUTER_API_KEY='k', OPENROUTER_BASE_URL=f'http://127.0.0.1:{FP}/v1')
 else: env.update(AI_PROVIDER='groq', GROQ_API_KEY='k', GROQ_BASE_URL=f'http://127.0.0.1:{FP}/v1')
-USR='e2e'+str(os.getpid()); criar_usuario_local(ROOT, USR)
-fake=subprocess.Popen(['node',S+'/fakeai.mjs',str(FP)],stderr=subprocess.DEVNULL); srv=subprocess.Popen(['node','server.js'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+server_log_path=os.path.join(TEST_TMP,'server.log'); server_log=open(server_log_path,'w',encoding='utf-8')
+fake=subprocess.Popen(['node',S+'/fakeai.mjs',str(FP)],stderr=subprocess.DEVNULL); srv=subprocess.Popen(['node','server.js'],cwd=ROOT,env=env,stdout=server_log,stderr=subprocess.STDOUT)
 time.sleep(5)
 BASE=f'http://127.0.0.1:{SP}'
 def api(path, body=None, method='POST'):
@@ -19,15 +22,22 @@ def api(path, body=None, method='POST'):
 res=[]
 def chk(n,ok,det=''): res.append((bool(ok),n,det))
 try:
-    u=USR
-    tok=login_cookie(BASE,u)
-    st=json.loads(urllib.request.urlopen(urllib.request.Request(BASE+'/api/aula/status',headers={'Cookie':'cuscuz_session='+tok})).read())
+    if srv.poll() is not None:
+        server_log.flush()
+        raise RuntimeError(f'O servidor E2E encerrou com código {srv.returncode}: {open(server_log_path,encoding="utf-8").read()[-4000:]}')
+    req=urllib.request.Request(BASE+'/api/auth/login',data=json.dumps({'username':u,'password':password}).encode(),method='POST',headers={'Content-Type':'application/json','Origin':BASE})
+    with urllib.request.urlopen(req,timeout=20) as response:
+        login_data=json.loads(response.read()); cookie=SimpleCookie(); cookie.load(response.headers.get('Set-Cookie',''))
+    chk('login de teste usa sessão HttpOnly', login_data.get('success') and 'cuscuz_session' in cookie)
+    tok=cookie['cuscuz_session'].value
+    st=json.loads(urllib.request.urlopen(urllib.request.Request(BASE+'/api/aula/status',headers={'Cookie':f'cuscuz_session={tok}'})).read())
     chk('status paralelo esperado', st['paralelo']==(3 if MODO=='paralelo' else 1), str(st))
     texto='\n\n'.join(f'Parágrafo {i}: ' + ('o professor explicou o tema com detalhes clínicos e números exatos. '*12) for i in range(60))
     sess={'id':'a1','data':'2026-10-21','inicio':1,'disciplina':'Clínica','tema':'Teste','parte':'Única','cor':'dourado','duracao':3600,'chunks':[{'i':0,'status':'ok','texto':texto}],'marcas':[],'texto':texto,'live':'','resultado':None}
     with sync_playwright() as p:
-        b=p.chromium.launch(executable_path='/opt/pw-browsers/chromium')
-        ctx=b.new_context(viewport={'width':1280,'height':900}); ctx.add_cookies([{'name':'cuscuz_session','value':tok,'url':BASE}]); ctx.add_init_script(f"localStorage.setItem('medplan_logged','1');localStorage.setItem('medplan_user','{u}');localStorage.setItem('hasSeenTour','1');")
+        exe=os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE') or ('/opt/pw-browsers/chromium' if os.path.isfile('/opt/pw-browsers/chromium') else p.chromium.executable_path)
+        b=p.chromium.launch(executable_path=exe)
+        ctx=b.new_context(viewport={'width':1280,'height':900}); ctx.add_cookies([{'name':'cuscuz_session','value':tok,'url':BASE,'httpOnly':True,'sameSite':'Lax'}]); ctx.add_init_script(f"localStorage.setItem('cuscuz_token','cookie-session');localStorage.setItem('medplan_logged','1');localStorage.setItem('medplan_user','{u}');localStorage.setItem('hasSeenTour','1');")
         pg=ctx.new_page(); errs=[]; pg.on('pageerror', lambda e: errs.append(str(e)[:200])); pg.on('dialog', lambda d: d.accept())
         pg.goto(BASE+'/'); pg.wait_for_timeout(2500)
         pg.evaluate("go('view-auladia')"); pg.wait_for_timeout(1500)
@@ -35,6 +45,14 @@ try:
           localStorage.setItem('aula-dia-sessoes', JSON.stringify([{id:s.id,data:s.data,inicio:1,disciplina:s.disciplina,tema:s.tema,parte:'Única',cor:'dourado',duracao:3600,marcas:[],palavras:100}])); }""", sess)
         pg.evaluate("auladia.voltar && 0"); pg.reload(); pg.wait_for_timeout(2500); pg.evaluate("go('view-auladia')"); pg.wait_for_timeout(1500)
         pg.evaluate("auladia.abrir('a1')"); pg.wait_for_timeout(800)
+        chk('sessão expõe Tutor IA, Progresso e metodologia editável', 'Tutor IA' in pg.inner_text('#ad-root') and 'Progresso' in pg.inner_text('#ad-root') and pg.locator('#ad-edit-profile').count()==1, pg.inner_text('#ad-root')[:300])
+        lerdoc=lambda: pg.evaluate("""async()=>new Promise((ok)=>{const r=indexedDB.open('aulaDia',1);r.onsuccess=()=>{const q=r.result.transaction('audio').objectStore('audio').get('doc:a1');q.onsuccess=()=>ok(q.result)}})""")
+        def espera(cond, seg=40):
+            for _ in range(seg*2):
+                dd=lerdoc()
+                if cond(dd): return dd
+                pg.wait_for_timeout(500)
+            return lerdoc()
         t0=time.time(); pg.evaluate("auladia.gerar()")
         pg.wait_for_function("document.body.innerText.includes('Aula pronta') || document.body.innerText.includes('Parei por um erro')", timeout=60000)
         dt=time.time()-t0
@@ -43,15 +61,32 @@ try:
         chk('texto revisado gravado', doc.get('textoRevisado','').startswith('TEXTO REVISADO'))
         nc=len(doc['caps']); chk('capítulos todos preenchidos, em ordem', nc>=4 and [str(c).split('\n')[0] for c in doc['caps']]==[f'## {i}.0 — Cap {i}' for i in range(1,nc+1)], str(doc.get('caps'))[:300])
         chk('resumo montado com os 4 capítulos', all(f'Cap {i}' in doc['resumoMd'] for i in range(1,nc+1)) and 'Considerações Finais' in doc['resumoMd'])
-        chk('flashcards e cai na prova', len(doc['flashcards'])==2 and doc['resultado']['caiNaProva']==['cai isto'])
+        chk('resumo/material e cai na prova sem gerar flashcards automaticamente', not doc.get('flashcards') and doc['resultado']['caiNaProva']==['cai isto'])
+        resumo_antes=doc['resumoMd']
+        pg.locator('.ad > details summary').first.click()
+        pg.locator('#ad-edit-profile').select_option('farmacologia'); pg.locator('#ad-edit-goal').select_option('prova')
+        pg.evaluate("async()=>await auladia.salvarMetodologia()")
+        doc=lerdoc()
+        chk('metodologia pode ser alterada na sessão sem apagar o resumo', doc.get('perfilPedagogico')=='farmacologia' and doc.get('objetivoEstudo')=='prova' and doc.get('resumoMd')==resumo_antes)
+        pg.evaluate("auladia.aba('progresso')")
+        objetivos=pg.locator('[data-ad-objective]')
+        if objetivos.count():
+            objetivos.first.check(); pg.wait_for_timeout(300); doc=lerdoc()
+            chk('objetivo revisado fica salvo como autodeclaração', bool(doc.get('objetivosRevisados')))
+        else: chk('objetivos da aula aparecem em Progresso', False, pg.inner_text('#ad-root')[:300])
+        pg.evaluate("auladia.aba('flash')")
+        chk('aba Flashcards explica a geração sob demanda', 'Gerar flashcards' in pg.inner_text('#ad-root') and 'não são gerados automaticamente' in pg.inner_text('#ad-root'))
+        pg.evaluate("auladia.gerarFlashcards()")
+        cards=espera(lambda x: x.get('flashcards') and len(x['flashcards'])==2)
+        chk('flashcards só aparecem após solicitação explícita', len(cards.get('flashcards') or [])==2 and pg.evaluate("document.querySelector('[role=tab][aria-selected=true]')?.innerText.includes('Flashcards')"))
+        pg.evaluate("auladia.aba('tutor')"); pg.locator('#ad-tutor-input').fill('Explique o tema da aula')
+        pg.locator('.ad-tutor-form button[type=submit]').click(); pg.wait_for_function("document.body.innerText.includes('Este trecho da aula explica')", timeout=30000)
+        chk('tutor contextual responde dentro da sessão', 'Este trecho da aula explica' in pg.inner_text('#ad-root'))
+        pg.set_viewport_size({'width':390,'height':844}); pg.evaluate("auladia.aba('tutor')"); pg.wait_for_timeout(300)
+        mobile=pg.evaluate("({overflow:document.documentElement.scrollWidth>document.documentElement.clientWidth,columns:getComputedStyle(document.querySelector('.ad-tutor-form')).gridTemplateColumns.split(' ').length,height:document.querySelector('.ad-tutor-form button').getBoundingClientRect().height})")
+        chk('Tutor responsivo em 390px sem overflow e com alvo de toque adequado', not mobile['overflow'] and mobile['columns']==1 and mobile['height']>=44, str(mobile))
+        pg.set_viewport_size({'width':1280,'height':900})
         # ── qualidade, edição e versões ──
-        def espera(cond, seg=40):
-            for _ in range(seg*2):
-                dd=lerdoc()
-                if cond(dd): return dd
-                pg.wait_for_timeout(500)
-            return lerdoc()
-        lerdoc=lambda: pg.evaluate("""async()=>new Promise((ok)=>{const r=indexedDB.open('aulaDia',1);r.onsuccess=()=>{const q=r.result.transaction('audio').objectStore('audio').get('doc:a1');q.onsuccess=()=>ok(q.result)}})""")
         pg.wait_for_timeout(1500); d2=lerdoc()
         chk('qualidade verificada automaticamente ao fim do pipeline', bool(d2.get('qualidade')) and 'cobertura' in d2['qualidade']['resumo'] and d2['qualidade']['flashcards']['itens'] is not None, str(d2.get('qualidade'))[:200])
         chk('cobertura medida a partir da base de fatos', d2['qualidade']['resumo']['cobertura'] is not None and d2['qualidade']['resumo']['cobertura']['total']==2, str(d2['qualidade']['resumo'])[:200])
@@ -104,7 +139,14 @@ try:
     chk('fase 2: extração feita e fechamento/flashcards derivados da base (flashcards leem fatos, fechamento sem IA)', stt['log'].count('ext')>=1 and stt['log'].count('fech')==0, str(stt['log']))
     chk('concorrência coerente com o modo', (2<=stt['max']<=3) if MODO=='paralelo' else (stt['max']==1), 'max=%d'%stt['max'])
 finally:
-    srv.terminate(); fake.terminate()
-    os.system(f'cd {ROOT} && git checkout -q -- data 2>/dev/null; rm -f data/users.json data/sessions.json')
+    for proc in (srv, fake):
+        proc.terminate()
+    for proc in (srv, fake):
+        try: proc.wait(timeout=5)
+        except subprocess.TimeoutExpired: proc.kill(); proc.wait(timeout=5)
+    server_log.close()
+    temp_root=os.path.abspath(tempfile.gettempdir()); test_root=os.path.abspath(TEST_TMP)
+    if os.path.commonpath([temp_root, test_root]).casefold()==temp_root.casefold() and os.path.basename(test_root).startswith('cuscuz-aula-e2e-'):
+        shutil.rmtree(test_root, ignore_errors=True)
 for ok,n,d in res: print(('OK   — ' if ok else 'FALHOU — ')+n+('' if ok else ' :: '+d))
 sys.exit(0 if all(r[0] for r in res) else 1)

@@ -290,6 +290,7 @@ await teste('tarefas: mapa usa Gemini e conversa usa Groq; modelo fixo continua 
   assert.equal((await P.generateAI({ task: 'aula_mapa', contents: 'oi' })).provider, 'groq');
 }));
 await teste('tarefas: modelos do OpenRouter mudam por função e mantêm os candidatos configurados', async () => comOR(async () => {
+  process.env.AI_PROVIDER = 'openrouter';
   process.env.OPENROUTER_MODELS = 'nvidia/teste:free,minimax/teste:free,google/gemma-teste:free';
   try {
     for (const [task, expected] of [['aula_capitulo','nvidia/teste:free'],['aula_fechamento','minimax/teste:free'],['aula_flashcards','google/gemma-teste:free']]) {
