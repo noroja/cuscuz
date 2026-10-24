@@ -11342,10 +11342,12 @@ function ac2UsarMpegts(nv, id, info, url, autoPlay) {
     url: new URL(url, location.href).href
   }, {
     enableWorker: true,
-    lazyLoad: false,
+    lazyLoad: true,
+    lazyLoadMaxDuration: 60,
+    lazyLoadRecoverDuration: 20,
     autoCleanupSourceBuffer: true,
-    autoCleanupMaxBackwardDuration: 300,
-    autoCleanupMinBackwardDuration: 120,
+    autoCleanupMaxBackwardDuration: 90,
+    autoCleanupMinBackwardDuration: 45,
     seekType: 'range',
     rangeLoadZeroStart: false
   });
