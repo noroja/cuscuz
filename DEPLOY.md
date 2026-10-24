@@ -36,7 +36,7 @@ Como `/tmp` é por invocação, o estado durável continua vindo da nuvem (Supab
 4. No **Supabase → SQL Editor**, rode `supabase-schema.sql`. A tabela `system_configs` é o caminho principal para o token do Hardworq. Se ela não existir, o app tenta o bucket privado `system` (requer `SUPABASE_SERVICE_ROLE_KEY`); sem nenhum dos dois, o token cai para o cache efêmero de `/tmp`.
 5. **Deploy**. O build roda `node scripts/build-public.js` e a função sobe em `api/index.js`.
 6. Depois do deploy, chame uma vez `GET /webhooks/google-drive/maintenance` com `Authorization: Bearer <CRON_SECRET>` para iniciar a reconciliação e registrar o canal. O cron diário do `vercel.json` renova o canal e recupera deltas sem polling do Supabase. Há também o cron `/api/radar-medico/refresh`, que atualiza o Radar no máximo 1x por dia.
-7. Diagnóstico: `GET /api/health?deep=1` mostra se a tabela/bucket estão prontos e faz um teste real de login no Hardworq (sem expor a senha). Use após configurar `HARDWORQ_EMAIL`/`HARDWORQ_SENHA`.
+7. Diagnóstico: autenticado como administrador, `GET /api/health?deep=1` mostra se a tabela/bucket estão prontos e faz um teste real de login no Hardworq (sem expor a senha). Use após configurar `HARDWORQ_EMAIL`/`HARDWORQ_SENHA`.
 
 ## Cuidados
 
@@ -75,8 +75,8 @@ Mentor IA acadêmico e Aula do dia: não exigem variável nova além das de IA e
 
 ## Verificação depois do deploy
 
-1. `GET /api/health` → `status: ok`; em `aiProvedores` confira quais provedores estão configurados e com quais modelos.
-2. `GET /api/health?deep=1` → tabela/bucket do Supabase prontos e teste de login do Hardworq.
+1. `GET /api/health` → `status: ok` (health check público mínimo).
+2. Como administrador autenticado, `GET /api/health?deep=1` → tabela/bucket do Supabase prontos, estado dos provedores e teste de login do Hardworq.
 3. `GET /api/aula/status` (logado) → `transcricao: true` se a `GROQ_API_KEY` está ativa.
 4. Abra o Mentor, gere um plano e recarregue: ele deve voltar igual (se o SQL do Supabase foi rodado, também em outro aparelho).
 5. Rodando local ou em outro host? Veja `docs/RODAR-LOCAL.md`.

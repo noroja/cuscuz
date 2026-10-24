@@ -46,7 +46,7 @@ O cronograma segue o motor acadêmico do Claude, com rascunho, confirmação e r
 - Fila limitada a 24 pedidos aguardando, com `AI_QUEUE_WAIT_MS=15000`. Uma falha libera a vaga. Solicitações diretas têm prioridade sobre a atualização automática de questões que ainda está aguardando.
 - O teto é por processo/instância; não é um limitador distribuído entre todas as instâncias da Vercel nem substitui as cotas das APIs.
 - A transcrição Whisper mantém o fluxo de áudio separado. Não foi adicionada transcrição alternativa por Gemini/OpenRouter.
-- `/api/health` expõe `aiFluxo` e `/api/aula/status` inclui os perfis em `ia.workflow`, sem conteúdo de arquivos. Os logs identificam tarefa, provedor e modelo, sem guardar o prompt.
+- `/api/health` expõe detalhes de `aiFluxo` somente a administradores; `/api/aula/status` autenticado inclui os perfis em `ia.workflow`, sem conteúdo de arquivos. Os logs identificam tarefa, provedor e modelo, sem guardar o prompt.
 
 ## Validação
 

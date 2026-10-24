@@ -246,7 +246,7 @@ Cuscuz-MED
 │   ├── Middlewares
 │   │   ├── express.json 50 MB
 │   │   ├── BLOCKED_STATIC              → nunca expõe código/dados
-│   │   ├── authMiddleware /api        → whitelist: auth, health, config, drive
+│   │   ├── authMiddleware /api        → sessão HttpOnly nas APIs privadas; exceções explícitas
 │   │   ├── 404 JSON para /api/*
 │   │   └── SPA fallback (só sem extensão)
 │   └── Módulos src/
@@ -296,7 +296,7 @@ Cuscuz-MED
 │           └── drive_folder_cache
 │
 ├── 6. FLUXOS
-│   ├── Login → token → Bearer
+│   ├── Login → cookie HttpOnly → sessão validada no servidor
 │   ├── Catálogo → Supabase → fallback Drive → fallback repo
 │   ├── Vídeo → ticket → /m/:ticket → Range → Drive
 │   ├── PDF → proxy → Drive
@@ -309,7 +309,7 @@ Cuscuz-MED
 └── 7. RISCOS
     ├── Cota gratuita do Gemini (20/dia)
     ├── /tmp é apagado a cada instância
-    ├── /api/drive/* é público por design
+    ├── APIs privadas exigem sessão; /m/:ticket é uma credencial temporária de posse
     └── Catálogo grande (10 MB cru / 1,9 MB gzip)
 ```
 
@@ -371,8 +371,8 @@ cuscuz/
 3. `DATA_DIR = writableDir(data/)` → em serverless, `/tmp/cuscuz-med`; local, `./data`.
 4. Cria o Express e registra `express.json({ limit: '50mb' })`.
 5. Registra rotas de auth (`registerAuthRoutes`).
-6. Define `/api/health` (público).
-7. `app.use('/api', authMiddleware)` — whitelist: `/api/auth/*`, `/api/health`, `/api/config`, `/api/drive/*`.
+6. `app.use('/api', authMiddleware)` — APIs privadas exigem sessão; exceções controladas: autenticação/convites/recuperação, health básico, config e cron com segredo.
+7. Define `/api/health` depois do middleware: health básico é público; detalhes e diagnóstico `?deep=1` exigem administrador.
 8. Bloqueia arquivos internos (`BLOCKED_STATIC`).
 9. Inicializa Gemini (client + circuit breaker de quota).
 10. Inicializa Supabase (users/conversas) e o catálogo em nuvem (assíncrono).
@@ -390,15 +390,19 @@ cuscuz/
 
 | Método | Rota | Observação |
 |---|---|---|
-| GET | `/api/health` | público; informa Gemini/Supabase/Drive |
+| GET | `/api/health` | público; retorna somente disponibilidade; detalhes exigem administrador |
 | GET | `/api/config` | público; devolve URL e anon key do Supabase |
-| GET | `/api/auth/check-username` | disponibilidade de username |
-| POST | `/api/auth/signup` | cria usuário (scrypt) |
-| POST | `/api/auth/login` | devolve token de 30 dias |
-| POST | `/api/auth/google` | login federado |
-| POST | `/api/auth/logout` | invalida sessão |
-| GET | `/api/auth/me` | restaura sessão no boot |
-| POST | `/api/auth/update-profile` | nome de exibição |
+| GET | `/api/auth/check-username` | fechado; cadastro é por convite |
+| POST | `/api/auth/signup` | sempre negado |
+| POST | `/api/auth/login` | cria cookie HttpOnly de sessão |
+| POST | `/api/auth/google` | permite identidade já autorizada |
+| POST | `/api/auth/invitations/accept` | aceita convite verificado e de uso único |
+| POST | `/api/auth/password-reset/request` | recuperação genérica por e-mail vinculado |
+| POST | `/api/auth/password-reset/complete` | redefine senha com sessão confirmada e token de recuperação de uso único |
+| POST | `/api/auth/logout` | invalida sessão e limpa cookie |
+| GET | `/api/auth/me` | restaura cookie e aceita bearer legado apenas para migração |
+| POST | `/api/auth/update-profile` | exige sessão; altera nome |
+| GET/POST/PATCH | `/api/admin/*` | painel restrito a admin/super_admin |
 
 ### 9.2 Catálogo e acervo
 
@@ -422,7 +426,7 @@ cuscuz/
 | ALL | `/api/drive/stream/:id` | vídeo com HTTP Range e retomada |
 | GET | `/api/drive/pdf/:id` | PDF em streaming |
 
-> `/api/drive/*` é liberado no auth middleware. A proteção de mídia é o ticket AES-256-GCM (chave derivada de `APP_PASSWORD`), com expiração de 12 h.
+> `/api/drive/*` e `/api/media/ticket` exigem sessão. `/m/:ticket` é um link bearer criptografado AES-256-GCM, válido por até 12 h; configure `MEDIA_TICKET_SECRET` ou `APP_PASSWORD` nos dois hosts.
 
 ### 9.4 Questões
 
@@ -547,9 +551,9 @@ cuscuz/
 2. `ensureAuthLoaded()` carrega usuários do Supabase (ou do `/tmp`).
 3. `scrypt` verifica a senha com `timingSafeEqual`.
 4. O servidor gera 32 bytes aleatórios (token) e grava a sessão com validade de 30 dias.
-5. A resposta traz `token` + dados do usuário.
-6. O front grava `cuscuz_token`, `medplan_logged` e `medplan_user`.
-7. Toda chamada seguinte envia `Authorization: Bearer <token>`.
+5. A resposta define um cookie HttpOnly e devolve apenas os dados do usuário.
+6. O front grava um marcador de compatibilidade e o nome/estado da conta, nunca o token de sessão.
+7. As chamadas seguintes usam o cookie same-origin; o servidor confirma a sessão armazenada.
 8. Ao abrir o site, `GET /api/auth/me` restaura a sessão; sem token válido, volta ao login.
 9. Logout apaga a sessão no servidor e as chaves no navegador.
 
@@ -797,13 +801,13 @@ Banco `cuscuz_med_storage` (v2), stores: `questions_bank`, `pinned_pdfs`, `drive
 | `express.static` não serve na Vercel | assets vêm do bundle | não remover `includeFiles` |
 | Rewrite para `/api/index` | quebra auth (path vira `/api/index`) | manter `vercel.json` sem rewrites |
 | Sem login | `/acervo-manifest.json` e rotas `/api/*` respondem 401 | esperado |
-| `/api/drive/*` sem login | responde normalmente | decisão de design; mídia protegida por ticket |
+| `/api/drive/*` sem login | responde 401 | esperado; `/m/:ticket` permanece link temporário de posse |
 
 ---
 
 ## 16. Checklist de verificação (produção)
 
-- [x] `POST /api/auth/login` → 200 + token
+- [x] `POST /api/auth/login` → 200 + cookie HttpOnly; token não vai ao browser
 - [x] `GET /api/auth/me` → usuário correto
 - [x] `GET /acervo-manifest.json` → 200, gzip, 10.532/19.239
 - [x] `GET /api/questions/bank` → 200, 953

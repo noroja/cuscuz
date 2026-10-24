@@ -12,7 +12,7 @@
 <script>
 /* Auth da API: anexa o token em /api/* e volta ao login se o servidor responder 401 */
 (function(){
-  window.cuscuzMediaUrl = function (u) { try { var t = localStorage.getItem('cuscuz_token'); return t ? u + (u.indexOf('?') >= 0 ? '&' : '?') + 't=' + encodeURIComponent(t) : u; } catch (e) { return u; } };
+  window.cuscuzMediaUrl = function (u) { return u; };
   window.cuscuzPauseAll = function () {
     try { document.querySelectorAll('video,audio').forEach(function (v) { try { v.pause(); } catch (e) {} }); } catch (e) {}
     try { document.querySelectorAll('#ac2-player iframe').forEach(function (f) { f.src = 'about:blank'; }); } catch (e) {}
@@ -26,7 +26,7 @@
     if (isApi) {
       try {
         var t = localStorage.getItem('cuscuz_token');
-        if (t) { o = Object.assign({}, o); var h = {}; if (o.headers) { (o.headers instanceof Headers ? Array.from(o.headers.entries()) : Object.entries(o.headers)).forEach(function(kv){ h[kv[0]] = kv[1]; }); } h['Authorization'] = 'Bearer ' + t; o.headers = h; }
+        if (t === 'cookie-session') { o = Object.assign({}, o); var h = {}; if (o.headers) { (o.headers instanceof Headers ? Array.from(o.headers.entries()) : Object.entries(o.headers)).forEach(function(kv){ h[kv[0]] = kv[1]; }); } h['Authorization'] = 'Bearer cookie-session'; o.headers = h; }
       } catch (e) {}
     }
     return _f(u, o).then(function(r){

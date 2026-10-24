@@ -2,10 +2,23 @@
 // Sobe 2 processos reais do server.js (sem Google Drive: o que se verifica é roteamento, não o conteúdo).
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const antes = new Set(['data/users.json', 'data/sessions.json'].filter(f => fs.existsSync(root + f)));
+const dataDir = path.join(root, 'data');
+const files = ['users.json', 'sessions.json'].map(name => path.join(dataDir, name));
+const originals = new Map(files.map(file => [file, fs.existsSync(file) ? fs.readFileSync(file) : null]));
+fs.mkdirSync(dataDir, { recursive: true });
+const userFile = files[0];
+const users = originals.get(userFile) ? JSON.parse(originals.get(userFile).toString('utf8')) : [];
+const testUsername = 'media_test_' + Date.now().toString(36);
+const pass = 'media-test-password';
+const salt = crypto.randomBytes(16);
+const passwordHash = crypto.scryptSync(pass, salt, 64, { N: 16384, r: 8, p: 1 }).toString('hex');
+users.push({ username: testUsername, displayName: 'Media Test', passwordHash, salt: salt.toString('hex'), role: 'user', settings: {} });
+fs.writeFileSync(userFile, JSON.stringify(users));
 const PA = 3971, PB = 3972; const base = (p) => `http://127.0.0.1:${p}`;
 const env = { ...process.env, APP_PASSWORD: 'segredo-de-teste', AI_LOG: '0' };
 for (const k of ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'GOOGLE_DRIVE_API_KEY', 'GOOGLE_DRIVE_FOLDER_ID']) delete env[k];
@@ -17,9 +30,12 @@ try {
   await Promise.all([espera(PA), espera(PB)]);
   const j = (url, init) => fetch(url, { redirect: 'manual', ...init });
   const u = 'm' + Date.now();
-  await fetch(base(PA) + '/api/auth/signup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: u, password: 'senha-teste-123', name: 'm' }) });
-  const tok = (await (await fetch(base(PA) + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: u, password: 'senha-teste-123' }) })).json()).token;
-  const auth = { authorization: 'Bearer ' + tok };
+  const signup = await fetch(base(PA) + '/api/auth/signup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'public-signup', password: 'some-password' }) });
+  assert.equal(signup.status, 403);
+  const login = await fetch(base(PA) + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: testUsername, password: pass }) });
+  const loginData = await login.json();
+  assert.equal(login.status, 200); assert.equal(loginData.token, undefined);
+  const auth = { cookie: (login.headers.get('set-cookie') || '').split(';')[0] };
   const ID = 'AbCdEfGhIjKlMnOp12345';
   let ticketUrl = '';
   await teste('app principal: vídeo e PDF viram 307 para o host de mídia (sem proxiar bytes)', async () => {
@@ -45,7 +61,11 @@ try {
   });
 } finally {
   A.kill(); B.kill();
-  for (const f of ['data/users.json', 'data/sessions.json']) if (!antes.has(f)) fs.rmSync(root + f, { force: true });
+  await Promise.all([A, B].map(child => new Promise(resolve => { if (child.exitCode !== null) resolve(); else child.once('exit', resolve); })));
+  for (const [file, content] of originals) {
+    if (content === null) fs.rmSync(file, { force: true });
+    else fs.writeFileSync(file, content);
+  }
 }
 for (const l of t) console.log(l.join(' — '));
 process.exit(t.length && t.every(l => l[0] === 'OK ') ? 0 : 1);

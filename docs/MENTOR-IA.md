@@ -13,7 +13,7 @@ O OpenRouter (`OPENROUTER_API_KEY`, padrão Nemotron `nvidia/nemotron-3.5-super-
 3. **Saúde:** quem falha 2x seguidas no último minuto é rebaixado para o fim da fila; limite diário/de janela liga o disjuntor do provedor (sem esperar nem insistir).
 4. **Falha rápida:** havendo outro provedor livre, o atual gasta no máximo 1 retry antes de passar a bola.
 5. **Troca por:** limite, 5xx, timeout, rede, chave inválida, resposta cortada ou JSON inválido. Erros de entrada (PDF sem texto, tipo não suportado) não trocam.
-6. **Transparência:** cada resposta traz `tentativas` (quem foi tentado e por que falhou); `/api/health` mostra `aiProvedores` (modelo, saúde, limite, latência média). Log por chamada sem conteúdo.
+6. **Transparência:** cada resposta traz `tentativas` (quem foi tentado e por que falhou); administradores veem `aiProvedores` em `/api/health` (modelo, saúde, limite, latência média). Log por chamada sem conteúdo.
 A transcrição de áudio só usa a Groq (Whisper).
 
 ## Fluxo
@@ -104,7 +104,7 @@ Exemplo validado no catálogo oficial:
 OPENROUTER_MODELS=nvidia/nemotron-3.5-super-vl:free,minimax/minimax-m3.1-flash:free,google/gemma-4-26b-a4b-it:free
 ```
 
-A requisição usa o campo models do OpenRouter para o fallback nativo. O retorno registra o modelo que efetivamente respondeu; /api/health mostra os modelos configurados. As tentativas json_schema e json_object preservam a mesma lista. AI_ORDER continua controlando a ordem entre Groq, Gemini e OpenRouter.
+A requisição usa o campo models do OpenRouter para o fallback nativo. O retorno registra o modelo que efetivamente respondeu; administradores consultam os modelos configurados em /api/health. As tentativas json_schema e json_object preservam a mesma lista. AI_ORDER continua controlando a ordem entre Groq, Gemini e OpenRouter.
 
 Os modelos do exemplo estavam no catálogo como gratuitos e com suporte a respostas estruturadas na consulta desta rodada. Disponibilidade e limites podem mudar. A lista contém só opções :free; modelos pagos podem ser configurados explicitamente. Trocar modelos não reinicia cotas compartilhadas da conta.
 

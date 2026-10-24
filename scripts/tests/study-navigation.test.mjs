@@ -16,7 +16,7 @@ let hidden = false;
 const target = {classList:{contains:name=> name==='view-section',add:()=>{} }};
 const noop=()=>{};
 const title={textContent:''};
-const ctx = { $:id=>id==='view-treino'?target:id==='app-screen-title'?title:null,$$:selector=>selector==='.view-section'?[{classList:{remove:()=>{hidden=true}}}]:[], document:{querySelector:()=>null},renderHome:noop,renderCalendar:noop,renderSchedule:noop,renderWeek:noop,renderPrep:noop,renderAcervo:noop,renderDecks:()=>{ctx.rendered=true},renderSim:noop,renderPlannerIA:noop,updateSidebarProgress:noop,setupSidebarTooltips:noop,cuscuzRouteDidChange:id=>{ctx.route=id} };
+const ctx = { $:id=>id==='view-treino'?target:id==='app-screen-title'?title:null,$$:selector=>selector==='.view-section'?[{classList:{remove:()=>{hidden=true}}}]:[], document:{querySelector:()=>null},renderHome:noop,renderCalendar:noop,renderSchedule:noop,renderWeek:noop,renderPrep:noop,renderAcervo:noop,renderDecks:()=>{ctx.rendered=true},renderSim:noop,renderPlannerIA:noop,loadAdminUsers:noop,updateSidebarProgress:noop,setupSidebarTooltips:noop,cuscuzRouteDidChange:id=>{ctx.route=id} };
 vm.createContext(ctx); vm.runInContext(goBody,ctx);
 ctx.go('view-inexistente'); assert.equal(hidden,false,'Rota inválida deve preservar a tela atual');
 ctx.go('view-treino-questoes'); assert.equal(ctx.rendered,true,'Link legado deve abrir o treino existente');

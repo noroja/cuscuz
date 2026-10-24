@@ -1,6 +1,8 @@
 # Cuscuz-MED — Melhorias e Fluidez
 ### Diagnóstico a partir do relatório de arquitetura + medições em produção (19/10/2026)
 
+> Atualização de implementação (23/10/2026): o código agora bloqueia cadastro, usa cookie HttpOnly, valida sessão por token no Supabase, não carrega a tabela inteira de sessões nem de usuários em cold start e fecha o acesso à anon nas tabelas privadas quando a migração for aplicada. A leitura pública documentada abaixo é a evidência histórica da auditoria; a migração ainda não foi aplicada em produção.
+
 ---
 
 ## 0. Resumo executivo
@@ -35,44 +37,25 @@
 
 ## 2. P0 — Segurança e correção (fazer hoje)
 
-### 2.1 Fechar o RLS do Supabase (crítico)
+### 2.1 Fechar o RLS do Supabase (crítico; migração preparada, ainda não aplicada)
 
 **Problema:** as policies `Permitir acesso total` deixam o role `anon` ler e escrever tudo. Como a anon key é entregue ao navegador em `/api/config`, o banco inteiro está exposto. As tabelas afetadas: `users`, `sessions`, `conversations`, `medreader_marcas`.
 
-**Correção mínima** (o servidor usa `SUPABASE_SERVICE_ROLE_KEY`, que ignora RLS):
-
-```sql
-drop policy if exists "Permitir acesso total a users" on public.users;
-drop policy if exists "Permitir acesso total a sessions" on public.sessions;
-drop policy if exists "Permitir acesso total a conversations" on public.conversations;
-drop policy if exists "Permitir acesso total a medreader_marcas" on public.medreader_marcas;
-
--- RLS continua habilitado; sem policy, só service_role acessa.
-```
+O arquivo `supabase/migrations/20261023_private_auth.sql` remove policies permissivas, revoga acesso de `anon`/`authenticated` e preserva os dados. Aplique-o manualmente depois de confirmar `SUPABASE_SERVICE_ROLE_KEY` no servidor.
 
 **Antes de rodar:** confirmar que `SUPABASE_SERVICE_ROLE_KEY` está configurada na Vercel. Se o servidor estiver usando só a anon key, ele para de funcionar — nesse caso, configure a service role primeiro.
 
-**Depois de fechar:**
-- `delete from public.sessions;` → invalida todos os tokens expostos; todos refazem login.
-- Considere forçar redefinição de senha: `password_hash` + `salt` estavam legíveis; scrypt com `N=16384` encarece o ataque, mas não o impede.
-- Se o navegador precisar de alguma tabela no futuro, crie policies por `auth.uid()` e **nunca** exponha `password_hash`/`salt`.
+**Depois de fechar:** decida com o responsável do projeto se revoga sessões anteriores. A auditoria confirmou leitura pública de linhas de usuários, mas não leu hashes nem tokens.
 
 **Verificação:** repetir a consulta com a anon key e esperar `401`/`[]`.
 
-### 2.2 Fechar `/api/drive/*`
+### 2.2 Fechar `/api/drive/*` (implementado no código; ainda não publicado)
 
-Hoje `/api/drive/*` está na whitelist do `authMiddleware`. Qualquer pessoa lista a árvore do Drive e baixa arquivos por ID. A proteção por ticket cobre só `/m/:ticket`.
-
-- Remover `/api/drive/` da whitelist.
-- Manter público apenas `/m/:ticket` (link assinado, curto).
-- No front, o download em `index.html:6091` não envia token → adicionar `Authorization: Bearer`.
-- Trocar URLs `?t=<token>` (`cuscuzMediaUrl` e `index.html:3947`) por tickets `/m/`; token de sessão não deve aparecer em URL, histórico ou log.
-- Reduzir a validade do ticket de 12 h para 1–2 h.
-- Rate-limit por usuário/IP em `/api/drive/*` e nas rotas de IA.
+O middleware exige sessão em `/api/drive/*`; o navegador usa o cookie HttpOnly. Tokens de sessão por query/body deixaram de autenticar APIs. `/m/:ticket` continua como link bearer com validade de até 12 h.
 
 ### 2.3 Segredo padrão dos tickets
 
-`AUTH_SECRET` deriva de `APP_PASSWORD || 'default-secret-change-me'`. Se a variável faltar em produção, qualquer pessoa forja tickets. Falhar o boot em produção quando `APP_PASSWORD` estiver ausente (ou gerar segredo forte e persistido).
+`AUTH_SECRET` deriva de `MEDIA_TICKET_SECRET` ou, por compatibilidade, de `APP_PASSWORD`. Sem nenhum deles, a emissão e validação de tickets de mídia agora falha fechada; não há mais segredo padrão conhecido.
 
 ### 2.4 Limite de corpo global
 
@@ -150,15 +133,9 @@ Ganho: visitas sem mudança → 0 download; primeira visita → payload proporci
 - **Login:** labels visíveis, `autocomplete="username"`/`current-password`, botão mostrar senha, erro inline.
 - **Offline:** banner + retry; fila de ações (ex.: respostas de simulado) para sincronizar depois.
 
-### 3.7 Cold start da autenticação
+### 3.7 Cold start da autenticação (otimizado no código)
 
-`loadUsersDb()` faz `select('*')` em `users` e `sessions` a cada instância. Trocar por:
-
-- `validateSession(token)`: `select * from sessions where token = ? maybeSingle()` + cache em memória por 5 min.
-- `login/signup`: `select * from users where username = ? maybeSingle()` (índice já existe).
-- Cron diário: `delete from sessions where expires_at < now()`.
-
-Ganho: cold start constante, independente do número de sessões.
+`loadUsersDb()` não carrega mais todas as contas ou sessões do Supabase. Login, Google e autorização buscam somente a conta necessária; cada requisição privada confirma a sessão no banco para permitir revogação imediata. Índices cobrem e-mail, papel/estado, data de cadastro, usuário de sessão e recuperação pendente. O custo por requisição continua incluindo uma leitura indexada de sessão e uma de usuário; a vantagem é que o cold start não cresce com o número de contas/sessões e nenhum token de sessão é mantido num mapa global da instância.
 
 ---
 
@@ -202,7 +179,7 @@ Remover `keepalive.yml` (aponta para o Railway) ou redirecioná-lo.
 ### 4.5 Observabilidade
 
 - `GET /api/version` → commit SHA, data do build, região.
-- `/api/health` → fonte do catálogo, contagens, questões, `geminiBlockedUntil`, latência do Supabase.
+- `/api/health` público → disponibilidade mínima; métricas de provedores e infraestrutura ficam disponíveis para administradores.
 - Log com `request-id`, método, rota, status e duração; alerta em 5xx.
 - Script de smoke test (`scripts/smoke.mjs`) rodando no CI com um token de teste.
 
@@ -224,9 +201,9 @@ Remover `keepalive.yml` (aponta para o Railway) ou redirecioná-lo.
 
 | # | Melhoria | Impacto | Esforço | Quando |
 |---|---|---|---|---|
-| 1 | Fechar RLS + invalidar sessões | **Crítico** | Baixo | Hoje |
-| 2 | Fechar `/api/drive/*` e tirar token da URL | Alto | Baixo | Hoje |
-| 3 | `APP_PASSWORD` obrigatório + limite de body | Alto | Baixo | Hoje |
+| 1 | Aplicar migração RLS e decidir rotação de sessões | **Crítico** | Baixo | Manual, antes do deploy |
+| 2 | Fechar `/api/drive/*` e migrar para cookie | Alto | Baixo | Implementado local |
+| 3 | Remover segredo padrão de tickets de mídia | Alto | Baixo | Implementado local |
 | 4 | Cache de borda (`s-maxage`/`stale-while-revalidate`) | Alto | Baixo | Esta semana |
 | 5 | Região `gru1` | Alto | Baixo | Esta semana |
 | 6 | Hidratação sob demanda do IndexedDB | Alto | Médio | Esta semana |

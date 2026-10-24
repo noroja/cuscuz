@@ -20,7 +20,7 @@
 <script>
 /* Auth da API: anexa o token em /api/* e volta ao login se o servidor responder 401 */
 (function(){
-  window.cuscuzMediaUrl = function (u) { try { var t = localStorage.getItem('cuscuz_token'); return t ? u + (u.indexOf('?') >= 0 ? '&' : '?') + 't=' + encodeURIComponent(t) : u; } catch (e) { return u; } };
+  window.cuscuzMediaUrl = function (u) { return u; };
   var _tk = {};
   window.cuscuzTicket = function (id, kind) {
     kind = kind === 'p' ? 'p' : 'v';
@@ -52,7 +52,7 @@
     if (isApi) {
       try {
         var t = localStorage.getItem('cuscuz_token');
-        if (t) { o = Object.assign({}, o); var h = {}; if (o.headers) { (o.headers instanceof Headers ? Array.from(o.headers.entries()) : Object.entries(o.headers)).forEach(function(kv){ h[kv[0]] = kv[1]; }); } h['Authorization'] = 'Bearer ' + t; o.headers = h; }
+        if (t === 'cookie-session') { o = Object.assign({}, o); var h = {}; if (o.headers) { (o.headers instanceof Headers ? Array.from(o.headers.entries()) : Object.entries(o.headers)).forEach(function(kv){ h[kv[0]] = kv[1]; }); } h['Authorization'] = 'Bearer cookie-session'; o.headers = h; }
       } catch (e) {}
     }
     return _f(u, o).then(function(r){
@@ -1900,41 +1900,29 @@ mark.exam-highlight {
         </div>
         <div id="login-error" role="status" aria-live="polite" tabindex="-1" style="color:var(--rose);font-size:12px;margin-bottom:14px;display:none;background:var(--rose-dim);padding:8px 12px;border-radius:8px;border:1px solid var(--rose-border)">Usuário ou senha incorretos</div>
         <button onclick="doLogin()" class="btn-primary glass-shimmer" style="width:100%;padding:12px;border-radius:var(--radius-md);font-size:14px;font-weight:700">Acessar Plataforma</button>
+        <button type="button" onclick="requestPasswordRecovery()" style="display:block;margin:12px auto 0;background:none;border:0;color:var(--text-secondary);font-size:12px;cursor:pointer">Esqueci minha senha</button>
         <button type="button" onclick="loginWithGoogle()" style="width:100%;margin-top:10px;background:#fff;color:#333;border:1px solid var(--border-default);padding:11px;border-radius:var(--radius-md);font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
           <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.13 0-5.78-2.11-6.73-4.96H1.14v3.15C3.15 21.32 7.23 24 12 24z"/><path fill="#FBBC05" d="M5.27 14.24c-.25-.72-.38-1.49-.38-2.24s.13-1.52.38-2.24V6.61H1.14C.41 8.09 0 9.77 0 11.5s.41 3.41 1.14 4.89l4.13-3.15z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.23 0 3.15 2.68 1.14 6.61l4.13 3.15c.95-2.85 3.6-4.96 6.73-4.96z"/></svg> Entrar com Google
         </button>
-        <div style="font-size:12px;color:var(--text-muted);margin-top:14px;line-height:1.5">
-          Não tem conta? <button type="button" onclick="showSignupForm()" style="background:none;border:none;color:var(--teal);font-weight:700;padding:0;margin:0">Criar conta grátis</button>
-        </div>
-      </div>
-      
-      <!-- Sign Up Form (hidden by default) -->
-      <div id="signup-form" style="display:none">
-        <div style="margin-bottom:18px;text-align:left">
-          <label for="signup-user" style="display:block;font-size:13px;font-weight:600;color:var(--paper-muted);letter-spacing:0;margin-bottom:7px">Nome de Usuário</label>
-          <input id="signup-user" name="username" placeholder="min. 3 caracteres (letras, números, _ -)" style="width:100%;padding:11px 14px;font-size:14px" autocomplete="username">
-        </div>
-        <div style="margin-bottom:18px;text-align:left">
-          <label for="signup-display" style="display:block;font-size:13px;font-weight:600;color:var(--paper-muted);letter-spacing:0;margin-bottom:7px">Nome para Exibição</label>
-          <input id="signup-display" name="displayName" placeholder="Como você quer ser chamado" style="width:100%;padding:11px 14px;font-size:14px" autocomplete="name">
-        </div>
-        <div style="margin-bottom:18px;text-align:left">
-          <label for="signup-pass" style="display:block;font-size:13px;font-weight:600;color:var(--paper-muted);letter-spacing:0;margin-bottom:7px">Senha</label>
-          <input id="signup-pass" name="newPassword" type="password" placeholder="mínimo 6 caracteres" style="width:100%;padding:11px 14px;font-size:14px" autocomplete="new-password" onkeypress="if(event.key==='Enter')doSignup()">
-        </div>
-        <div style="margin-bottom:22px;text-align:left">
-          <label for="signup-pass-confirm" style="display:block;font-size:13px;font-weight:600;color:var(--paper-muted);letter-spacing:0;margin-bottom:7px">Confirmar Senha</label>
-          <input id="signup-pass-confirm" name="confirmPassword" type="password" placeholder="repita a senha" style="width:100%;padding:11px 14px;font-size:14px" autocomplete="new-password" onkeypress="if(event.key==='Enter')doSignup()">
-        </div>
-        <div id="signup-error" role="status" aria-live="polite" tabindex="-1" style="color:var(--rose);font-size:12px;margin-bottom:14px;display:none;background:var(--rose-dim);padding:8px 12px;border-radius:8px;border:1px solid var(--rose-border)"></div>
-        <button onclick="doSignup()" class="btn-primary glass-shimmer" style="width:100%;padding:12px;border-radius:var(--radius-md);font-size:14px;font-weight:700">Criar Conta</button>
-        <div style="font-size:12px;color:var(--text-muted);margin-top:14px;line-height:1.5">
-          Já tem conta? <button type="button" onclick="showLoginForm()" style="background:none;border:none;color:var(--teal);font-weight:700;padding:0;margin:0">Entrar</button>
-        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin:14px 0 0;line-height:1.5">Acesso exclusivo para usuários autorizados.</p>
       </div>
       <p class="login-credits-panel">Imagens: A. J. Defehrt / Encyclopédie (CC0, Art Institute of Chicago); John Lizars (CC0, The Met); Wellcome Collection (CC BY 4.0); Anatomy Standard (CC BY 3.0).</p>
     </div>
 </div>
+
+<section id="invite-activation-screen" role="dialog" aria-modal="true" aria-labelledby="invite-activation-title" style="display:none;position:fixed;inset:0;z-index:10000;place-items:center;padding:24px;background:rgba(7,11,17,.88);backdrop-filter:blur(16px)">
+  <div style="width:min(440px,100%);padding:28px;border:1px solid var(--border-strong);border-radius:20px;background:var(--bg-surface);box-shadow:var(--shadow-lg)">
+    <div class="brand-icon" aria-hidden="true">C</div>
+    <h1 id="invite-activation-title" style="margin:18px 0 6px">Ative seu acesso</h1>
+    <p id="invite-activation-copy" style="color:var(--text-secondary);font-size:13px;line-height:1.6">Crie uma senha com pelo menos 12 caracteres. O convite é individual e expira em 1 hora.</p>
+    <label for="invite-password" style="display:block;margin:18px 0 6px;font-size:12px">Nova senha</label>
+    <input id="invite-password" type="password" autocomplete="new-password" minlength="12" style="width:100%;padding:12px;border-radius:10px" onkeydown="if(event.key==='Enter')acceptUserInvite()">
+    <label for="invite-password-confirm" style="display:block;margin:14px 0 6px;font-size:12px">Confirme a senha</label>
+    <input id="invite-password-confirm" type="password" autocomplete="new-password" minlength="12" style="width:100%;padding:12px;border-radius:10px" onkeydown="if(event.key==='Enter')acceptUserInvite()">
+    <div id="invite-activation-status" role="status" aria-live="polite" style="margin:12px 0;color:var(--text-secondary);font-size:12px"></div>
+    <button id="invite-activation-submit" class="btn-primary" style="width:100%;padding:12px" onclick="acceptUserInvite()">Ativar conta</button>
+  </div>
+</section>
 
 <!-- ═══ LOBBY SPATIAL LIQUID GLASS ═══ -->
 <div id="lobby-screen" style="display:none">
@@ -2118,6 +2106,15 @@ mark.exam-highlight {
           <i class="ph ph-timer"></i>
           <span class="nav-text">Simulados</span>
           <span class="nav-tooltip">Simulados</span>
+        </a>
+      </div>
+
+      <div class="nav-section" id="admin-nav-section" style="display:none">
+        <div class="nav-label">Administração</div>
+        <a class="nav-item" data-view="view-admin" href="#view-admin" onclick="return navigateStudy(event,'view-admin')" data-tooltip="Gerenciamento de usuários" aria-label="Gerenciamento de usuários">
+          <i class="ph ph-users-three"></i>
+          <span class="nav-text">Usuários</span>
+          <span class="nav-tooltip">Gerenciamento de usuários</span>
         </a>
       </div>
 
@@ -3074,6 +3071,26 @@ Sintomas de pneumonia\tFebre, tosse, dispneia\tPneumologia"></textarea>
       </div>
       <div id="sim-runner-screen" style="display:none"><div class="quiz-runner" id="sim-runner"></div></div>
     </div>
+
+    <section id="view-admin" class="view-section" style="padding:24px;max-width:1100px;margin:0 auto;width:100%">
+      <header style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px">
+        <div><p style="color:var(--teal);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin:0 0 6px">Acesso restrito</p><h2 style="margin:0">Gerenciamento de usuários</h2><p style="color:var(--text-secondary);font-size:13px;margin:8px 0 0">Convide, pesquise e controle o acesso às contas.</p></div>
+        <button class="btn-outline btn-sm" type="button" onclick="loadAdminUsers()"><i class="ph ph-arrows-clockwise"></i> Atualizar lista</button>
+      </header>
+      <form id="admin-invite-form" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;padding:16px;border:1px solid var(--border-subtle);border-radius:14px;background:var(--bg-surface)" onsubmit="return submitAdminInvite(event)">
+        <label style="font-size:12px">E-mail<input id="admin-invite-email" type="email" autocomplete="email" required style="display:block;width:100%;margin-top:6px;padding:10px;border-radius:9px"></label>
+        <label style="font-size:12px">Nome<input id="admin-invite-name" type="text" maxlength="100" autocomplete="name" required style="display:block;width:100%;margin-top:6px;padding:10px;border-radius:9px"></label>
+        <label id="admin-invite-role-wrap" style="font-size:12px;display:none">Papel<select id="admin-invite-role" style="display:block;width:100%;margin-top:6px;padding:10px;border-radius:9px"><option value="user">Usuário</option><option value="admin">Administrador</option><option value="super_admin">Super administrador</option></select></label>
+        <div style="align-self:end"><button class="btn-primary" id="admin-invite-submit" type="submit" style="width:100%;padding:10px"><i class="ph ph-envelope-simple"></i> Enviar convite</button></div>
+        <p id="admin-invite-status" role="status" aria-live="polite" style="grid-column:1/-1;margin:0;font-size:12px;color:var(--text-secondary)">O link de ativação expira em 1 hora. O envio depende do SMTP e da URL de retorno configurados no Supabase.</p>
+      </form>
+      <div style="display:flex;gap:8px;margin:18px 0 10px">
+        <input id="admin-user-search" type="search" placeholder="Buscar nome, e-mail ou usuário" style="flex:1;padding:10px 12px;border-radius:9px" onkeydown="if(event.key==='Enter'){event.preventDefault();loadAdminUsers()}">
+        <button class="btn-outline" type="button" onclick="loadAdminUsers()">Buscar</button>
+      </div>
+      <div id="admin-users-status" role="status" aria-live="polite" style="padding:10px 0;color:var(--text-secondary);font-size:12px"></div>
+      <div id="admin-users-list" style="display:grid;gap:10px"></div>
+    </section>
   </main>
 
   <aside class="dashboard" id="dashboard"></aside>
@@ -3943,7 +3960,7 @@ function printApostila() {
 function downloadApostilaPdf() {
   if (!apostilaState.currentId) return;
   // Usa o endpoint de PDF do Drive
-  const url = `/api/drive/pdf/${encodeURIComponent(apostilaState.currentId)}?t=${encodeURIComponent(localStorage.getItem('cuscuz_token') || '')}`;
+  const url = `/api/drive/pdf/${encodeURIComponent(apostilaState.currentId)}`;
   window.open(url, '_blank');
 }
 
@@ -4510,6 +4527,10 @@ function enterApp(viewId){
 
 function go(id, options = {}){
   if (id === 'view-treino-questoes') id = 'view-treino';
+  if (id === 'view-admin' && !['admin','super_admin'].includes(AUTH_USER_ROLE)) {
+    toast('Acesso restrito à administração.', 'error');
+    return;
+  }
   // Resolve the destination before hiding the current screen.
   if (!$(id) || !$(id).classList.contains('view-section')) return;
   if (typeof cuscuzBeforeNavigate === 'function') cuscuzBeforeNavigate(id);
@@ -4527,7 +4548,8 @@ function go(id, options = {}){
       'view-preparatorio': 'Desempenho',
       'view-acervo': 'Acervo',
       'view-treino': 'Questões e revisão',
-      'view-simulados': 'Simulados'
+      'view-simulados': 'Simulados',
+      'view-admin': 'Gerenciamento de usuários'
     })[id] || 'Cuscuz-MED';
   }
   $$('.nav-item[data-view]').forEach(n => {
@@ -4551,7 +4573,7 @@ function go(id, options = {}){
   if (main) main.scrollTop = 0;
   const appEl = $('app-main'); if (appEl) { appEl.classList.toggle('in-acervo', id === 'view-acervo'); appEl.dataset.view = id; }
   ({'view-inicio':renderHome,'view-calendario':renderCalendar,'view-cronograma':renderSchedule,'view-semana':renderWeek,
-    'view-preparatorio':renderPrep,'view-acervo':renderAcervo,'view-treino':renderDecks,'view-simulados':renderSim,'view-planneria':renderPlannerIA}[id]||(()=>{}))();
+    'view-preparatorio':renderPrep,'view-acervo':renderAcervo,'view-treino':renderDecks,'view-simulados':renderSim,'view-planneria':renderPlannerIA,'view-admin':loadAdminUsers}[id]||(()=>{}))();
   updateSidebarProgress();
   setupSidebarTooltips();
   if (screenTitle) document.title = screenTitle.textContent + ' · Cuscuz-MED';
@@ -4562,6 +4584,24 @@ function refreshAll(){renderHome();renderCalendar();renderSchedule();renderWeek(
 function refreshLight(){renderDash();renderCalendar();renderSchedule();renderWeek();renderHome();updateBadges();updateSidebarProgress()}
 
 /* ═══ LOGIN / FIREBASE / AUTO SYNC ═══ */
+const COOKIE_AUTH_MARKER='cookie-session';
+let AUTH_USER_ROLE='user',AUTH_USERNAME='';
+function applyAuthUser(user={}){
+  AUTH_USER_ROLE=String(user.role||'user');
+  AUTH_USERNAME=String(user.username||'');
+  if(AUTH_USERNAME){
+    SYNC_USER=AUTH_USERNAME;
+    localStorage.setItem('medplan_user',AUTH_USERNAME);
+    localStorage.setItem('cuscuz_token',COOKIE_AUTH_MARKER);
+  }
+  if(user.displayName){
+    localStorage.setItem('medplan_display_name',user.displayName);
+    const name=$('sidebar-user-name'); if(name) name.textContent=user.displayName;
+  }
+  localStorage.setItem('medplan_logged','1');
+  const adminNav=$('admin-nav-section'); if(adminNav) adminNav.style.display=['admin','super_admin'].includes(AUTH_USER_ROLE)?'':'none';
+  const roleWrap=$('admin-invite-role-wrap'); if(roleWrap) roleWrap.style.display=AUTH_USER_ROLE==='super_admin'?'':'none';
+}
 const firebaseConfig={apiKey:"AIzaSyAw2j7CXYxVWfqI9svGv8TvCbXkyGlgDPo",authDomain:"estudoflow-409d4.firebaseapp.com",databaseURL:"https://estudoflow-409d4-default-rtdb.firebaseio.com",projectId:"estudoflow-409d4",storageBucket:"estudoflow-409d4.firebasestorage.app",messagingSenderId:"693665289108",appId:"1:693665289108:web:bc9b93f6018690a405b581"};
 let FBDB=null,CLOUD_ON=false;
 const safeUser=s=>String(s||'').toLowerCase().replace(/[^a-z0-9_-]/g,'')||'user';
@@ -4571,7 +4611,7 @@ function setDot(st){const d=$('cloud-dot');if(d)d.style.background=st==='ok'?'va
 async function loginWithGoogle() {
   await supabaseReady;
   if (!window.supabase) {
-    toast('Cliente Supabase não carregado. Verifique as variáveis do Railway (SUPABASE_URL, SUPABASE_ANON_KEY).', 'error');
+    toast('Login com Google indisponível no momento.', 'error');
     return;
   }
   const { data, error } = await window.supabase.auth.signInWithOAuth({
@@ -4581,8 +4621,70 @@ async function loginWithGoogle() {
   if (error) toast('Erro ao autenticar com Google: ' + error.message, 'error');
 }
 
+const AUTH_LINK_PARAMS = new URLSearchParams(window.location.search);
+let PENDING_INVITE_TOKEN = AUTH_LINK_PARAMS.get('invite') || '';
+let PASSWORD_RECOVERY_TOKEN = AUTH_LINK_PARAMS.get('recover') || '';
+let PASSWORD_RECOVERY_MODE = Boolean(PASSWORD_RECOVERY_TOKEN);
+if(PENDING_INVITE_TOKEN||PASSWORD_RECOVERY_TOKEN){
+  const cleanAuthUrl=new URL(window.location.href);
+  cleanAuthUrl.searchParams.delete('invite');
+  cleanAuthUrl.searchParams.delete('recover');
+  history.replaceState(history.state,'',cleanAuthUrl.pathname+cleanAuthUrl.search+cleanAuthUrl.hash);
+}
+async function activateUserInviteFromUrl(){
+  const panel=$('invite-activation-screen'); if(panel) panel.style.display='grid';
+  const status=$('invite-activation-status');
+  if(!PENDING_INVITE_TOKEN&&!PASSWORD_RECOVERY_MODE){ if(status)status.textContent='O link está incompleto.'; return; }
+  if(PASSWORD_RECOVERY_MODE){
+    const title=$('invite-activation-title'),copy=$('invite-activation-copy'),button=$('invite-activation-submit');
+    if(title)title.textContent='Redefina sua senha';
+    if(copy)copy.textContent='Escolha uma senha nova com pelo menos 12 caracteres. Este link é individual e temporário.';
+    if(button)button.textContent='Salvar nova senha';
+  }
+  await supabaseReady;
+  if(!window.supabase){ if(status)status.textContent='Não foi possível validar o convite. Tente abrir o link novamente.'; return; }
+  try{
+    const {data:{session}}=await window.supabase.auth.getSession();
+    if(!session?.access_token){ if(status)status.textContent='Abra o link recebido por e-mail para validar este convite.'; return; }
+    if(status)status.textContent=PASSWORD_RECOVERY_MODE?'Link validado. Defina sua nova senha.':'Convite validado. Defina sua senha para concluir a ativação.';
+  }catch(_){ if(status)status.textContent='Não foi possível validar a sessão do convite. Abra o link do e-mail novamente.'; }
+}
+
+async function acceptUserInvite(){
+  const status=$('invite-activation-status'),button=$('invite-activation-submit');
+  const password=$('invite-password')?.value||'',confirm=$('invite-password-confirm')?.value||'';
+  if(password.length<12){if(status)status.textContent='A senha deve ter pelo menos 12 caracteres.';return}
+  if(password!==confirm){if(status)status.textContent='As senhas não coincidem.';return}
+  await supabaseReady;
+  const {data:{session}}=await window.supabase?.auth.getSession()||{data:{session:null}};
+  if(!session?.access_token){if(status)status.textContent='A sessão do convite expirou. Abra novamente o link do e-mail.';return}
+  if(button){button.disabled=true;button.textContent='Ativando…'}
+  try{
+    const endpoint=PASSWORD_RECOVERY_MODE?'/api/auth/password-reset/complete':'/api/auth/invitations/accept';
+    const payload=PASSWORD_RECOVERY_MODE?{accessToken:session.access_token,recoveryToken:PASSWORD_RECOVERY_TOKEN,password}:{inviteToken:PENDING_INVITE_TOKEN,accessToken:session.access_token,password};
+    const response=await fetch(endpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok||!data.success)throw new Error(data.error||'Não foi possível ativar a conta.');
+    if(data.user)applyAuthUser(data.user);
+    else{localStorage.removeItem('medplan_logged');localStorage.removeItem('cuscuz_token')}
+    await window.supabase.auth.signOut().catch(()=>{});
+    if(PASSWORD_RECOVERY_MODE){
+      const status=$('invite-activation-status'),button=$('invite-activation-submit');
+      if(status)status.textContent=data.message||'Senha redefinida. Entre com sua nova senha.';
+      if(button){button.disabled=false;button.textContent='Voltar ao login';button.onclick=()=>{location.href=window.location.pathname}}
+    }else{
+      history.replaceState({},'',window.location.pathname+'#view-planneria');
+      window.location.reload();
+    }
+  }catch(error){
+    if(status)status.textContent=error.message||'Não foi possível ativar a conta.';
+    if(button){button.disabled=false;button.textContent=PASSWORD_RECOVERY_MODE?'Salvar nova senha':'Ativar conta'}
+  }
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   await supabaseReady;
+  if(PENDING_INVITE_TOKEN||PASSWORD_RECOVERY_MODE){ await activateUserInviteFromUrl(); return; }
   if (!window.supabase) return;
   try {
     const { data: { session } } = await window.supabase.auth.getSession();
@@ -4594,12 +4696,13 @@ window.addEventListener('DOMContentLoaded', async () => {
         body: JSON.stringify({ accessToken: session.access_token }) // o servidor valida no Supabase; e-mail/nome do navegador não são aceitos
       });
       const data = await res.json();
-      if (data.success && data.token) {
-        localStorage.setItem('cuscuz_token', data.token);
-        SYNC_USER = data.user.username;
-        localStorage.setItem('medplan_logged', '1');
-        localStorage.setItem('medplan_user', data.user.username);
+      if (data.success && data.user) {
+        applyAuthUser(data.user);
+        await window.supabase.auth.signOut().catch(()=>{});
         window.location.href = window.location.pathname;
+      } else {
+        await window.supabase.auth.signOut().catch(()=>{});
+        toast(data.error||'Conta sem acesso autorizado. Solicite um convite ao administrador.','error');
       }
     }
   } catch (e) {
@@ -4611,64 +4714,96 @@ async function doLogin(){const u=cleanStr($('login-user').value.trim()),p=$('log
   const err=$('login-error');
   if(!u||!p){err.textContent='Informe usuário e senha';err.style.display='block';err.focus();return}
   try{
-    const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+    const r=await fetch('/api/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
     const d=await r.json().catch(()=>({}));
-    if(!r.ok||!d.token){err.textContent=d.error||d.msg||'Usuário ou senha incorretos';err.style.display='block';err.focus();return}
-    localStorage.setItem('cuscuz_token',d.token);
+    if(!r.ok||!d.success||!d.user){err.textContent=d.error||d.msg||'Usuário ou senha incorretos';err.style.display='block';err.focus();return}
+    applyAuthUser(d.user);
   }catch(e){err.textContent='Servidor indisponível. Tente de novo em instantes.';err.style.display='block';err.focus();return}
-  SYNC_USER=u;localStorage.setItem('medplan_logged','1');localStorage.setItem('medplan_user',u);
   // Carrega o nome de exibição do servidor
   try{
     const r=await fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+localStorage.getItem('cuscuz_token')}});
     const ud=await r.json();
-    if(ud.success&&ud.user&&ud.user.displayName){
-      $('sidebar-user-name').textContent = ud.user.displayName;
-      localStorage.setItem('medplan_display_name', ud.user.displayName);
-    }
+    if(ud.success&&ud.user)applyAuthUser(ud.user);
   }catch(_){}
   err.style.display='none';await ensureHeavyHydrated();startApp();
   try{loadQuestionsBankFromAPI(true);if(typeof fetchRadarMedico==='function')fetchRadarMedico()}catch(_){}}
-function showSignupForm(){
-  $('login-form').style.display='none';
-  $('signup-form').style.display='block';
-  $('signup-error').style.display='none';
-  $('signup-user').focus();
-}
-function showLoginForm(){
-  $('signup-form').style.display='none';
-  $('login-form').style.display='block';
-  $('login-error').style.display='none';
-  $('login-user').focus();
-}
-async function doSignup(){
-  const u=cleanStr($('signup-user').value.trim());
-  const d=$('signup-display').value.trim();
-  const p=$('signup-pass').value;
-  const pc=$('signup-pass-confirm').value;
-  const err=$('signup-error');
-  if(!u||u.length<3){err.textContent='Usuário deve ter pelo menos 3 caracteres';err.style.display='block';err.focus();return}
-  if(!/^[a-z0-9_-]+$/.test(u)){err.textContent='Usuário: apenas letras, números, _ e -';err.style.display='block';err.focus();return}
-  if(p.length<6){err.textContent='Senha deve ter pelo menos 6 caracteres';err.style.display='block';err.focus();return}
-  if(p!==pc){err.textContent='Senhas não conferem';err.style.display='block';err.focus();return}
+async function requestPasswordRecovery(){
+  const email=prompt('Informe o e-mail vinculado à sua conta:');
+  if(!email)return;
   try{
-    const r=await fetch('/api/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p,displayName:d||u})});
-    const res=await r.json().catch(()=>({}));
-    if(!r.ok||!res.token){err.textContent=res.error||res.msg||'Erro ao criar conta';err.style.display='block';err.focus();return}
-    localStorage.setItem('cuscuz_token',res.token);
-  }catch(e){err.textContent='Servidor indisponível. Tente de novo em instantes.';err.style.display='block';err.focus();return}
-  SYNC_USER=u;localStorage.setItem('medplan_logged','1');localStorage.setItem('medplan_user',u);
-  // Carrega o nome de exibição do servidor
+    const response=await fetch('/api/auth/password-reset/request',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.trim()})});
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(result.error||'Recuperação indisponível.');
+    toast(result.message||'Se o e-mail estiver vinculado a uma conta, enviaremos as instruções.','success');
+  }catch(error){toast(error.message||'Recuperação indisponível.','error')}
+}
+async function logout(){if(!confirm('Sair? Os dados continuam salvos neste dispositivo.'))return;
+  try{await fetch('/api/auth/logout',{method:'POST',credentials:'same-origin'})}catch(_){}
+  try{await window.supabase?.auth.signOut()}catch(_){}
+  localStorage.removeItem('medplan_logged');localStorage.removeItem('cuscuz_token');localStorage.removeItem('medplan_user');location.reload()
+}
+
+async function adminRequest(url, options={}){
+  const headers={...(options.headers||{})};
+  if(options.body&&!headers['Content-Type'])headers['Content-Type']='application/json';
+  const response=await fetch(url,{...options,headers,credentials:'same-origin'});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||'Não foi possível concluir a operação.');
+  return data;
+}
+function adminSetStatus(message,error=false){const el=$('admin-users-status');if(el){el.textContent=message;el.style.color=error?'var(--rose)':'var(--text-secondary)'}}
+async function loadAdminUsers(){
+  const list=$('admin-users-list');if(!list)return;
+  adminSetStatus('Carregando contas…');
   try{
-    const r=await fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+localStorage.getItem('cuscuz_token')}});
-    const ud=await r.json();
-    if(ud.success&&ud.user&&ud.user.displayName){
-      $('sidebar-user-name').textContent = ud.user.displayName;
-      localStorage.setItem('medplan_display_name', ud.user.displayName);
+    const term=encodeURIComponent($('admin-user-search')?.value||'');
+    const result=await adminRequest('/api/admin/users?q='+term);
+    list.replaceChildren();
+    if(!result.users?.length){adminSetStatus('Nenhuma conta encontrada.');return}
+    adminSetStatus(`${result.users.length} conta(s)`);
+    for(const user of result.users){
+      const card=document.createElement('article');
+      card.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 16px;border:1px solid var(--border-subtle);border-radius:12px;background:var(--bg-surface)';
+      const info=document.createElement('div');info.style.cssText='min-width:180px;flex:1';
+      const title=document.createElement('strong');title.textContent=user.displayName||user.username;
+      const detail=document.createElement('div');detail.style.cssText='font-size:11px;color:var(--text-secondary);margin-top:4px';detail.textContent=`${user.username} · ${user.email||'sem e-mail vinculado'} · ${user.role}`;
+      const access=document.createElement('div');access.style.cssText='font-size:11px;color:var(--text-muted);margin-top:4px';
+      const state=user.active?'Ativo':user.invitationPending?'Convite pendente':'Suspenso';
+      access.textContent=`${state} · cadastro ${user.createdAt?new Date(user.createdAt).toLocaleDateString('pt-BR'):'—'} · último acesso ${user.lastLoginAt?new Date(user.lastLoginAt).toLocaleString('pt-BR'):'—'}`;
+      info.append(title,detail,access);card.append(info);
+      const controls=document.createElement('div');controls.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+      const canManage=AUTH_USERNAME!==user.username&&!user.primaryAdmin;
+      if(user.invitationPending&&canManage){
+        const resend=document.createElement('button');resend.type='button';resend.className='btn-outline btn-sm';resend.textContent='Reenviar convite';
+        resend.addEventListener('click',async()=>{try{await adminRequest(`/api/admin/users/${encodeURIComponent(user.username)}/resend-invite`,{method:'POST'});adminSetStatus('Convite reenviado.');await loadAdminUsers()}catch(e){adminSetStatus(e.message,true)}});controls.append(resend);
+      }else if(canManage){
+        const toggle=document.createElement('button');toggle.type='button';toggle.className=user.active?'btn-outline btn-sm':'btn-primary btn-sm';toggle.textContent=user.active?'Suspender':'Reativar';
+        toggle.addEventListener('click',async()=>{try{await adminRequest(`/api/admin/users/${encodeURIComponent(user.username)}/status`,{method:'PATCH',body:JSON.stringify({active:!user.active})});await loadAdminUsers()}catch(e){adminSetStatus(e.message,true)}});controls.append(toggle);
+      }
+      if(AUTH_USER_ROLE==='super_admin'&&canManage){
+        const role=document.createElement('select');role.setAttribute('aria-label',`Papel de ${user.username}`);role.style.cssText='padding:7px 9px;border-radius:8px';
+        for(const [value,label] of [['user','Usuário'],['admin','Admin'],['super_admin','Super admin']]){const option=document.createElement('option');option.value=value;option.textContent=label;role.append(option)}
+        role.value=user.role;
+        role.addEventListener('change',async()=>{try{await adminRequest(`/api/admin/users/${encodeURIComponent(user.username)}/role`,{method:'PATCH',body:JSON.stringify({role:role.value})});await loadAdminUsers()}catch(e){adminSetStatus(e.message,true);await loadAdminUsers()}});
+        controls.append(role);
+      }
+      card.append(controls);list.append(card);
     }
-  }catch(_){}
-  err.style.display='none';await ensureHeavyHydrated();startApp();
-  try{loadQuestionsBankFromAPI(true);if(typeof fetchRadarMedico==='function')fetchRadarMedico()}catch(_){}}
-function logout(){if(confirm('Sair? Os dados continuam salvos neste dispositivo.')){localStorage.removeItem('medplan_logged');localStorage.removeItem('cuscuz_token');location.reload()}}
+  }catch(error){list.replaceChildren();adminSetStatus(error.message,true)}
+}
+async function submitAdminInvite(event){
+  event.preventDefault();
+  const status=$('admin-invite-status'),button=$('admin-invite-submit');
+  if(button){button.disabled=true;button.textContent='Enviando…'}
+  try{
+    const data=await adminRequest('/api/admin/invitations',{method:'POST',body:JSON.stringify({email:$('admin-invite-email').value.trim(),displayName:$('admin-invite-name').value.trim(),role:AUTH_USER_ROLE==='super_admin'?$('admin-invite-role').value:'user'})});
+    if(status)status.textContent=data.message||'Convite enviado.';
+    $('admin-invite-form').reset();
+    await loadAdminUsers();
+  }catch(error){if(status)status.textContent=error.message}
+  finally{if(button){button.disabled=false;button.innerHTML='<i class="ph ph-envelope-simple"></i> Enviar convite'}}
+  return false;
+}
 
 function openEditProfile(){
   const currentName = $('sidebar-user-name')?.textContent || '';
@@ -8486,6 +8621,18 @@ async function hydrateHeavyState() {
 
 /* ═══ INIT ═══ */
 window.addEventListener('DOMContentLoaded', async () => {
+ if(PENDING_INVITE_TOKEN||PASSWORD_RECOVERY_MODE) return;
+ // Migrate a legacy bearer to the HttpOnly cookie before any private API calls.
+ const oldToken=localStorage.getItem('cuscuz_token')||'';
+ const headers=oldToken&&oldToken!==COOKIE_AUTH_MARKER?{'Authorization':'Bearer '+oldToken}:{};
+ let __logado=false, authStatus=0;
+ try{
+   const authRes=await fetch('/api/auth/me',{credentials:'same-origin',headers});
+   authStatus=authRes.status;
+   const authData=await authRes.json().catch(()=>({}));
+   if(authRes.ok&&authData.success&&authData.user){applyAuthUser(authData.user);__logado=true}
+ }catch(_){}
+ if(!__logado&&authStatus===401){localStorage.removeItem('medplan_logged');localStorage.removeItem('cuscuz_token')}
  await ensureHeavyHydrated();
  applyTheme();
  if (typeof initSidebarState === 'function') initSidebarState();
@@ -8496,8 +8643,6 @@ window.addEventListener('DOMContentLoaded', async () => {
    searchInput.addEventListener('input', e=>searchDebounced(e.target.value));
    document.addEventListener('click', e => { if(!e.target.closest('#search-wrap')) srHide() });
  }
- // Sem login: nada é carregado nem tocado (a tela de login fica sozinha); com login, tudo abre normalmente
- const __logado=localStorage.getItem('medplan_logged')==='1'&&localStorage.getItem('cuscuz_token');
  if(__logado){SYNC_USER=localStorage.getItem('medplan_user');startApp()}
  updateWrongBtn();
  initPinnedPdfs();

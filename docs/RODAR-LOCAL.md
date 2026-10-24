@@ -13,7 +13,7 @@ Limites: só funciona com o PC ligado. Sem Supabase, usuários e sessões ficam 
 ## Modo 2 — híbrido: site na Vercel, vídeos e PDFs no seu PC
 Objetivo: parar de gastar a "Transferência rápida de origem" (10 GB no plano Hobby). Vídeos e PDFs são o que mais pesa, e passam inteiros pela função da Vercel. Com este modo a Vercel só **redireciona** (poucos bytes) e o arquivo vem do seu PC.
 
-1. No PC, o `.env` precisa ter o **mesmo `APP_PASSWORD`** da Vercel (é a chave que assina os links `/m/...`) e as mesmas credenciais do Drive.
+1. No PC, o `.env` precisa ter o mesmo `MEDIA_TICKET_SECRET` (ou `APP_PASSWORD` legado) da Vercel, além das mesmas credenciais do Drive.
 2. `npm run local:midia`. Sobe na porta 3001 (mude com `MEDIA_PORT`). Esse modo responde **somente** `/m/*` e `/api/health`; todo o resto é 404, então é seguro expor num túnel.
 3. Publique a porta em HTTPS, por exemplo:
    - Cloudflare: `cloudflared tunnel --url http://localhost:3001` (o endereço muda a cada execução, salvo túnel nomeado).
@@ -27,4 +27,4 @@ Atenção:
 - Com o PC desligado ou o túnel fora do ar, vídeos e PDFs não abrem.
 - A banda passa a ser a do upload da sua internet.
 - Os limites e termos do túnel escolhido valem para você; não foram verificados aqui.
-- Hoje as rotas `/api/drive/*` não exigem login (a proteção é só o ID do arquivo no Drive). Isso é anterior a este modo e vale também no host de mídia.
+- As rotas `/api/drive/*` exigem sessão do Cuscuz-MED. Os links `/m/<ticket>` são credenciais temporárias de posse, válidas por até 12 horas; não os compartilhe.

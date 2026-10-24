@@ -20,7 +20,7 @@ import { registerAula } from './src/aula.js';
 import { registerApostilaReader } from './src/apostila-reader.js';
 import { registerMedreaderMarcas } from './src/medreader-marcas.js';
 import { materiaisDeIrmaos } from './src/materiais-irmaos.js';
-import { registerAuthRoutes, authMiddleware, getUserFilePath, getUserDataDir, validateSession, updateUserProfile } from './src/auth-multiuser.js';
+import { registerAuthRoutes, registerAdminRoutes, authMiddleware, getUserFilePath, getUserDataDir, getRequestSessionToken, validateSession, updateUserProfile } from './src/auth-multiuser.js';
 import { varrerExtras, juntar as juntarExtras, lerExtra, STATUS as EXTRA_STATUS, EXTRA_IDS, setCatalogo, CAT } from './src/extra-drive.js';
 import { resetCatalogo } from './src/planner-engine.js';
 import { temConta, emailConta, erroConta, driveFetch, authHeaders, driveFetchWithRetry, cleanDriveId } from './src/drive-auth.js';
@@ -65,8 +65,10 @@ app.post('/webhooks/google-drive', async (req, res) => {
   res.status(204).end();
 });
 
-// Secret for media ticket encryption (links /m/...)
-const AUTH_SECRET = crypto.createHash('sha256').update('cuscuz-media-ticket|' + (process.env.APP_PASSWORD || 'default-secret-change-me')).digest();
+// Secret for media ticket encryption. Fail closed when no secret is configured;
+// a public, hard-coded fallback would let anyone forge a media URL.
+const mediaTicketSecret = process.env.MEDIA_TICKET_SECRET || process.env.APP_PASSWORD || '';
+const AUTH_SECRET = mediaTicketSecret ? crypto.createHash('sha256').update('cuscuz-media-ticket|' + mediaTicketSecret).digest() : null;
 
 // ── Mídia pesada fora da Vercel (economiza a "Transferência rápida de origem" do plano Hobby) ──
 // MEDIA_ORIGIN = endereço https público de OUTRO processo deste mesmo app (ex.: seu PC via túnel) que serve
@@ -84,26 +86,33 @@ app.set('trust proxy', 1);
 registerAuthRoutes(app);
 
 // Health check endpoint (sempre acessível, sem autenticação)
+// Middleware de autenticação para todas as rotas /api/*
+app.use('/api', authMiddleware);
+registerAdminRoutes(app);
+
 app.get('/api/health', async (req, res) => {
   res.set('Cache-Control', 'no-store, max-age=0');
-  const payload = {
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    openaiConfigured: !!openai,
-    supabaseConfigured: !!supabase,
-    aiConfigured: aiConfigured(),
-    aiProvider: aiStatus().provider,
-    aiModel: aiStatus().model,
-    aiProvedores: aiStatus().provedores,
-    aiFluxo: aiStatus().workflow,
-    geminiConfigured: false, // legado: o Gemini foi substituído pela Groq
-    authConfigured: true,
-    drive: driveStatus
-  };
+  const payload = { status: 'ok', timestamp: new Date().toISOString() };
+  const isAdmin = ['admin', 'super_admin'].includes(req.user?.role);
 
-  // ?deep=1 faz um diagnóstico sem expor valores: tabela system_configs,
-  // bucket privado e um teste real de login no Hardworq (com cooldown).
+  // Uptime checks are public; operational details and active diagnostics are admin-only.
+  if (isAdmin) {
+    Object.assign(payload, {
+      openaiConfigured: !!openai,
+      supabaseConfigured: !!supabase,
+      aiConfigured: aiConfigured(),
+      aiProvider: aiStatus().provider,
+      aiModel: aiStatus().model,
+      aiProvedores: aiStatus().provedores,
+      aiFluxo: aiStatus().workflow,
+      geminiConfigured: false,
+      authConfigured: !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
+      drive: driveStatus
+    });
+  }
+
   if (req.query.deep === '1') {
+    if (!isAdmin) return res.status(403).json({ status: 'forbidden' });
     try { payload.systemConfig = await systemConfigHealth(); } catch (err) { payload.systemConfig = { error: err.message }; }
     try {
       const auth = await hwqEnsureToken();
@@ -124,9 +133,6 @@ app.get('/api/health', async (req, res) => {
 
   res.json(payload);
 });
-
-// Middleware de autenticação para todas as rotas /api/*
-app.use('/api', authMiddleware);
 
 /* ═══ ARQUIVOS ESTÁTICOS: nunca expor código, dados internos ou segredos ═══ */
 const BLOCKED_STATIC = /^\/(server\.js|api\/index\.js$|vercel\.json|package(-lock)?\.json|render\.yaml|DEPLOY\.md|README\.md|supabase-schema\.sql|metadata\.json|drive-tree-snapshot\.json|data(\/|$)|scripts(\/|$)|src(\/|$)|node_modules(\/|$)|\.)/i;
@@ -741,12 +747,8 @@ app.get('/api/drive/materials', async (req, res) => {
 // Endpoint para alterar nome de exibição do usuário
 app.post('/api/auth/update-profile', async (req, res) => {
   try {
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : req.body?.token;
-    if (!token) return res.status(401).json({ success: false, error: 'Token não fornecido' });
-
-    const username = await validateSession(token);
-    if (!username) return res.status(401).json({ success: false, error: 'Sessão expirada' });
+    const username = req.user?.username;
+    if (!username) return res.status(401).json({ success: false, error: 'Não autenticado' });
 
     const { displayName } = req.body;
     if (!displayName || !displayName.trim()) {
@@ -852,6 +854,7 @@ async function driveOpen(fileId, start, end, method, client) {
 // ── Links opacos de mídia: o navegador nunca vê o ID do Google Drive nem uma URL do Drive ──
 // O app pede um "ticket" (criptografado, vale 12 h) e usa /m/<ticket> como endereço do vídeo/PDF.
 function ticketSeal(id, kind) {
+  if (!AUTH_SECRET) throw new Error('MEDIA_TICKET_SECRET or APP_PASSWORD is required to issue media tickets.');
   const iv = crypto.randomBytes(12);
   const c = crypto.createCipheriv('aes-256-gcm', AUTH_SECRET, iv);
   const ct = Buffer.concat([c.update(JSON.stringify({ i: id, k: kind, e: Date.now() + 12 * 3600 * 1000 }), 'utf8'), c.final()]);
@@ -866,6 +869,7 @@ function ticketOpen(t) {
   } catch (_) { return null; }
 }
 app.post('/api/media/ticket', (req, res) => {
+  if (!AUTH_SECRET) return res.status(503).json({ success: false, error: 'Links de mídia indisponíveis: configure MEDIA_TICKET_SECRET no servidor.' });
   const id = cleanDriveId((req.body || {}).id), kind = (req.body || {}).kind === 'p' ? 'p' : 'v';
   if (!id) return res.status(400).json({ success: false, msg: 'ID inválido' });
   res.json({ success: true, url: '/m/' + ticketSeal(id, kind) });
@@ -876,11 +880,13 @@ function midiaRemota(req) {
   try { return new URL(MEDIA_ORIGIN).host !== String(req.headers.host || ''); } catch (_) { return false; }
 }
 function redirecionarMidia(req, res, id, kind) {
+  if (!AUTH_SECRET) return res.status(503).json({ success: false, error: 'Links de mídia indisponíveis: configure MEDIA_TICKET_SECRET no servidor.' });
   res.setHeader('Cache-Control', 'private, max-age=600');
   res.setHeader('Access-Control-Allow-Origin', '*');
   return res.redirect(307, MEDIA_ORIGIN + '/m/' + ticketSeal(id, kind));
 }
 app.all('/m/:ticket', (req, res) => {
+  if (!AUTH_SECRET) return res.status(404).send('Link expirado');
   const t = ticketOpen(req.params.ticket);
   if (!t) return res.status(404).send('Link expirado');
   if (midiaRemota(req)) { res.setHeader('Access-Control-Allow-Origin', '*'); return res.redirect(307, MEDIA_ORIGIN + '/m/' + req.params.ticket); }
@@ -4003,8 +4009,7 @@ app.get(['/', '/index.html'], (req, res, next) => {
 });
 // Catálogo de aulas (traz os IDs do Drive): só com login
 app.get('/acervo-manifest.json', async (req, res, next) => {
-  const h = req.headers.authorization || '';
-  const tk = h.startsWith('Bearer ') ? h.slice(7) : String(req.query.t || '');
+  const tk = getRequestSessionToken(req);
   const session = await validateSession(tk);
   if (!session) return res.status(401).json({ error: 'Faça login.' });
   res.setHeader('Cache-Control', 'private, no-cache');
