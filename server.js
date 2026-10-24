@@ -24,7 +24,7 @@ import { materiaisDeIrmaos } from './src/materiais-irmaos.js';
 import { registerAuthRoutes, registerAdminRoutes, authMiddleware, getUserFilePath, getUserDataDir, getRequestSessionToken, validateSession, updateUserProfile } from './src/auth-multiuser.js';
 import { varrerExtras, juntar as juntarExtras, lerExtra, STATUS as EXTRA_STATUS, EXTRA_IDS, setCatalogo, CAT } from './src/extra-drive.js';
 import { resetCatalogo } from './src/planner-engine.js';
-import { temConta, emailConta, erroConta, driveFetch, authHeaders, driveFetchWithRetry, cleanDriveId } from './src/drive-auth.js';
+import { driveToken, temConta, emailConta, erroConta, driveFetch, authHeaders, driveFetchWithRetry, cleanDriveId } from './src/drive-auth.js';
 
 import { downloadCatalogFromSupabase, downloadQuestionsBankFromSupabase, uploadQuestionsBankToSupabase, supabaseCatalogReady, ensureSupabaseBucket } from './src/supabase-catalog.js';
 import { IS_SERVERLESS, TMP_DIR, writableDir, safeReadJson, safeWriteJson } from './src/fs-safe.js';
@@ -895,12 +895,21 @@ function redirecionarMidia(req, res, id, kind) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   return res.redirect(307, MEDIA_ORIGIN + '/m/' + ticketSeal(id, kind));
 }
+const DRIVE_DIRECT = /^(1|true|on)$/i.test(process.env.DRIVE_DIRECT || '');
 app.all('/m/:ticket', (req, res) => {
   if (!AUTH_SECRET) return res.status(404).send('Link expirado');
   const t = ticketOpen(req.params.ticket);
   if (!t) return res.status(404).send('Link expirado');
   if (midiaRemota(req)) { res.setHeader('Access-Control-Allow-Origin', '*'); return res.redirect(307, MEDIA_ORIGIN + '/m/' + req.params.ticket); }
   if (req.method === 'OPTIONS') { res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS'); res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept'); return res.sendStatus(204); }
+  // DRIVE_DIRECT=1: vídeo vai do Google direto ao navegador (não conta na Vercel). ?via=app força o proxy.
+  if (DRIVE_DIRECT && t.k === 'v' && temConta() && req.query.via !== 'app' && (req.method === 'GET' || req.method === 'HEAD')) {
+    const fid = cleanDriveId(t.i);
+    if (fid) return driveToken().then(tok => {
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      res.redirect(307, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fid)}?alt=media&supportsAllDrives=true&access_token=${encodeURIComponent(tok)}`);
+    }).catch(() => { req.params.id = t.i; res.setHeader('Cache-Control', 'private, no-store'); return driveStreamHandler(req, res); });
+  }
   req.params.id = t.i;
   res.setHeader('Cache-Control', 'private, no-store');
   return (t.k === 'p' ? drivePdfHandler : driveStreamHandler)(req, res);
