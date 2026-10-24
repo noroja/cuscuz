@@ -10991,6 +10991,7 @@ function ac2InitNativeVideoListeners() {
   });
   nv.addEventListener('error', () => {
     if (nv.getAttribute('data-vid') !== AC2.atualId) return;
+    if (nv._ac2Mpegts) return;
     const recovery = $('ac2-recovery'); if (recovery) recovery.hidden = false;
     const syncTxt = $('ac2-sync-text');
     const status = $('ac2-buffer');
@@ -11319,6 +11320,7 @@ function ac2UsarMpegts(nv, id, info, url, autoPlay) {
   nv.removeAttribute('src');
   nv.load();
   nv._ac2Mpegts = true;
+  if (recovery) recovery.hidden = true;
   nv._ac2Loading = false;
   nv._ac2Duration = Number(info.durationMs) > 0
     ? Number(info.durationMs) / 1000
