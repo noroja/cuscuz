@@ -4,9 +4,10 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 const root = fileURLToPath(new URL('../../', import.meta.url));
+const mockFetch = fileURLToPath(new URL('./mock-drive-fetch.mjs', import.meta.url));
 const dataDir = path.join(root, 'data');
 const files = ['users.json', 'sessions.json'].map(name => path.join(dataDir, name));
 const originals = new Map(files.map(file => [file, fs.existsSync(file) ? fs.readFileSync(file) : null]));
@@ -22,7 +23,7 @@ fs.writeFileSync(userFile, JSON.stringify(users));
 const PA = 3971, PB = 3972; const base = (p) => `http://127.0.0.1:${p}`;
 const env = { ...process.env, APP_PASSWORD: 'segredo-de-teste', AI_LOG: '0' };
 for (const k of ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'GOOGLE_DRIVE_API_KEY', 'GOOGLE_DRIVE_FOLDER_ID']) delete env[k];
-const sobe = (port, extra) => spawn(process.execPath, ['server.js'], { cwd: root, env: { ...env, PORT: String(port), ...extra }, stdio: 'ignore' });
+const sobe = (port, extra) => spawn(process.execPath, ['--import', pathToFileURL(mockFetch).href, 'server.js'], { cwd: root, env: { ...env, PORT: String(port), ...extra }, stdio: 'ignore' });
 const A = sobe(PA, { MEDIA_ORIGIN: base(PB) }); const B = sobe(PB, { MEDIA_ONLY: '1' });
 const espera = async (p) => { for (let i = 0; i < 60; i++) { try { if ((await fetch(base(p) + '/api/health')).ok) return; } catch (_) {} await new Promise(r => setTimeout(r, 250)); } throw new Error('servidor não subiu: ' + p); };
 const t = []; const teste = async (n, fn) => { try { await fn(); t.push(['OK ', n]); } catch (e) { t.push(['FALHOU', n, e.message]); } };
@@ -49,6 +50,30 @@ try {
   await teste('o ticket emitido pelo app principal é aceito pelo host de mídia (mesmo APP_PASSWORD)', async () => {
     const r = await j(ticketUrl, { method: 'OPTIONS' }); assert.equal(r.status, 204); assert.equal(r.headers.get('access-control-allow-origin'), '*');
     const ruim = await j(base(PB) + '/m/ticket-invalido'); assert.equal(ruim.status, 404);
+  });
+  await teste('Range aberto é entregue em blocos de até 8 MiB', async () => {
+    const ticket = ticketUrl.split('/m/')[1];
+    const first = await j(`${base(PB)}/m/${ticket}`, { headers: { Range: 'bytes=0-' } });
+    assert.equal(first.status, 206);
+    assert.equal(first.headers.get('content-range'), 'bytes 0-8388607/20971520');
+    assert.equal(Number(first.headers.get('content-length')), 8 * 1024 * 1024);
+    const firstBytes = new Uint8Array(await first.arrayBuffer());
+    assert.equal(firstBytes.byteLength, 8 * 1024 * 1024);
+    assert.equal(firstBytes[0], 0);
+    assert.equal(firstBytes[1024 * 1024], (1024 * 1024) % 251);
+    assert.equal(firstBytes[4 * 1024 * 1024], (4 * 1024 * 1024) % 251);
+
+    const next = await j(`${base(PB)}/m/${ticket}`, { headers: { Range: 'bytes=8388608-' } });
+    assert.equal(next.status, 206);
+    assert.equal(next.headers.get('content-range'), 'bytes 8388608-16777215/20971520');
+    assert.equal((await next.arrayBuffer()).byteLength, 8 * 1024 * 1024);
+  });
+  await teste('HEAD também informa o tamanho do bloco limitado', async () => {
+    const ticket = ticketUrl.split('/m/')[1];
+    const head = await j(`${base(PB)}/m/${ticket}`, { method: 'HEAD', headers: { Range: 'bytes=0-' } });
+    assert.equal(head.status, 206);
+    assert.equal(head.headers.get('content-range'), 'bytes 0-8388607/20971520');
+    assert.equal(Number(head.headers.get('content-length')), 8 * 1024 * 1024);
   });
   await teste('host de mídia: só /m/* e /api/health; todo o resto 404', async () => {
     assert.equal((await j(base(PB) + '/api/health')).status, 200);
