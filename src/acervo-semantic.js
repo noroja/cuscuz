@@ -1,31 +1,39 @@
 import { sentenceVectors } from './embedding-utils.js';
-import { indexAcervoSemantic } from './acervo-semantic-indexer.js';
+import { indexAcervoSemantic, semanticEmbeddingConfig, semanticIndexPrefix } from './acervo-semantic-indexer.js';
 
 const BUCKET = 'acervo';
-const META_PATH = 'semantic-index/meta.json';
 const VECTOR_PATH = 'semantic-index/vectors.bin';
 const INDEX_VERSION = 1;
 const INDEX_BRANCH = 'codex/cuscuz-full-update-preview';
+const RUN_ID_PATTERN = /^[a-f0-9-]{36}$/i;
 
 let indexPromise = null;
 let indexLoadedAt = 0;
+let indexCacheKey = '';
 let indexJobPromise = null;
 
 const textoDocumento = item => `title: ${item.titulo || 'none'} | text: ${item.curso || ''}. ${item.path || ''}`.trim();
 
 async function lerIndex(supabase) {
+  const config = semanticEmbeddingConfig();
+  const metaPath = `${semanticIndexPrefix(config)}/meta.json`;
+  if (indexCacheKey !== metaPath) {
+    indexPromise = null;
+    indexLoadedAt = 0;
+    indexCacheKey = metaPath;
+  }
   if (indexPromise) {
     if (!indexLoadedAt || Date.now() - indexLoadedAt < 10 * 60 * 1000) return indexPromise;
     indexLoadedAt = 0;
   }
   indexPromise = (async () => {
-    const metaResult = await supabase.storage.from(BUCKET).download(META_PATH);
+    const metaResult = await supabase.storage.from(BUCKET).download(metaPath);
     if (metaResult.error || !metaResult.data) throw new Error('Índice semântico ausente. Gere com npm run index:acervo-semantico.');
     const meta = JSON.parse(await metaResult.data.text());
     const vectorResult = await supabase.storage.from(BUCKET).download(meta.vectorsPath || VECTOR_PATH);
     if (vectorResult.error || !vectorResult.data) throw new Error('Vetores do índice semântico ausentes. Gere com npm run index:acervo-semantico.');
     const vectors = Buffer.from(await vectorResult.data.arrayBuffer());
-    if (meta.versao !== INDEX_VERSION || meta.modelo !== (process.env.HF_EMBEDDING_MODEL || 'google/embeddinggemma-300m')) {
+    if (meta.versao !== INDEX_VERSION || meta.modelo !== config.indexModel) {
       throw new Error('Índice semântico incompatível. Regenere com npm run index:acervo-semantico.');
     }
     if (!Array.isArray(meta.itens) || !Number.isInteger(meta.dimensoes) || meta.dimensoes < 1 || vectors.length !== meta.itens.length * meta.dimensoes) {
@@ -36,20 +44,22 @@ async function lerIndex(supabase) {
   })().catch(error => { indexPromise = null; indexLoadedAt = 0; throw error; });
   return indexPromise;
 }
-async function embeddingConsulta(query) {
-  const token = process.env.HF_TOKEN || '';
-  const model = process.env.HF_EMBEDDING_MODEL || 'google/embeddinggemma-300m';
-  const url = `https://router.huggingface.co/hf-inference/models/${model}/pipeline/feature-extraction`;
-  const response = await fetch(url, {
+async function embeddingConsulta(query, config) {
+  const cohere = config.provider === 'cohere';
+  const response = await fetch(cohere
+    ? 'https://api.cohere.com/v2/embed'
+    : `https://router.huggingface.co/hf-inference/models/${config.model}/pipeline/feature-extraction`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ inputs: [`task: search result | query: ${query}`], normalize: true }),
+    headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(cohere
+      ? { model: config.model, texts: [query], input_type: 'search_query', embedding_types: ['float'] }
+      : { inputs: [`task: search result | query: ${query}`], normalize: true }),
     signal: AbortSignal.timeout(25000)
   });
   const data = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(`EmbeddingGemma indisponível (${response.status}).`);
-  const vector = sentenceVectors(data, 1)?.[0];
-  if (!Array.isArray(vector) || !vector.length || !vector.every(Number.isFinite)) throw new Error('EmbeddingGemma devolveu um vetor inválido.');
+  if (!response.ok) throw new Error(`${cohere ? 'Cohere Embed' : 'EmbeddingGemma'} indisponível (${response.status}).`);
+  const vector = cohere ? data?.embeddings?.float?.[0] : sentenceVectors(data, 1)?.[0];
+  if (!Array.isArray(vector) || !vector.length || !vector.every(Number.isFinite)) throw new Error('O provedor devolveu um vetor inválido.');
   const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
   return vector.map(value => value / norm);
 }
@@ -97,12 +107,36 @@ export function registerAcervoSemantic(app, { getCatalog, supabase, supabaseServ
   app.get('/api/admin/acervo/indexar-semantico', (req, res) => {
     if (!isIndexPreview()) return res.status(404).send('Not found');
     if (!isAdmin(req)) return res.status(403).send('Apenas administradores podem gerar o índice.');
-    res.set('Cache-Control', 'no-store').type('html').send(`<!doctype html><meta charset="utf-8"><title>Indexar acervo</title>
+    const config = semanticEmbeddingConfig();
+    const providerLabel = config.provider === 'cohere' ? 'Cohere Trial, com limite de chamadas gratuitas' : 'Hugging Face Inference';
+    const html = `<!doctype html><meta charset="utf-8"><title>Indexar acervo</title>
       <main style="font:16px system-ui;max-width:640px;margin:64px auto;padding:24px">
         <h1>Indexar o acervo para busca semântica</h1>
-        <p>Gera embeddings para o catálogo e atualiza o índice privado do Supabase. A versão atual só será substituída depois que o novo índice estiver pronto.</p>
-        <form method="post"><input type="hidden" name="confirm" value="true"><button type="submit">Gerar índice semântico</button></form>
-      </main>`);
+        <p>Provedor: ${providerLabel}. A geração é retomável em etapas. A versão atual só será substituída depois que o novo índice estiver pronto.</p>
+        <button id="start">Gerar índice semântico</button><p id="status" role="status">Aguardando início.</p>
+      </main><script>
+        const button=document.getElementById('start'),status=document.getElementById('status');
+        let runId=null,offset=0,busy=false,complete=false;
+        button.addEventListener('click',async()=>{
+          if(busy||complete)return;
+          if(!runId)runId=crypto.randomUUID();
+          busy=true;button.disabled=true;button.textContent='Gerando…';
+          try{
+            while(!complete){
+              const response=await fetch(location.pathname,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm:true,runId,offset})});
+              const data=await response.json();
+              if(!response.ok||!data.success)throw new Error(data.msg||'Falha ao gerar o índice.');
+              offset=data.nextOffset;
+              complete=Boolean(data.complete);
+              status.textContent=complete?'Índice pronto: '+data.quantidade+' itens, '+data.dimensoes+' dimensões.':'Progresso: '+Math.min(offset,data.quantidade)+' de '+data.quantidade+' itens. A etapa seguinte iniciará automaticamente.';
+              if(!complete)await new Promise(resolve=>setTimeout(resolve,13000));
+            }
+            button.textContent='Índice pronto';
+          }catch(error){status.textContent=error.message+' Clique em Continuar para retomar.';button.textContent='Continuar geração';button.disabled=false;}
+          finally{busy=false;}
+        });
+      </script>`;
+    res.set('Cache-Control', 'no-store').type('html').send(html);
   });
 
   app.post('/api/admin/acervo/indexar-semantico', async (req, res) => {
@@ -113,12 +147,16 @@ export function registerAcervoSemantic(app, { getCatalog, supabase, supabaseServ
       return res.status(403).json({ success: false, msg: 'Apenas administradores podem gerar o índice.' });
     }
     if (String(req.body?.confirm) !== 'true') return res.status(400).json({ success: false, msg: 'Confirme a geração do índice.' });
-    if (!process.env.HF_TOKEN) return res.status(503).json({ success: false, msg: 'Hugging Face não está configurado no Preview.' });
+    const config = semanticEmbeddingConfig();
+    if (!config.token) return res.status(503).json({ success: false, msg: `${config.provider === 'cohere' ? 'Cohere' : 'Hugging Face'} não está configurado no Preview.` });
     if (!supabase || !supabaseServiceRole) return res.status(503).json({ success: false, msg: 'Storage privado não está configurado no servidor.' });
+    if (!RUN_ID_PATTERN.test(String(req.body?.runId || ''))) return res.status(400).json({ success: false, msg: 'Identificador de geração inválido.' });
     if (indexJobPromise) return res.status(409).json({ success: false, msg: 'A geração do índice já está em andamento.' });
 
     try {
       indexJobPromise = indexAcervoSemantic(supabase, {
+        runId: String(req.body.runId),
+        offset: Number(req.body.offset || 0),
         onProgress: progress => console.info(`[Busca semântica] ${progress}`)
       });
       const result = await indexJobPromise;
@@ -134,7 +172,8 @@ export function registerAcervoSemantic(app, { getCatalog, supabase, supabaseServ
   app.post('/api/acervo/busca-semantica', async (req, res) => {
     const query = String(req.body?.query || '').trim().slice(0, 180);
     if (query.length < 3) return res.status(400).json({ success: false, msg: 'Digite ao menos 3 caracteres para buscar.' });
-    if (!process.env.HF_TOKEN) {
+    const config = semanticEmbeddingConfig();
+    if (!config.token) {
       return res.status(503).json({ success: false, msg: 'Busca semântica ainda não configurada no servidor.' });
     }
     if (!supabase || !supabaseServiceRole) {
@@ -147,7 +186,7 @@ export function registerAcervoSemantic(app, { getCatalog, supabase, supabaseServ
       if (generatedAt && index.meta.catalogoGeradoEm && generatedAt !== index.meta.catalogoGeradoEm) {
         return res.status(409).json({ success: false, msg: 'O índice do acervo está desatualizado. Regenere com npm run index:acervo-semantico.' });
       }
-      const queryVector = await embeddingConsulta(query);
+      const queryVector = await embeddingConsulta(query, config);
       const candidatos = buscarVizinhos(index, queryVector, 40);
       let resultados = candidatos;
       let rerankerAtivo = false;

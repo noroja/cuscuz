@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { registerAcervoSemantic } from '../../src/acervo-semantic.js';
+import { indexAcervoSemantic } from '../../src/acervo-semantic-indexer.js';
 
 const saved = {
   hf: process.env.HF_TOKEN,
@@ -31,18 +32,28 @@ try {
   ]);
   const uploaded = new Map();
   let removedFiles = [];
+  const downloaded = [];
   const supabase = {
     storage: {
       from(bucket) {
         assert.equal(bucket, 'acervo');
         return {
           download: async key => {
+            downloaded.push(key);
             if (key === 'acervo-manifest.json') return { data: new Blob([JSON.stringify({ generatedAt: 'catalog-v1', videos: [], materials: [{ id: 'material-2', t: 'Cardiologia', course: 'Medicina', path: 'Clínica/Cardiologia.pdf' }] })]), error: null };
             return { data: blobs.get(key) || null, error: blobs.has(key) ? null : new Error('missing') };
           },
-          upload: async (key, body) => { uploaded.set(key, body); return { data: { path: key }, error: null }; },
+          upload: async (key, body) => {
+            uploaded.set(key, body);
+            blobs.set(key, new Blob([body]));
+            return { data: { path: key }, error: null };
+          },
           list: async () => ({ data: [{ name: 'vectors-old.bin' }], error: null }),
-          remove: async files => { removedFiles = files; return { data: files, error: null }; }
+          remove: async files => {
+            removedFiles.push(...files);
+            for (const file of files) blobs.delete(file);
+            return { data: files, error: null };
+          }
         };
       }
     }
@@ -101,21 +112,106 @@ try {
   await handlers.get('GET /api/admin/acervo/indexar-semantico')({ user: { role: 'admin' } }, pageRes);
   assert.equal(pageRes.statusCode, 200);
   assert.match(pageRes.body, /Gerar índice semântico/);
+  assert.match(pageRes.body, /Continuar geração/);
   const unconfirmedRes = { ...res, statusCode: 200, body: null };
   await handlers.get('POST /api/admin/acervo/indexar-semantico')({ user: { role: 'admin' }, body: {} }, unconfirmedRes);
   assert.equal(unconfirmedRes.statusCode, 400, 'a operação exige confirmação explícita');
   const indexRes = { ...res, statusCode: 200, body: null };
-  await handlers.get('POST /api/admin/acervo/indexar-semantico')({ user: { role: 'admin' }, body: { confirm: 'true' } }, indexRes);
+  const hfRunId = '11111111-1111-4111-8111-111111111111';
+  await handlers.get('POST /api/admin/acervo/indexar-semantico')({ user: { role: 'admin' }, body: { confirm: 'true', runId: hfRunId, offset: 0 } }, indexRes);
   assert.equal(indexRes.statusCode, 200);
   assert.equal(indexRes.body.success, true);
+  assert.equal(indexRes.body.complete, true);
   assert.equal(indexRes.body.quantidade, 1);
   assert.ok(uploaded.has('semantic-index/meta.json'));
   assert.ok([...uploaded.keys()].some(key => key.startsWith('semantic-index/vectors-')));
-  assert.deepEqual(removedFiles, ['semantic-index/vectors-old.bin']);
+  assert.ok(removedFiles.includes('semantic-index/vectors-old.bin'));
+  assert.ok(removedFiles.includes(`semantic-index/.build-${hfRunId}/vectors-00000000.bin`));
   assert.equal(chamadas.length, 2, 'a indexação deve usar Hugging Face uma vez para o item de teste');
 
-  console.log('OK — busca semântica usa similaridade vetorial quando Cohere não está configurada.');
-  console.log('OK — indexação administrativa publica metadados e remove vetores antigos somente no Preview autorizado.');
+  process.env.COHERE_API_KEY = 'cohere_test_token';
+  globalThis.fetch = async (url, options) => {
+    chamadas.push({ url: String(url), options });
+    if (String(url).endsWith('/v2/embed')) {
+      const body = JSON.parse(options.body);
+      if (body.input_type === 'search_query') return new Response(JSON.stringify({ embeddings: { float: [[1, 0]] } }), { status: 200 });
+      return new Response(JSON.stringify({ embeddings: { float: [[1, 0]] } }), { status: 200 });
+    }
+    if (String(url).endsWith('/v2/rerank')) {
+      return new Response(JSON.stringify({ results: [{ index: 0, relevance_score: 0.9 }] }), { status: 200 });
+    }
+    throw new Error(`URL inesperada: ${url}`);
+  };
+  const cohereRunId = '22222222-2222-4222-8222-222222222222';
+  const cohereIndexRes = { ...res, statusCode: 200, body: null };
+  await handlers.get('POST /api/admin/acervo/indexar-semantico')({ user: { role: 'admin' }, body: { confirm: 'true', runId: cohereRunId, offset: 0 } }, cohereIndexRes);
+  assert.equal(cohereIndexRes.statusCode, 200);
+  assert.equal(cohereIndexRes.body.complete, true);
+  assert.ok(uploaded.has('semantic-index/preview-cohere/meta.json'), 'a chave Cohere de Preview deve publicar em prefixo isolado');
+  assert.ok(!uploaded.has('semantic-index/preview-cohere/vectors-00000000.bin'), 'etapas temporárias devem ser removidas após publicar');
+  assert.equal(JSON.parse(await blobs.get('semantic-index/preview-cohere/meta.json').text()).modelo, 'cohere:embed-multilingual-v3.0');
+
+  const cohereSearchRes = { ...res, statusCode: 200, body: null };
+  await handlers.get('POST /api/acervo/busca-semantica')({ body: { query: 'insuficiência cardíaca' } }, cohereSearchRes);
+  assert.equal(cohereSearchRes.statusCode, 200);
+  assert.equal(cohereSearchRes.body.success, true);
+  assert.equal(cohereSearchRes.body.modeloEmbedding, 'cohere:embed-multilingual-v3.0');
+  assert.equal(cohereSearchRes.body.reranker, process.env.COHERE_RERANK_MODEL || 'rerank-v5.0-fast');
+  assert.ok(downloaded.includes('semantic-index/preview-cohere/meta.json'), 'Preview deve ler o índice isolado do Cohere');
+  const cohereEmbeddingCall = chamadas.find(call => call.url.endsWith('/v2/embed') && JSON.parse(call.options.body).input_type === 'search_query');
+  assert.equal(cohereEmbeddingCall.options.headers.Authorization, 'Bearer cohere_test_token');
+
+  const chunkFiles = new Map();
+  const chunkSupabase = {
+    storage: {
+      from(bucket) {
+        assert.equal(bucket, 'acervo');
+        return {
+          download: async key => {
+            if (key === 'acervo-manifest.json') {
+              const materials = Array.from({ length: 769 }, (_, index) => ({ id: `m-${index}`, t: `Material ${index}`, path: 'Clínica/material.pdf' }));
+              return { data: new Blob([JSON.stringify({ generatedAt: 'catalog-large', materials })]), error: null };
+            }
+            return { data: chunkFiles.get(key) || null, error: chunkFiles.has(key) ? null : new Error('missing') };
+          },
+          upload: async (key, body) => {
+            chunkFiles.set(key, new Blob([body]));
+            return { data: { path: key }, error: null };
+          },
+          list: async () => ({ data: [], error: null }),
+          remove: async files => {
+            for (const file of files) chunkFiles.delete(file);
+            return { data: files, error: null };
+          }
+        };
+      }
+    }
+  };
+  const originalSetTimeout = globalThis.setTimeout;
+  const chunkCalls = [];
+  globalThis.setTimeout = callback => { callback(); return 0; };
+  globalThis.fetch = async (url, options) => {
+    chunkCalls.push({ url: String(url), options });
+    const count = JSON.parse(options.body).texts.length;
+    return new Response(JSON.stringify({ embeddings: { float: Array.from({ length: count }, () => [1, 0]) } }), { status: 200 });
+  };
+  try {
+    const chunkRunId = '33333333-3333-4333-8333-333333333333';
+    const firstChunk = await indexAcervoSemantic(chunkSupabase, { runId: chunkRunId, offset: 0 });
+    assert.equal(firstChunk.complete, false);
+    assert.equal(firstChunk.nextOffset, 768, 'cada chamada deve respeitar o limite de oito lotes');
+    assert.equal(chunkCalls.length, 8);
+    const lastChunk = await indexAcervoSemantic(chunkSupabase, { runId: chunkRunId, offset: firstChunk.nextOffset });
+    assert.equal(lastChunk.complete, true);
+    assert.equal(lastChunk.quantidade, 769);
+    assert.equal(chunkCalls.length, 9);
+    assert.ok(chunkFiles.has('semantic-index/preview-cohere/meta.json'));
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+
+  console.log('OK — busca semântica usa Hugging Face ou Cohere conforme o modelo do índice.');
+  console.log('OK — indexação Cohere fica isolada no Preview e retoma lotes sem duplicá-los.');
 } finally {
   for (const [key, value] of Object.entries({ HF_TOKEN: saved.hf, COHERE_API_KEY: saved.cohere, HF_EMBEDDING_MODEL: saved.model, VERCEL_ENV: saved.vercelEnv, VERCEL_GIT_COMMIT_REF: saved.vercelRef })) {
     if (value === undefined) delete process.env[key];
