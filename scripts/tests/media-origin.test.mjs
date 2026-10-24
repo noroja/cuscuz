@@ -2,6 +2,7 @@
 // Sobe 2 processos reais do server.js (sem Google Drive: o que se verifica é roteamento, não o conteúdo).
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -21,7 +22,19 @@ const passwordHash = crypto.scryptSync(pass, salt, 64, { N: 16384, r: 8, p: 1 })
 users.push({ username: testUsername, displayName: 'Media Test', passwordHash, salt: salt.toString('hex'), role: 'user', settings: {} });
 fs.writeFileSync(userFile, JSON.stringify(users));
 const PA = 3971, PB = 3972; const base = (p) => `http://127.0.0.1:${p}`;
-const env = { ...process.env, APP_PASSWORD: 'segredo-de-teste', AI_LOG: '0' };
+const mediaStats = new Map();
+const statsServer = http.createServer((req, res) => {
+  let body = '';
+  req.setEncoding('utf8');
+  req.on('data', chunk => { body += chunk; });
+  req.on('end', () => {
+    try { const item = JSON.parse(body); mediaStats.set(item.fileId, item); } catch (_) {}
+    res.writeHead(204).end();
+  });
+});
+await new Promise(resolve => statsServer.listen(0, '127.0.0.1', resolve));
+const statsUrl = `http://127.0.0.1:${statsServer.address().port}/stats`;
+const env = { ...process.env, APP_PASSWORD: 'segredo-de-teste', AI_LOG: '0', MEDIA_TEST_STATS_URL: statsUrl };
 for (const k of ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'GOOGLE_DRIVE_API_KEY', 'GOOGLE_DRIVE_FOLDER_ID']) delete env[k];
 const sobe = (port, extra) => spawn(process.execPath, ['--import', pathToFileURL(mockFetch).href, 'server.js'], { cwd: root, env: { ...env, PORT: String(port), ...extra }, stdio: 'ignore' });
 const A = sobe(PA, { MEDIA_ORIGIN: base(PB) }); const B = sobe(PB, { MEDIA_ONLY: '1' });
@@ -51,29 +64,77 @@ try {
     const r = await j(ticketUrl, { method: 'OPTIONS' }); assert.equal(r.status, 204); assert.equal(r.headers.get('access-control-allow-origin'), '*');
     const ruim = await j(base(PB) + '/m/ticket-invalido'); assert.equal(ruim.status, 404);
   });
-  await teste('Range aberto é entregue em blocos de até 8 MiB', async () => {
+  await teste('Range aberto mantém o restante do stream e retoma após queda do Drive', async () => {
     const ticket = ticketUrl.split('/m/')[1];
     const first = await j(`${base(PB)}/m/${ticket}`, { headers: { Range: 'bytes=0-' } });
     assert.equal(first.status, 206);
-    assert.equal(first.headers.get('content-range'), 'bytes 0-8388607/20971520');
-    assert.equal(Number(first.headers.get('content-length')), 8 * 1024 * 1024);
+    assert.equal(first.headers.get('content-range'), 'bytes 0-20971519/20971520');
+    assert.equal(Number(first.headers.get('content-length')), 20 * 1024 * 1024);
     const firstBytes = new Uint8Array(await first.arrayBuffer());
-    assert.equal(firstBytes.byteLength, 8 * 1024 * 1024);
+    assert.equal(firstBytes.byteLength, 20 * 1024 * 1024);
     assert.equal(firstBytes[0], 0);
     assert.equal(firstBytes[1024 * 1024], (1024 * 1024) % 251);
     assert.equal(firstBytes[4 * 1024 * 1024], (4 * 1024 * 1024) % 251);
 
     const next = await j(`${base(PB)}/m/${ticket}`, { headers: { Range: 'bytes=8388608-' } });
     assert.equal(next.status, 206);
-    assert.equal(next.headers.get('content-range'), 'bytes 8388608-16777215/20971520');
-    assert.equal((await next.arrayBuffer()).byteLength, 8 * 1024 * 1024);
+    assert.equal(next.headers.get('content-range'), 'bytes 8388608-20971519/20971520');
+    assert.equal((await next.arrayBuffer()).byteLength, 12 * 1024 * 1024);
   });
-  await teste('HEAD também informa o tamanho do bloco limitado', async () => {
+  await teste('intervalo fechado acima de 8 MiB é limitado e continua cancelável', async () => {
+    const ticket = ticketUrl.split('/m/')[1];
+    const r = await j(`${base(PB)}/m/${ticket}`, { headers: { Range: 'bytes=0-20000000' } });
+    assert.equal(r.status, 206);
+    assert.equal(r.headers.get('content-range'), 'bytes 0-8388607/20971520');
+    assert.equal(Number(r.headers.get('content-length')), 8 * 1024 * 1024);
+    await r.arrayBuffer();
+  });
+  await teste('Range múltiplo/malformado retorna 416 sem iniciar o download', async () => {
+    const ticket = ticketUrl.split('/m/')[1];
+    const r = await j(`${base(PB)}/m/${ticket}`, { headers: { Range: 'bytes=0-10,20-30' } });
+    assert.equal(r.status, 416);
+    assert.equal(r.headers.get('content-range'), 'bytes */*');
+  });
+  await teste('Range de sufixo resolve o tamanho e entrega apenas os últimos bytes', async () => {
+    const ticket = ticketUrl.split('/m/')[1];
+    const r = await j(`${base(PB)}/m/${ticket}`, { headers: { Range: 'bytes=-1000' } });
+    assert.equal(r.status, 206);
+    assert.equal(r.headers.get('content-range'), 'bytes 20970520-20971519/20971520');
+    assert.equal((await r.arrayBuffer()).byteLength, 1000);
+  });
+  await teste('sem Range, cancelar uma fixture de 5 GiB interrompe a origem com poucos MiB lidos', async () => {
+    const authResponse = await j(`${base(PA)}/api/media/ticket`, {
+      method: 'POST',
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'LargeFileFixture012345', kind: 'v' })
+    });
+    assert.equal(authResponse.status, 200);
+    const data = await authResponse.json();
+    const r = await j(`${base(PB)}${data.url}`);
+    assert.equal(r.status, 200);
+    assert.equal(Number(r.headers.get('content-length')), 5 * 1024 * 1024 * 1024);
+    const reader = r.body.getReader();
+    let received = 0;
+    while (received < 512 * 1024) {
+      const item = await reader.read();
+      assert.equal(item.done, false);
+      received += item.value.byteLength;
+    }
+    await reader.cancel();
+    for (let i = 0; i < 100 && !mediaStats.has('LargeFileFixture012345'); i++) {
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    const stats = mediaStats.get('LargeFileFixture012345');
+    assert.ok(stats?.aborted, 'o cancelamento do navegador precisa abortar a leitura do Drive');
+    assert.ok(stats.producedBytes < 32 * 1024 * 1024, `lidos ${stats.producedBytes} bytes de 5 GiB`);
+    console.log(`  Cancelamento da fixture 5 GiB após ${stats.producedBytes.toLocaleString('pt-BR')} bytes gerados na origem.`);
+  });
+  await teste('HEAD Range informa o tamanho total e o intervalo solicitado', async () => {
     const ticket = ticketUrl.split('/m/')[1];
     const head = await j(`${base(PB)}/m/${ticket}`, { method: 'HEAD', headers: { Range: 'bytes=0-' } });
     assert.equal(head.status, 206);
-    assert.equal(head.headers.get('content-range'), 'bytes 0-8388607/20971520');
-    assert.equal(Number(head.headers.get('content-length')), 8 * 1024 * 1024);
+    assert.equal(head.headers.get('content-range'), 'bytes 0-20971519/20971520');
+    assert.equal(Number(head.headers.get('content-length')), 20 * 1024 * 1024);
   });
   await teste('host de mídia: só /m/* e /api/health; todo o resto 404', async () => {
     assert.equal((await j(base(PB) + '/api/health')).status, 200);
@@ -87,6 +148,7 @@ try {
 } finally {
   A.kill(); B.kill();
   await Promise.all([A, B].map(child => new Promise(resolve => { if (child.exitCode !== null) resolve(); else child.once('exit', resolve); })));
+  await new Promise(resolve => statsServer.close(resolve));
   for (const [file, content] of originals) {
     if (content === null) fs.rmSync(file, { force: true });
     else fs.writeFileSync(file, content);

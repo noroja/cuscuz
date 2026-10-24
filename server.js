@@ -31,6 +31,7 @@ import { IS_SERVERLESS, TMP_DIR, writableDir, safeReadJson, safeWriteJson } from
 import { getSystemConfig, setSystemConfig, systemConfigHealth } from './src/system-config.js';
 import { getFlashcardSyncStatus, readFlashcardManifest, readFlashcardPage, readFlashcardMedia, startFlashcardSyncScheduler, syncDriveFlashcards } from './src/drive-flashcards.js';
 import { acceptDriveNotification, queueDriveChange, renewDrivePushChannel, startDrivePushRenewal } from './src/drive-push.js';
+import { detectMediaContainer } from './src/media-format.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -483,7 +484,7 @@ function initSnapshotIndex() {
     console.warn('⚠️ Falha ao inicializar snapshot local do Drive:', err.message);
   }
 }
-inicializarCatalogoNuvem().then(() => initSnapshotIndex());
+const catalogoBootPromise = inicializarCatalogoNuvem().then(() => initSnapshotIndex());
 
 function getFilesFromSnapshot(folderId) {
   if (!snapshotIndex) return null;
@@ -790,26 +791,37 @@ app.get('/api/drive/video-info', async (req, res) => {
   const ids = String(req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 6);
   if (!ids.length) return res.status(400).json({ error: 'Informe ids separados por vírgula' });
   const out = {};
-  await Promise.all(ids.map(id => new Promise(resolve => {
-    if (driveInfoCache.has(id)) { out[id] = driveInfoCache.get(id); return resolve(); }
-    driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=size,videoMediaMetadata,mimeType&supportsAllDrives=true`)
-      .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
-      .then(j => {
-        const sizeB = parseInt(j.size || '0', 10);
-        const ms = parseInt((j.videoMediaMetadata && j.videoMediaMetadata.durationMillis) || '0', 10);
-        const info = {
-          mimeType: j.mimeType || '',
-          sizeMB: sizeB ? Math.round(sizeB / 1048576 * 10) / 10 : 0,
-          durLabel: ms ? (Math.floor(ms / 60000) + ':' + String(Math.floor(ms / 1000) % 60).padStart(2, '0')) : '',
-          res: j.videoMediaMetadata ? (j.videoMediaMetadata.height || 0) + 'p' : ''
+  await Promise.all(ids.map(async (id, index) => {
+    try {
+      let info = driveInfoCache.get(id) || null;
+      if (!info) {
+        const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=size,videoMediaMetadata,mimeType&supportsAllDrives=true`);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const file = await response.json();
+        const sizeBytes = parseInt(file.size || '0', 10);
+        const durationMs = parseInt((file.videoMediaMetadata && file.videoMediaMetadata.durationMillis) || '0', 10);
+        info = {
+          mimeType: file.mimeType || '',
+          sizeBytes,
+          sizeMB: sizeBytes ? Math.round(sizeBytes / 1048576 * 10) / 10 : 0,
+          durationMs,
+          durLabel: durationMs ? (Math.floor(durationMs / 60000) + ':' + String(Math.floor(durationMs / 1000) % 60).padStart(2, '0')) : '',
+          res: file.videoMediaMetadata ? (file.videoMediaMetadata.height || 0) + 'p' : ''
         };
-        driveInfoCache.set(id, info);
-        saveDriveInfoCache();
-        out[id] = info;
-      })
-      .catch(err => { out[id] = { erro: String(err.message || err).slice(0, 60) }; })
-      .finally(resolve);
-  })));
+      }
+      // O primeiro ID é a aula aberta. Confere os bytes reais porque o MIME do Drive
+      // pode dizer MP4 mesmo quando o conteúdo é MPEG-TS.
+      if (index === 0 && !info.container) {
+        const detected = await sniffDriveMediaContainer(id);
+        if (detected) info = { ...info, container: detected };
+      }
+      driveInfoCache.set(id, info);
+      out[id] = info;
+    } catch (err) {
+      out[id] = { ...(driveInfoCache.get(id) || {}), erro: String(err.message || err).slice(0, 60) };
+    }
+  }));
+  saveDriveInfoCache();
   res.json({ info: out });
 });
 
@@ -858,6 +870,33 @@ async function driveOpen(fileId, start, end, method, client) {
   }
   if (lastErr) console.warn(`[Stream] ${fileId}: ${lastErr.message}`);
   return null;
+}
+
+async function sniffDriveMediaContainer(fileId) {
+  const client = new AbortController();
+  let opened = null, reader = null;
+  try {
+    opened = await driveOpen(fileId, 0, 376, 'GET', client);
+    if (!opened || !opened.resp.body) return null;
+    reader = opened.resp.body.getReader();
+    const chunks = [];
+    let size = 0;
+    while (size < 377) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+      chunks.push(chunk);
+      size += chunk.length;
+    }
+    return detectMediaContainer(Buffer.concat(chunks, size).subarray(0, 377));
+  } catch (err) {
+    console.warn(`[VideoInfo] Não foi possível identificar o contêiner de ${fileId}: ${err.message}`);
+    return null;
+  } finally {
+    if (reader) { try { await reader.cancel(); } catch (_) {} }
+    client.abort();
+    if (opened && opened.ac) { try { opened.ac.abort(); } catch (_) {} }
+  }
 }
 
 
@@ -917,6 +956,27 @@ app.all('/m/:ticket', (req, res) => {
 
 // Streaming de vídeo com HTTP Range. Se a conexão com o Drive cair no meio, retoma sozinho do byte onde parou.
 const MAX_MEDIA_RANGE_BYTES = 8 * 1024 * 1024;
+const MAX_MEDIA_QUEUE_BYTES = 2 * 1024 * 1024;
+const MAX_MEDIA_QUEUE_CHUNK_BYTES = 256 * 1024;
+
+function parseSingleMediaRange(header) {
+  if (header == null) return { type: 'none' };
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(String(header).trim());
+  if (!match || (!match[1] && !match[2])) return { type: 'invalid' };
+  if (!match[1]) {
+    const suffixLength = Number(match[2]);
+    return Number.isSafeInteger(suffixLength) && suffixLength > 0
+      ? { type: 'suffix', suffixLength }
+      : { type: 'invalid' };
+  }
+  const start = Number(match[1]);
+  const end = match[2] ? Number(match[2]) : null;
+  if (!Number.isSafeInteger(start) || start < 0 || (end != null && (!Number.isSafeInteger(end) || end < start))) {
+    return { type: 'invalid' };
+  }
+  return { type: 'range', start, end };
+}
+
 async function driveStreamHandler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -926,21 +986,43 @@ async function driveStreamHandler(req, res) {
   }
   const fileId = cleanDriveId(req.params.id);
   if (!fileId) return res.status(400).send('ID de arquivo inválido');
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.setHeader('Allow', 'GET, HEAD, OPTIONS');
+    return res.status(405).end();
+  }
 
+  const parsedRange = parseSingleMediaRange(req.headers.range);
+  if (parsedRange.type === 'invalid') {
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Range', 'bytes */*');
+    return res.status(416).end();
+  }
   const client = new AbortController();
   res.on('close', () => client.abort());
-  const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range || '');
-  const hasRange = !!(m && m[1] !== '');
-  const reqStart = hasRange ? parseInt(m[1], 10) : 0;
-  const requestedEnd = hasRange && m[2] !== '' ? Number(m[2]) : null;
-  if (hasRange && (!Number.isSafeInteger(reqStart) || reqStart < 0 || (requestedEnd != null && (!Number.isSafeInteger(requestedEnd) || requestedEnd < reqStart)))) {
-    return res.status(416).setHeader('Content-Range', 'bytes */*').end();
-  }
-  // Alguns navegadores enviam bytes=início- para pedir todo o restante do arquivo.
-  // Limitar cada resposta permite que o player solicite o próximo bloco sob demanda.
-  const maxRangeEnd = hasRange ? reqStart + Math.min(MAX_MEDIA_RANGE_BYTES - 1, Number.MAX_SAFE_INTEGER - reqStart) : null;
-  const reqEnd = hasRange ? Math.min(requestedEnd ?? maxRangeEnd, maxRangeEnd) : null;
   const isHead = req.method === 'HEAD';
+  const hasRange = parsedRange.type !== 'none';
+  let reqStart = parsedRange.type === 'range' ? parsedRange.start : 0;
+  let requestedEnd = parsedRange.type === 'range' ? parsedRange.end : null;
+  if (parsedRange.type === 'suffix') {
+    const metadata = await driveOpen(fileId, null, null, 'HEAD', client);
+    if (!metadata) return res.status(502).json({ error: 'Não foi possível consultar o tamanho do vídeo no Google Drive.' });
+    const contentRange = /^bytes \d+-\d+\/(\d+)$/.exec(metadata.resp.headers.get('content-range') || '');
+    const totalBytes = Number(metadata.resp.headers.get('content-length')) || (contentRange ? Number(contentRange[1]) : 0);
+    try { metadata.ac.abort(); } catch (_) {}
+    if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0) {
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Content-Range', 'bytes */*');
+      return res.status(416).end();
+    }
+    reqStart = Math.max(0, totalBytes - parsedRange.suffixLength);
+    requestedEnd = totalBytes - 1;
+  }
+  // Só limitamos intervalos fechados muito grandes. Intervalos abertos precisam continuar
+  // até o cliente pausar/cancelar; MPEG-TS usa isso para retomar sem travar após um bloco.
+  const maxRangeEnd = reqStart + Math.min(MAX_MEDIA_RANGE_BYTES - 1, Number.MAX_SAFE_INTEGER - reqStart);
+  const reqEnd = parsedRange.type === 'range' && requestedEnd != null
+    ? Math.min(requestedEnd, maxRangeEnd)
+    : requestedEnd;
 
   let up = await driveOpen(fileId, hasRange ? reqStart : null, hasRange ? reqEnd : null, isHead ? 'HEAD' : 'GET', client);
   if (!up) return res.status(502).json({ error: 'Não foi possível conectar ao Google Drive para reproduzir este vídeo.' });
@@ -984,10 +1066,10 @@ async function driveStreamHandler(req, res) {
   res.setHeader('Content-Length', outEnd - outStart + 1);
   if (isHead) { try { up.ac.abort(); } catch (_) {} return res.end(); }
 
-  // Read-ahead: lê do Drive numa fila (até ~8 MB) enquanto o cliente consome, suavizando as oscilações de velocidade
+  // Read-ahead limitado: a fila não cresce com o tamanho total do vídeo e desacelera o Drive
+  // quando o navegador não consome no mesmo ritmo.
   res.setHeader('Cache-Control', 'private, max-age=3600');
   if (res.flushHeaders) res.flushHeaders();
-  const MAX_Q = 8 * 1024 * 1024; // reduzido de 24MB para 8MB
   let pos = outStart; // próximo byte absoluto a enviar
   let tentativas = 0;
   const fila = []; let filaBytes = 0, fim = false, falha = null, aviso = null;
@@ -1001,7 +1083,7 @@ async function driveStreamHandler(req, res) {
         try {
           reader = up.resp.body.getReader();
           for (;;) {
-            while (filaBytes >= MAX_Q && !client.signal.aborted) await espera();
+            while (filaBytes >= MAX_MEDIA_QUEUE_BYTES && !client.signal.aborted) await espera();
             if (client.signal.aborted) break;
             const { done, value } = await reader.read();
             if (done) break;
@@ -1010,7 +1092,15 @@ async function driveStreamHandler(req, res) {
             if (upAbs <= lido) continue;
             if (chunkStart < lido) buf = buf.subarray(lido - chunkStart);
             if (lido + buf.length - 1 > outEnd) buf = buf.subarray(0, outEnd - lido + 1);
-            lido += buf.length; fila.push(buf); filaBytes += buf.length; acorda();
+            while (buf.length && !client.signal.aborted) {
+              while (filaBytes >= MAX_MEDIA_QUEUE_BYTES && !client.signal.aborted) await espera();
+              if (client.signal.aborted) break;
+              const part = buf.subarray(0, MAX_MEDIA_QUEUE_CHUNK_BYTES);
+              buf = buf.subarray(part.length);
+              lido += part.length;
+              fila.push(part); filaBytes += part.length; acorda();
+            }
+            if (client.signal.aborted) break;
             if (lido > outEnd) break;
           }
         } catch (err) {
@@ -4085,6 +4175,8 @@ app.get('/acervo-manifest.json', async (req, res, next) => {
   if (!session) return res.status(401).json({ error: 'Faça login.' });
   res.setHeader('Cache-Control', 'private, no-cache');
   try {
+    // O catálogo remoto é carregado durante o cold start. Não marque um vazio temporário como pronto.
+    await catalogoBootPromise;
     const ex = lerExtra();
     const sig = [ex.generatedAt, (ex.videos || []).length, (ex.materials || []).length, process.env.GOOGLE_DRIVE_FOLDER_ID || ''].join('|');
     if (!_manifCache || _manifCache.sig !== sig) {
