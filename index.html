@@ -10961,6 +10961,13 @@ function ac2InitNativeVideoListeners() {
   });
   nv.addEventListener('error', () => {
     if (nv.getAttribute('data-vid') !== AC2.atualId) return;
+    // Modo direto (DRIVE_DIRECT): se o Google recusar, repete uma vez pelo proxy do app.
+    if (nv.src && nv.src.indexOf('/m/') > -1 && nv.src.indexOf('via=app') < 0 && nv._viaAppId !== AC2.atualId) {
+      nv._viaAppId = AC2.atualId; const t0 = nv.currentTime || 0;
+      nv.src = nv.src + (nv.src.indexOf('?') < 0 ? '?' : '&') + 'via=app'; nv.load();
+      nv.addEventListener('loadedmetadata', () => { try { if (t0) nv.currentTime = t0; } catch (_) {} }, { once: true });
+      return;
+    }
     const recovery = $('ac2-recovery'); if (recovery) recovery.hidden = false;
     const syncTxt = $('ac2-sync-text');
     const status = $('ac2-buffer');
