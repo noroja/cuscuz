@@ -17,10 +17,11 @@ const textoDocumento = item => `title: ${item.titulo || 'none'} | text: ${item.c
 async function lerIndex(supabase) {
   const config = semanticEmbeddingConfig();
   const metaPath = `${semanticIndexPrefix(config)}/meta.json`;
-  if (indexCacheKey !== metaPath) {
+  const cacheKey = `${metaPath}:${config.indexModel}`;
+  if (indexCacheKey !== cacheKey) {
     indexPromise = null;
     indexLoadedAt = 0;
-    indexCacheKey = metaPath;
+    indexCacheKey = cacheKey;
   }
   if (indexPromise) {
     if (!indexLoadedAt || Date.now() - indexLoadedAt < 10 * 60 * 1000) return indexPromise;
@@ -45,20 +46,27 @@ async function lerIndex(supabase) {
   return indexPromise;
 }
 async function embeddingConsulta(query, config) {
+  const google = config.provider === 'google';
   const cohere = config.provider === 'cohere';
   const response = await fetch(cohere
     ? 'https://api.cohere.com/v2/embed'
-    : `https://router.huggingface.co/hf-inference/models/${config.model}/pipeline/feature-extraction`, {
+    : google
+      ? `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:batchEmbedContents`
+      : `https://router.huggingface.co/hf-inference/models/${config.model}/pipeline/feature-extraction`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' },
+    headers: google
+      ? { 'x-goog-api-key': config.token, 'Content-Type': 'application/json' }
+      : { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(cohere
       ? { model: config.model, texts: [query], input_type: 'search_query', embedding_types: ['float'] }
-      : { inputs: [`task: search result | query: ${query}`], normalize: true }),
+      : google
+        ? { requests: [{ model: `models/${config.model}`, content: { parts: [{ text: `task: search result | query: ${query}` }] }, embedContentConfig: { outputDimensionality: 768 } }] }
+        : { inputs: [`task: search result | query: ${query}`], normalize: true }),
     signal: AbortSignal.timeout(25000)
   });
   const data = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(`${cohere ? 'Cohere Embed' : 'EmbeddingGemma'} indisponível (${response.status}).`);
-  const vector = cohere ? data?.embeddings?.float?.[0] : sentenceVectors(data, 1)?.[0];
+  if (!response.ok) throw new Error(`${cohere ? 'Cohere Embed' : google ? 'Gemini Embedding' : 'EmbeddingGemma'} indisponível (${response.status}).`);
+  const vector = cohere ? data?.embeddings?.float?.[0] : google ? data?.embeddings?.[0]?.values : sentenceVectors(data, 1)?.[0];
   if (!Array.isArray(vector) || !vector.length || !vector.every(Number.isFinite)) throw new Error('O provedor devolveu um vetor inválido.');
   const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
   return vector.map(value => value / norm);
@@ -108,7 +116,10 @@ export function registerAcervoSemantic(app, { getCatalog, supabase, supabaseServ
     if (!isIndexPreview()) return res.status(404).send('Not found');
     if (!isAdmin(req)) return res.status(403).send('Apenas administradores podem gerar o índice.');
     const config = semanticEmbeddingConfig();
-    const providerLabel = config.provider === 'cohere' ? 'Cohere Trial, com limite de chamadas gratuitas' : 'Hugging Face Inference';
+    const providerLabel = config.provider === 'google'
+      ? 'Gemini Embedding 2, nível gratuito'
+      : config.provider === 'cohere' ? 'Cohere Trial, com limite de chamadas gratuitas' : 'Hugging Face Inference';
+    const interStageDelay = config.provider === 'google' ? 12000 : config.provider === 'cohere' ? 13000 : 0;
     const html = `<!doctype html><meta charset="utf-8"><title>Indexar acervo</title>
       <main style="font:16px system-ui;max-width:640px;margin:64px auto;padding:24px">
         <h1>Indexar o acervo para busca semântica</h1>
@@ -129,7 +140,7 @@ export function registerAcervoSemantic(app, { getCatalog, supabase, supabaseServ
               offset=data.nextOffset;
               complete=Boolean(data.complete);
               status.textContent=complete?'Índice pronto: '+data.quantidade+' itens, '+data.dimensoes+' dimensões.':'Progresso: '+Math.min(offset,data.quantidade)+' de '+data.quantidade+' itens. A etapa seguinte iniciará automaticamente.';
-              if(!complete)await new Promise(resolve=>setTimeout(resolve,13000));
+              if(!complete&&${interStageDelay})await new Promise(resolve=>setTimeout(resolve,Math.max(${interStageDelay},Number(data.nextDelayMs)||0)));
             }
             button.textContent='Índice pronto';
           }catch(error){status.textContent=error.message+' Clique em Continuar para retomar.';button.textContent='Continuar geração';button.disabled=false;}

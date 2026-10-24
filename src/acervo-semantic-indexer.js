@@ -8,8 +8,14 @@ const BUCKET = 'acervo';
 const BATCH_SIZE = 96;
 const MAX_BATCHES_PER_REQUEST = 8;
 const COHERE_REQUEST_INTERVAL_MS = 13_000;
+const GOOGLE_REQUEST_INTERVAL_MS = 12_000;
 
 export function semanticEmbeddingConfig() {
+  const googleToken = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
+  if (googleToken) {
+    const model = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2';
+    return { provider: 'google', model, indexModel: `google:${model}`, token: googleToken };
+  }
   if (process.env.COHERE_API_KEY) {
     const model = process.env.COHERE_EMBEDDING_MODEL || 'embed-multilingual-v3.0';
     return { provider: 'cohere', model, indexModel: `cohere:${model}`, token: process.env.COHERE_API_KEY };
@@ -80,6 +86,34 @@ async function embedCohere(texts, config, limiter) {
   const vectors = data?.embeddings?.float;
   if (!Array.isArray(vectors) || vectors.length !== texts.length || !vectors.every(vector => Array.isArray(vector) && vector.length > 0 && vector.every(Number.isFinite))) {
     throw new Error('Cohere devolveu vetores em formato ou dimensão inesperados.');
+  }
+  return vectors;
+}
+
+async function embedGoogle(texts, config, limiter) {
+  const wait = limiter.nextRequestAt - Date.now();
+  if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+  const startedAt = Date.now();
+  limiter.nextRequestAt = startedAt + GOOGLE_REQUEST_INTERVAL_MS;
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.model}:batchEmbedContents`, {
+    method: 'POST',
+    headers: { 'x-goog-api-key': config.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requests: texts.map(text => ({
+        model: `models/${config.model}`,
+        content: { parts: [{ text }] },
+        embedContentConfig: { outputDimensionality: 768 }
+      }))
+    }),
+    signal: AbortSignal.timeout(90000)
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(`Gemini Embedding indisponível (${response.status}).`);
+  const promptTokens = Number(data?.usageMetadata?.promptTokenCount) || 0;
+  if (promptTokens) limiter.nextRequestAt = startedAt + Math.max(GOOGLE_REQUEST_INTERVAL_MS, Math.ceil(promptTokens * 60_000 / 30_000 * 1.15));
+  const vectors = data?.embeddings?.map(embedding => embedding?.values);
+  if (!Array.isArray(vectors) || vectors.length !== texts.length || !vectors.every(vector => Array.isArray(vector) && vector.length > 0 && vector.every(Number.isFinite))) {
+    throw new Error('Gemini Embedding devolveu vetores em formato ou dimensão inesperados.');
   }
   return vectors;
 }
@@ -167,9 +201,11 @@ export async function indexAcervoSemantic(supabase, {
   for (let start = offset; start < end; start += BATCH_SIZE) {
     const batch = items.slice(start, Math.min(start + BATCH_SIZE, end));
     const docs = batch.map(item => `title: ${item.titulo || 'none'} | text: ${item.curso}. ${item.path}`);
-    const embedded = config.provider === 'cohere'
-      ? await embedCohere(docs, config, limiter)
-      : await embedHuggingFace(docs, config);
+    const embedded = config.provider === 'google'
+      ? await embedGoogle(docs, config, limiter)
+      : config.provider === 'cohere'
+        ? await embedCohere(docs, config, limiter)
+        : await embedHuggingFace(docs, config);
     vectors.push(...embedded);
     const processed = Math.min(items.length, start + batch.length);
     onProgress(`Vetores processados: ${processed}/${items.length}`);
@@ -192,7 +228,7 @@ export async function indexAcervoSemantic(supabase, {
   }
 
   if (end < items.length) {
-    return { complete: false, runId, nextOffset: end, quantidade: items.length };
+    return { complete: false, runId, nextOffset: end, quantidade: items.length, nextDelayMs: Math.max(0, limiter.nextRequestAt - Date.now()) };
   }
 
   if (state.nextOffset !== items.length || !state.parts.length) throw new Error('As etapas de vetores não cobrem o catálogo completo.');
