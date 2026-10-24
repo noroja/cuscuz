@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { registerAcervoSemantic } from '../../src/acervo-semantic.js';
-import { indexAcervoSemantic } from '../../src/acervo-semantic-indexer.js';
+import { indexAcervoSemantic, semanticEmbeddingConfig } from '../../src/acervo-semantic-indexer.js';
 
 const saved = {
   hf: process.env.HF_TOKEN,
@@ -167,6 +167,8 @@ try {
   assert.equal(cohereEmbeddingCall.options.headers.Authorization, 'Bearer cohere_test_token');
 
   process.env.GEMINI_API_KEY = 'google_test_token';
+  assert.equal(semanticEmbeddingConfig().provider, 'cohere', 'Preview deve priorizar a chave Cohere Trial isolada');
+  delete process.env.COHERE_API_KEY;
   globalThis.fetch = async (url, options) => {
     chamadas.push({ url: String(url), options });
     if (String(url).includes('generativelanguage.googleapis.com')) {
@@ -202,6 +204,7 @@ try {
   assert.equal(JSON.parse(googleQueryCall.options.body).requests[0].embedContentConfig.outputDimensionality, 768);
 
   delete process.env.GEMINI_API_KEY;
+  process.env.COHERE_API_KEY = 'cohere_test_token';
   const chunkFiles = new Map();
   const chunkSupabase = {
     storage: {

@@ -12,6 +12,10 @@ const GOOGLE_REQUEST_INTERVAL_MS = 1_000;
 const GOOGLE_TOKENS_PER_MINUTE = 30_000;
 
 export function semanticEmbeddingConfig() {
+  if (process.env.VERCEL_ENV === 'preview' && process.env.COHERE_API_KEY) {
+    const model = process.env.COHERE_EMBEDDING_MODEL || 'embed-multilingual-v3.0';
+    return { provider: 'cohere', model, indexModel: `cohere:${model}`, token: process.env.COHERE_API_KEY };
+  }
   const googleToken = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
   if (googleToken) {
     const model = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2';
