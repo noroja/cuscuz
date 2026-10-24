@@ -3,6 +3,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import * as cheerio from 'cheerio';
 const html=fs.readFileSync(new URL('../../index.html',import.meta.url),'utf8');
+const server=fs.readFileSync(new URL('../../server.js',import.meta.url),'utf8');
 const dom=cheerio.load(html);
 // Parse every executable inline script to catch malformed generated markup edits.
 dom('script:not([src])').each((_i,el)=>{if(!dom(el).attr('type')||dom(el).attr('type')==='text/javascript')new vm.Script(dom(el).html());});
@@ -16,6 +17,8 @@ assert.match(html,/info\.container === 'mpegts'/,'Detectar o formato real antes 
 assert.match(html,/lazyLoad:\s*false/,'Manter o stream progressivo ativo para arquivos TS estáticos');
 assert.match(html,/function ac2MpegtsCanSeek\(/,'Restringir a busca ao trecho já carregado no player MPEG-TS');
 assert.match(html,/nv\._ac2Mpegts = true;\s*if \(recovery\) recovery\.hidden = true;/,'Limpar mensagens antigas de erro ao iniciar o player MPEG-TS');
+assert.match(server,/const catalogoBootPromise = inicializarCatalogoNuvem\(\)\.then\(\(\) => initSnapshotIndex\(\)\);/,'Manter a promessa de carga do catálogo disponível durante o cold start');
+assert.match(server,/app\.get\('\/acervo-manifest\.json',[\s\S]*?await catalogoBootPromise;[\s\S]*?const ex = lerExtra\(\);/,'Esperar o catálogo inicial antes de responder o manifesto do acervo');
 const helper=html.slice(html.indexOf('function ac2StatusMensagem('),html.indexOf('/* Atualização por evento do Drive;'));
 let calls=0,finish;
 const ctx={Intl,ac2Atualizar:()=>{calls++;return new Promise(resolve=>{finish=resolve})}};

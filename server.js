@@ -483,7 +483,7 @@ function initSnapshotIndex() {
     console.warn('⚠️ Falha ao inicializar snapshot local do Drive:', err.message);
   }
 }
-inicializarCatalogoNuvem().then(() => initSnapshotIndex());
+const catalogoBootPromise = inicializarCatalogoNuvem().then(() => initSnapshotIndex());
 
 function getFilesFromSnapshot(folderId) {
   if (!snapshotIndex) return null;
@@ -4077,6 +4077,8 @@ app.get('/acervo-manifest.json', async (req, res, next) => {
   if (!session) return res.status(401).json({ error: 'Faça login.' });
   res.setHeader('Cache-Control', 'private, no-cache');
   try {
+    // O catálogo remoto é carregado durante o cold start. Não marque um vazio temporário como pronto.
+    await catalogoBootPromise;
     const ex = lerExtra();
     const sig = [ex.generatedAt, (ex.videos || []).length, (ex.materials || []).length, process.env.GOOGLE_DRIVE_FOLDER_ID || ''].join('|');
     if (!_manifCache || _manifCache.sig !== sig) {
