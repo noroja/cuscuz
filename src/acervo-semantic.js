@@ -1,12 +1,15 @@
 import { sentenceVectors } from './embedding-utils.js';
+import { indexAcervoSemantic } from './acervo-semantic-indexer.js';
 
 const BUCKET = 'acervo';
 const META_PATH = 'semantic-index/meta.json';
 const VECTOR_PATH = 'semantic-index/vectors.bin';
 const INDEX_VERSION = 1;
+const INDEX_BRANCH = 'codex/cuscuz-full-update-preview';
 
 let indexPromise = null;
 let indexLoadedAt = 0;
+let indexJobPromise = null;
 
 const textoDocumento = item => `title: ${item.titulo || 'none'} | text: ${item.curso || ''}. ${item.path || ''}`.trim();
 
@@ -88,6 +91,32 @@ async function rerank(query, candidatos, topN) {
 }
 
 export function registerAcervoSemantic(app, { getCatalog, supabase, supabaseServiceRole = false }) {
+  app.post('/api/admin/acervo/indexar-semantico', async (req, res) => {
+    if (process.env.VERCEL_ENV !== 'preview' || process.env.VERCEL_GIT_COMMIT_REF !== INDEX_BRANCH) {
+      return res.status(404).json({ success: false, msg: 'Operação indisponível.' });
+    }
+    if (!['admin', 'super_admin'].includes(req.user?.role)) {
+      return res.status(403).json({ success: false, msg: 'Apenas administradores podem gerar o índice.' });
+    }
+    if (req.body?.confirm !== true) return res.status(400).json({ success: false, msg: 'Confirme a geração do índice.' });
+    if (!process.env.HF_TOKEN) return res.status(503).json({ success: false, msg: 'Hugging Face não está configurado no Preview.' });
+    if (!supabase || !supabaseServiceRole) return res.status(503).json({ success: false, msg: 'Storage privado não está configurado no servidor.' });
+    if (indexJobPromise) return res.status(409).json({ success: false, msg: 'A geração do índice já está em andamento.' });
+
+    try {
+      indexJobPromise = indexAcervoSemantic(supabase, {
+        onProgress: progress => console.info(`[Busca semântica] ${progress}`)
+      });
+      const result = await indexJobPromise;
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      console.error('[Busca semântica] Falha ao gerar índice:', error.message);
+      return res.status(502).json({ success: false, msg: 'Não foi possível gerar o índice semântico.' });
+    } finally {
+      indexJobPromise = null;
+    }
+  });
+
   app.post('/api/acervo/busca-semantica', async (req, res) => {
     const query = String(req.body?.query || '').trim().slice(0, 180);
     if (query.length < 3) return res.status(400).json({ success: false, msg: 'Digite ao menos 3 caracteres para buscar.' });

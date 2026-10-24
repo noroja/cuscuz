@@ -5,6 +5,8 @@ const saved = {
   hf: process.env.HF_TOKEN,
   cohere: process.env.COHERE_API_KEY,
   model: process.env.HF_EMBEDDING_MODEL,
+  vercelEnv: process.env.VERCEL_ENV,
+  vercelRef: process.env.VERCEL_GIT_COMMIT_REF,
   fetch: globalThis.fetch
 };
 
@@ -27,17 +29,27 @@ try {
     ['semantic-index/meta.json', new Blob([JSON.stringify(meta)])],
     ['semantic-index/vectors-test.bin', new Blob([vectors])]
   ]);
+  const uploaded = new Map();
+  let removedFiles = [];
   const supabase = {
     storage: {
       from(bucket) {
         assert.equal(bucket, 'acervo');
-        return { download: async key => ({ data: blobs.get(key) || null, error: blobs.has(key) ? null : new Error('missing') }) };
+        return {
+          download: async key => {
+            if (key === 'acervo-manifest.json') return { data: new Blob([JSON.stringify({ generatedAt: 'catalog-v1', videos: [], materials: [{ id: 'material-2', t: 'Cardiologia', course: 'Medicina', path: 'Clínica/Cardiologia.pdf' }] })]), error: null };
+            return { data: blobs.get(key) || null, error: blobs.has(key) ? null : new Error('missing') };
+          },
+          upload: async (key, body) => { uploaded.set(key, body); return { data: { path: key }, error: null }; },
+          list: async () => ({ data: [{ name: 'vectors-old.bin' }], error: null }),
+          remove: async files => { removedFiles = files; return { data: files, error: null }; }
+        };
       }
     }
   };
 
-  let handler;
-  const app = { post(path, callback) { assert.equal(path, '/api/acervo/busca-semantica'); handler = callback; } };
+  const handlers = new Map();
+  const app = { post(path, callback) { handlers.set(path, callback); } };
   registerAcervoSemantic(app, { getCatalog: () => ({ generatedAt: '' }), supabase, supabaseServiceRole: true });
 
   const chamadas = [];
@@ -51,7 +63,7 @@ try {
     json(body) { this.body = body; return this; }
   };
 
-  await handler({ body: { query: 'insuficiência cardíaca' } }, res);
+  await handlers.get('/api/acervo/busca-semantica')({ body: { query: 'insuficiência cardíaca' } }, res);
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.success, true);
   assert.equal(res.body.reranker, null, 'Cohere ausente deve manter a busca vetorial ativa');
@@ -62,9 +74,34 @@ try {
   assert.match(chamadas[0].url, /huggingface\.co\/hf-inference\/models\/google\/embeddinggemma-300m/);
   assert.equal(chamadas[0].options.headers.Authorization, 'Bearer hf_test_token');
 
+  process.env.VERCEL_ENV = 'production';
+  process.env.VERCEL_GIT_COMMIT_REF = 'main';
+  const deniedRes = { ...res, statusCode: 200, body: null };
+  await handlers.get('/api/admin/acervo/indexar-semantico')({ user: { role: 'admin' }, body: { confirm: true } }, deniedRes);
+  assert.equal(deniedRes.statusCode, 404, 'indexação administrativa deve ficar indisponível fora da branch Preview autorizada');
+
+  process.env.VERCEL_ENV = 'preview';
+  process.env.VERCEL_GIT_COMMIT_REF = 'codex/cuscuz-full-update-preview';
+  const userRes = { ...res, statusCode: 200, body: null };
+  await handlers.get('/api/admin/acervo/indexar-semantico')({ user: { role: 'user' }, body: { confirm: true } }, userRes);
+  assert.equal(userRes.statusCode, 403, 'usuário comum não pode gerar o índice');
+  const unconfirmedRes = { ...res, statusCode: 200, body: null };
+  await handlers.get('/api/admin/acervo/indexar-semantico')({ user: { role: 'admin' }, body: {} }, unconfirmedRes);
+  assert.equal(unconfirmedRes.statusCode, 400, 'a operação exige confirmação explícita');
+  const indexRes = { ...res, statusCode: 200, body: null };
+  await handlers.get('/api/admin/acervo/indexar-semantico')({ user: { role: 'admin' }, body: { confirm: true } }, indexRes);
+  assert.equal(indexRes.statusCode, 200);
+  assert.equal(indexRes.body.success, true);
+  assert.equal(indexRes.body.quantidade, 1);
+  assert.ok(uploaded.has('semantic-index/meta.json'));
+  assert.ok([...uploaded.keys()].some(key => key.startsWith('semantic-index/vectors-')));
+  assert.deepEqual(removedFiles, ['semantic-index/vectors-old.bin']);
+  assert.equal(chamadas.length, 2, 'a indexação deve usar Hugging Face uma vez para o item de teste');
+
   console.log('OK — busca semântica usa similaridade vetorial quando Cohere não está configurada.');
+  console.log('OK — indexação administrativa publica metadados e remove vetores antigos somente no Preview autorizado.');
 } finally {
-  for (const [key, value] of Object.entries({ HF_TOKEN: saved.hf, COHERE_API_KEY: saved.cohere, HF_EMBEDDING_MODEL: saved.model })) {
+  for (const [key, value] of Object.entries({ HF_TOKEN: saved.hf, COHERE_API_KEY: saved.cohere, HF_EMBEDDING_MODEL: saved.model, VERCEL_ENV: saved.vercelEnv, VERCEL_GIT_COMMIT_REF: saved.vercelRef })) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
