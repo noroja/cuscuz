@@ -46,6 +46,7 @@ const t = []; const teste = async (n, fn) => { try { await fn(); t.push(['OK ', 
 await teste('status: só Groq → transcrição sim, paralelo 1 (respeita TPM)', async () => {
   limpa(); process.env.GROQ_API_KEY = 'gsk_x'; const j = await st();
   assert.equal(j.transcricao, true); assert.equal(j.texto, true); assert.equal(j.paralelo, 1);
+  assert.ok(j.perfisPedagogicos.some(p => p.id === 'fisiopatologia'), 'status deve expor o catálogo do motor pedagógico');
 });
 await teste('status: Groq + Gemini → paralelo 3', async () => {
   limpa(); process.env.GROQ_API_KEY = 'gsk_x'; process.env.GEMINI_API_KEY = 'g'; const j = await st();
@@ -190,13 +191,14 @@ await teste('/flashcards com base: prompt contém os fatos, não a transcrição
   assert.equal(j.flashcards[0].formato, 'pergunta');
   assert.ok(promptsDerivados[0].includes('Adrenalina 1 mg a cada 3-5 min')); assert.ok(!promptsDerivados[0].includes('parada cardiorrespiratória'));
   assert.ok(promptsDerivados[0].includes('estimativa, não uma cota'));
-  assert.ok(promptsDerivados[0].includes('Não force condutas clínicas em conteúdo básico'));
+  assert.ok(promptsDerivados[0].includes('MOTOR PEDAGÓGICO UNIVERSAL'));
+  assert.ok(promptsDerivados[0].includes('Não transforme conteúdo básico em decisão clínica'));
   assert.ok(!promptsDerivados[0].includes('residência médica'));
 });
-await teste('/flashcards adapta o foco ao tipo de aula clínica', async () => {
+await teste('/flashcards aplica o objetivo da aula pelo motor comum', async () => {
   promptsDerivados = []; const j = await post2('/api/aula/flashcards', { transcricao: aulaTxt, base, tipoAula: 'caso-clinico' });
   assert.equal(j.success, true);
-  assert.ok(promptsDerivados[0].includes('decisões clínicas somente quando a aula as sustentar'));
+  assert.ok(promptsDerivados[0].includes('objetivo compreender os conceitos e relações centrais'));
 });
 await teste('/processar com base: 1 chamada, copia cai na prova/termos e filtra assuntos', async () => {
   tarefas.length = 0; promptsDerivados = []; const j = await post2('/api/aula/processar', { transcricao: aulaTxt, assuntosPlano: ['PCR'], base });
@@ -216,13 +218,14 @@ const app3 = express(); app3.use(express.json({ limit: '40mb' })); registerAula(
 const srv3 = await new Promise(r => { const s3 = app3.listen(0, () => r(s3)); });
 const post3 = async (u, c) => (await fetch(`http://127.0.0.1:${srv3.address().port}${u}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(c) })).json();
 const capBody = { transcricao: aulaTxt, area: 'Emergência', capitulo: { titulo: 'PCR', pontos: ['adrenalina'] }, numero: 1, total: 1 };
-await teste('capítulo: padrão é o estilo pedagógico (conceito → mecanismo → aplicação → prova), com complemento externo sinalizado', async () => {
+await teste('capítulo recebe o núcleo universal e o perfil inferido, sem impor estrutura clínica fixa', async () => {
   const j = await post3('/api/aula/capitulo', capBody); assert.equal(j.success, true);
-  for (const x of ['### Conceito central', '### Fundamentos', '### Mecanismo explicado', 'Causa → Mecanismo', '### Aplicação clínica', '### Pontos para a prova', '### Revisão final do capítulo', 'Complemento (não dito na aula)', 'Não invente diretrizes']) assert.ok(ultimoCap.includes(x), x);
+  for (const x of ['MOTOR PEDAGÓGICO UNIVERSAL', 'NÚCLEO COMUM:', 'PERFIL PRINCIPAL: Terapia Intensiva e Emergências.', 'Use estruturas clínicas somente quando a aula tratar de conteúdo clínico']) assert.ok(ultimoCap.includes(x), x);
+  assert.ok(!ultimoCap.includes('### Aplicação clínica'), 'a estrutura final deve se adaptar ao perfil, não impor seções clínicas');
   assert.ok(!ultimoCap.includes('CAIXA-HISTÓRIA') && !ultimoCap.includes('Cor de Magia'), 'sem o formato Crônicas');
 });
 await teste('capítulo: o formato Crônicas foi removido (mesmo pedindo estilo "cronicas")', async () => {
-  await post3('/api/aula/capitulo', { ...capBody, estilo: 'cronicas' }); assert.ok(!ultimoCap.includes('CAIXA-HISTÓRIA') && !ultimoCap.includes('Cor de Magia') && ultimoCap.includes('### Mecanismo explicado'));
+  await post3('/api/aula/capitulo', { ...capBody, estilo: 'cronicas' }); assert.ok(!ultimoCap.includes('CAIXA-HISTÓRIA') && !ultimoCap.includes('Cor de Magia') && ultimoCap.includes('MOTOR PEDAGÓGICO UNIVERSAL'));
 });
 await teste('fechamento: sem rodapé das Crônicas', async () => {
   const f = await post3('/api/aula/fechamento', { transcricao: aulaTxt, base }); assert.ok(!f.markdown.includes('Crônicas') && !f.markdown.includes('cuscuz-klan'));

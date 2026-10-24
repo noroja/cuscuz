@@ -68,6 +68,7 @@ Mentor IA acadêmico e Aula do dia: não exigem variável nova além das de IA e
 ## Limites do plano Hobby e como economizar
 
 - **Transferência rápida de origem (10 GB):** conta os bytes que saem da função para a CDN. O que mais pesa são vídeos e PDFs servidos por `/m/...`, `/api/drive/stream/...` e `/api/drive/pdf/...`. Para tirá-los da Vercel, rode `npm run local:midia` no seu PC atrás de um túnel HTTPS e defina `MEDIA_ORIGIN` (guia em `docs/RODAR-LOCAL.md`). Sem a variável, nada muda.
+- **Vídeo direto do Google (`DRIVE_DIRECT=1`):** com conta de serviço configurada, o `/m/...` de vídeo responde 307 para o Drive e os bytes vão do Google ao navegador, sem passar pela função. O player cai sozinho para o proxy (`?via=app`) se falhar. PDFs continuam proxiados. Contrapartida: o navegador enxerga um token somente-leitura de ~1 h. Ative, teste uma aula e acompanhe o consumo; desative removendo a variável.
 - Para ver o consumo por projeto e por rota, use Usage e os logs no painel da Vercel. Em planos gratuitos, passar do limite pode **pausar** o projeto em vez de cobrar; confirme as regras atuais na página de Billing da Vercel.
 - **Cache de IA em memória não dura:** cada instância nova da função perde o cache. Funções que geram questões por IA ao abrir uma videoaula podem repetir a chamada; veja `docs/AULA-DO-DIA-FLUXO.md`.
 - Cotas gratuitas de IA são pequenas (Groq: 200 mil tokens/dia no `gpt-oss-120b`, na documentação deles). Com mais de uma chave, o roteador distribui.

@@ -9,7 +9,7 @@ process.env.AI_LOG = '0';
 const { registerAula, promptWhisper } = await import('../../src/aula.js');
 const { aiJanelaChars } = await import('../../src/ai-provider.js');
 const janela = aiJanelaChars(1400);
-const capturas = { revisar: [], mapa: [], consolidacao: [], capitulo: [], mente: [], resumo: [], extrair: [], cards: [], processar: [] };
+const capturas = { revisar: [], mapa: [], consolidacao: [], capitulo: [], mente: [], resumo: [], extrair: [], cards: [], processar: [], tutor: [] };
 let omitirConsolidacao = false;
 let omitirCapitulos = false;
 let omitirMapaMental = false;
@@ -17,11 +17,12 @@ let resumoVazio = false;
 let capituloVazio = false;
 let fechamentoSemSintese = false;
 const fakeAI = async ({ task, contents }) => {
+  if (task === 'mentor_chat') { capturas.tutor.push(contents); return { text: 'A aula relaciona o mecanismo e a manifestação [T1].' }; }
   if (task === 'aula_revisar') { capturas.revisar.push(contents); return { text: 'Transcrição revisada.' }; }
   if (task === 'aula_mapa' && contents.includes('Inventarie os tópicos')) {
     capturas.mapa.push(contents);
     if (omitirCapitulos) return { text: JSON.stringify({ capitulos: [], temQuestoes: false }) };
-    return { text: JSON.stringify({ capitulos: [{ titulo: `Tópico ${capturas.mapa.length}`, pontos: [`Ponto ${capturas.mapa.length}`], paragrafoFim: 9999 }], temQuestoes: false }) };
+    return { text: JSON.stringify({ capitulos: [{ titulo: `Tópico ${capturas.mapa.length}`, pontos: [`Ponto ${capturas.mapa.length}`], paragrafoFim: 9999 }], temQuestoes: false, perfisPedagogicos: ['farmacologia', 'fisiopatologia'], objetivosAprendizagem: ['Explicar o mecanismo farmacológico abordado.'] }) };
   }
   if (task === 'aula_mapa_consolidar') {
     const pos = contents.indexOf('FRAGMENTOS:\n') + 'FRAGMENTOS:\n'.length;
@@ -90,6 +91,10 @@ try {
 
   const fonteLonga = `\n\nINÍCIO ${'x'.repeat(janela * 16)} MARCADOR_DO_MEIO ${'y'.repeat(janela * 2)} FIM_DA_AULA \n`;
   const mapa = await post('mapa', { transcricao: fonteLonga, area: 'Clínica', ...preferencia });
+  assert.equal(mapa.planoPedagogico.perfilPrincipal, 'farmacologia', 'o perfil sugerido pelo mapa deve entrar no plano pedagógico da aula');
+  assert.equal(mapa.planoPedagogico.origemObjetivos, 'sugestao_ia');
+  assert.ok(mapa.planoPedagogico.referenciasFonte.length > 0, 'o plano deve reter referências aos offsets da transcrição');
+  assert.ok(mapa.planoPedagogico.requisitosCobertura.length > 0, 'o plano deve expor requisitos de cobertura derivados do mapa');
   const textosMapa = fonteDosPrompts(capturas.mapa, 'FONTE DO TRECHO:\n');
   assert.ok(textosMapa.length > 14, `esperava mais de 14 janelas, recebeu ${textosMapa.length}`);
   assert.equal(textosMapa.join(''), fonteLonga, 'janelas do mapa devem reconstruir a fonte sem lacunas');
@@ -124,7 +129,14 @@ try {
   capturas.capitulo.length = 0;
   const fonteCapitulo = `INÍCIO_CAPÍTULO ${'mecanismo clínico '.repeat(janela / 4)} MARCADOR_DO_MEIO ${'dados e exceções '.repeat(janela / 4)} FIM_CAPÍTULO`;
   const inicioCapitulo = 23, fimCapitulo = fonteCapitulo.length - 19;
-  const capitulo = await post('capitulo', { transcricao: fonteCapitulo, capitulo: { titulo: 'Tema', de: inicioCapitulo, ate: fimCapitulo, pontos: [] }, ...preferencia });
+  const planoManual = (await post('plano', { area: 'Farmacologia', conteudo: 'Interações medicamentosas', perfilPedagogico: 'anatomia', objetivoEstudo: 'prova', objetivosAprendizagem: 'Comparar os mecanismos ensinados.\nIdentificar as interações citadas.', enfasePedagogica: 'relações entre estrutura e efeito', preferenciaMaterial: 'detalhado', capitulos: [{ titulo: 'Interações', pontos: ['Mecanismo citado'], de: 10, ate: 80 }] })).planoPedagogico;
+  assert.equal(planoManual.perfilPrincipal, 'anatomia', 'a escolha manual deve prevalecer sobre a inferência');
+  assert.equal(planoManual.objetivoEstudo, 'prova');
+  assert.equal(planoManual.origemObjetivos, 'estudante');
+  assert.equal(planoManual.referenciasFonte[0].inicio, 10);
+  const capitulo = await post('capitulo', { transcricao: fonteCapitulo, capitulo: { titulo: 'Tema', de: inicioCapitulo, ate: fimCapitulo, pontos: [] }, planoPedagogico: planoManual, ...preferencia });
+  assert.ok(capturas.capitulo[0].includes('PERFIL PRINCIPAL: Anatomia.'), 'o capítulo deve receber o plano comum e o perfil selecionado');
+  assert.ok(capturas.capitulo[0].includes('Comparar os mecanismos ensinados.'), 'os objetivos informados devem orientar as saídas');
   const trechosCap = fonteDosPrompts(capturas.capitulo, 'TRECHO DA TRANSCRIÇÃO (fonte única — cobre integralmente este capítulo):\n');
   assert.ok(trechosCap.length > 1);
   assert.equal(trechosCap.join(''), fonteCapitulo.slice(inicioCapitulo, fimCapitulo), 'o capítulo deve usar seus offsets exatos sem lacunas, sobreposição ou margem duplicada');
@@ -154,7 +166,7 @@ try {
   assert.equal(new Set(mente.estrutura.nos.map(n => n.id)).size, mente.estrutura.nos.length, 'IDs do JSON do mapa mental devem ser únicos');
   assert.ok(mente.estrutura.relacoes.every(e => mente.estrutura.nos.some(n => n.id === e.de) && mente.estrutura.nos.some(n => n.id === e.para) && e.tipo === 'hierarquia'));
   assert.ok(mente.estrutura.nos.filter(n => n.id !== mente.estrutura.raizId).every(n => Number.isInteger(n.origem.inicio) && Number.isInteger(n.origem.fim) && n.origem.fim > n.origem.inicio));
-  assert.ok(capturas.mente.every(p => p.includes('Material enxuto')), 'preferência concisa deve mudar a extensão dos materiais derivados');
+  assert.ok(capturas.mente.every(p => p.includes('PROFUNDIDADE: Essencial')), 'preferência concisa deve mudar a extensão dos materiais derivados');
   omitirMapaMental = true;
   const mapaMentalParcial = await invoke('mapa-mental', { transcricao: fonteMente, ...preferencia });
   omitirMapaMental = false;
@@ -209,7 +221,33 @@ try {
   const cardsBase = await post('flashcards', { transcricao: fonteMente, base: extracao.base, ...preferencia });
   assert.ok(cardsBase.flashcards.every(c => c.origem.tipo === 'transcricao' && c.origem.inicio >= 0 && c.origem.fim <= fonteMente.length && c.origem.fim > c.origem.inicio), 'cartões derivados da base devem apontar à janela da transcrição, não ao texto intermediário');
 
-  console.log('OK — janelas contíguas, offsets sem lacunas, capítulos completos, mapa mental e derivados sem cortes, preferências, e flashcards sem teto artificial com dificuldade/origem validadas.');
+  capturas.tutor.length = 0;
+  const trechoTutor = 'A adrenalina ativa receptores alfa e beta, elevando a frequência cardíaca e a resistência vascular. ';
+  const perguntaTutor = 'Explique como adrenalina eleva a frequência cardíaca';
+  const tutor = await post('tutor', {
+    pergunta: perguntaTutor,
+    transcricao: `${'Trecho sem relação com a pergunta. '.repeat(60)}${trechoTutor.repeat(8)}`,
+    resumoMd: 'Resumo da aula sobre farmacologia cardiovascular.',
+    historico: [{ role: 'user', content: 'O que são catecolaminas?' }, { role: 'assistant', content: 'São aminas relacionadas à resposta adrenérgica.' }],
+    area: 'Farmacologia', tipoAula: 'caso-clinico', objetivoEstudo: 'compreender', preferenciaMaterial: 'detalhado',
+    objetivosRevisados: ['Relacionar receptor e efeito']
+  });
+  assert.match(tutor.reply, /\[T1\]/);
+  assert.ok(tutor.sources.length > 0 && tutor.sources.every((source, i) => source.id === `T${i + 1}`));
+  assert.ok(tutor.sources.some(source => source.texto.includes('adrenalina ativa receptores')));
+  assert.ok(tutor.sources.every(source => source.inicio >= 0 && source.fim > source.inicio));
+  const mensagensTutor = capturas.tutor[0];
+  assert.equal(mensagensTutor[0].role, 'user');
+  assert.ok(mensagensTutor[0].parts[0].text.includes('O que são catecolaminas?'));
+  assert.equal(mensagensTutor[1].role, 'model');
+  assert.ok(mensagensTutor.at(-1).parts[0].text.includes('Preferências do aluno: tipo de aula caso-clinico; material detalhado'));
+  assert.ok(mensagensTutor.at(-1).parts[0].text.includes('OBJETIVOS QUE O ESTUDANTE MARCOU COMO REVISADOS'));
+  assert.ok(mensagensTutor.at(-1).parts[0].text.includes('[T1; caracteres'));
+  assert.ok(capturas.tutor[0].at(-1).parts[0].text.includes(perguntaTutor));
+  const tutorSemFonte = await invoke('tutor', { pergunta: 'Explique este conceito.' });
+  assert.equal(tutorSemFonte.status, 400, 'o tutor exige material da própria aula para preservar o contexto');
+
+  console.log('OK — janelas contíguas, offsets sem lacunas, capítulos completos, mapa mental, tutor contextual e derivados sem cortes, preferências, e flashcards sem teto artificial com dificuldade/origem validadas.');
 } finally {
   delete process.env.AI_PROVIDER; delete process.env.OPENROUTER_API_KEY; delete process.env.OPENROUTER_MAX_PROMPT_CHARS; delete process.env.AI_LOG;
 }

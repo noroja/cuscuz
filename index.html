@@ -2413,6 +2413,8 @@ mark.exam-highlight {
           <div class="ac2-recovery" id="ac2-recovery" role="status" aria-live="polite" hidden>
             <span>Não foi possível abrir esta videoaula. Tente carregá-la novamente ou escolha outra aula.</span>
             <button type="button" class="ac2-status-retry" onclick="ac2Recarregar()">Recarregar videoaula</button>
+            <button type="button" class="ac2-status-retry" onclick="ac2Diagnosticar()" title="Mostra por que o servidor não consegue entregar este vídeo">Diagnosticar</button>
+            <pre id="ac2-diag" hidden style="flex-basis:100%;white-space:pre-wrap;word-break:break-word;font-size:12px;max-height:260px;overflow:auto;user-select:all;margin:8px 0 0"></pre>
           </div>
 
           <!-- Barra utilitária do player -->
@@ -10992,6 +10994,13 @@ function ac2InitNativeVideoListeners() {
   nv.addEventListener('error', () => {
     if (nv.getAttribute('data-vid') !== AC2.atualId) return;
     if (nv._ac2Mpegts) return;
+    // Modo direto (DRIVE_DIRECT): se o Google recusar, repete uma vez pelo proxy do app.
+    if (nv.src && nv.src.indexOf('/m/') > -1 && nv.src.indexOf('via=app') < 0 && nv._viaAppId !== AC2.atualId) {
+      nv._viaAppId = AC2.atualId; const t0 = nv.currentTime || 0;
+      nv.src = nv.src + (nv.src.indexOf('?') < 0 ? '?' : '&') + 'via=app'; nv.load();
+      nv.addEventListener('loadedmetadata', () => { try { if (t0) nv.currentTime = t0; } catch (_) {} }, { once: true });
+      return;
+    }
     const recovery = $('ac2-recovery'); if (recovery) recovery.hidden = false;
     const syncTxt = $('ac2-sync-text');
     const status = $('ac2-buffer');
@@ -11689,6 +11698,15 @@ window.ac2ToggleNav = function () {
   ac2SyncNavToggle();
 };
 
+window.ac2Diagnosticar = async function () {
+  const pre = $('ac2-diag'); if (!pre) return;
+  pre.hidden = false; pre.textContent = 'Diagnosticando…';
+  try {
+    const r = await fetch('/api/drive/diagnostico/' + encodeURIComponent(AC2.atualId || ''));
+    const j = await r.json().catch(() => ({ erro: 'resposta inválida (HTTP ' + r.status + ')' }));
+    pre.textContent = JSON.stringify(j, null, 2) + '\n\nComo ver o erro do player: no Chrome, F12 → Rede → recarregue a aula e veja o status do pedido "/m/…" ou "/api/drive/stream/…".';
+  } catch (e) { pre.textContent = 'Falhou: ' + e.message; }
+};
 window.ac2Recarregar = function () {
   const nv = $('ac2-native-video');
   if (nv && AC2.atualId) {
@@ -12044,6 +12062,7 @@ if (ac2BuscaEl) {
 const bgInput = $('busca-global');
 const bgResult = $('resultado-busca-global');
 const bgClear = $('busca-global-clear');
+let buscaSemantica = null, buscaSemanticaRodando = false, buscaSemanticaVersao = 0;
 
 let globalSearchFilters = { course: '', discipline: '', format: '', type: '' };
 let globalSearchRequest = 0, globalSearchPage = 1;
@@ -12132,6 +12151,9 @@ async function abrirResultadoBuscaGlobal(item) {
     } else {
       window.cuscuzAbrirPdf(entry.id);
     }
+    buscaSemantica = null;
+    buscaSemanticaRodando = false;
+    buscaSemanticaVersao++;
     bgInput.value = '';
     bgClear.style.display = 'none';
   } catch (error) {
@@ -12157,8 +12179,12 @@ async function renderResultadoBuscaGlobal(q) {
     const options = search.getAcervoFilterOptions(catalog, globalSearchFilters.course);
     const searchQuery = query.length >= 2 ? query : '';
     const textual = search.searchAcervo(catalog, searchQuery, globalSearchFilters, globalSearchPage * globalSearchPageSize);
-    const resultItems = textual.items;
-    const total = textual.total;
+    const nq = normAcc(query).trim();
+    const semanticItems = buscaSemantica?.query === nq ? buscaSemantica.itens : null;
+    const resultItems = semanticItems
+      ? search.getAcervoEntriesByIds(catalog, semanticItems, globalSearchFilters, globalSearchPage * globalSearchPageSize)
+      : textual.items;
+    const total = semanticItems ? resultItems.length : textual.total;
     let html = globalSearchFilterMarkup(options);
     if (!query && !hasFilters) {
       const recent = globalSearchHistory();
@@ -12167,10 +12193,13 @@ async function renderResultadoBuscaGlobal(q) {
     } else if (query.length < 2 && !hasFilters) {
       html += '<div class="acervo-search-status">Digite pelo menos 2 caracteres ou escolha um filtro.</div>';
     } else {
-      html += '<div class="acervo-search-status" role="status" aria-live="polite">' + total.toLocaleString('pt-BR') + ' resultado(s)' + (total > resultItems.length ? ' · mostrando ' + resultItems.length : '') + '</div>';
+      html += '<div class="acervo-search-status" role="status" aria-live="polite">' + (semanticItems ? 'Busca por significado · ' : '') + total.toLocaleString('pt-BR') + ' resultado(s)' + (total > resultItems.length ? ' · mostrando ' + resultItems.length : '') + '</div>';
       if (resultItems.length) html += resultItems.map(globalSearchResultMarkup).join('');
       else html += '<div class="acervo-search-status">Nenhum resultado para “' + esc(query || globalSearchFilters.course || globalSearchFilters.discipline || globalSearchFilters.format) + '”.</div>';
       if (total > resultItems.length) html += '<button type="button" class="acervo-search-clear-filters" data-global-search-more>Mostrar mais resultados</button>';
+      if (query.length >= 3) html += semanticItems
+        ? '<button type="button" class="acervo-search-clear-filters" onclick="buscaAcervoTextual()">Voltar à busca textual</button>'
+        : '<button type="button" class="acervo-search-clear-filters" onclick="buscarAcervoSemantica()"' + (buscaSemanticaRodando ? ' disabled' : '') + '>' + (buscaSemanticaRodando ? 'Buscando por significado…' : '✨ Buscar por significado (opcional)') + '</button>';
     }
     bgResult.innerHTML = html;
   } catch (error) {
@@ -12180,7 +12209,45 @@ async function renderResultadoBuscaGlobal(q) {
   }
 }
 
+window.buscarAcervoSemantica = async function () {
+  const query = String(bgInput?.value || '').trim();
+  if (query.length < 3 || buscaSemanticaRodando) return;
+  globalSearchPage = 1;
+  const versao = ++buscaSemanticaVersao;
+  buscaSemanticaRodando = true;
+  renderResultadoBuscaGlobal(query);
+  try {
+    const response = await fetch('/api/acervo/busca-semantica', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.msg || 'Busca semântica indisponível.');
+    if (versao !== buscaSemanticaVersao || normAcc(bgInput.value.trim()) !== normAcc(query)) return;
+    buscaSemantica = { query: normAcc(query), itens: data.itens || [] };
+    renderResultadoBuscaGlobal(query);
+  } catch (error) {
+    if (versao !== buscaSemanticaVersao) return;
+    toast(error.message || 'Busca semântica indisponível.', 'warning');
+  } finally {
+    if (versao === buscaSemanticaVersao) {
+      buscaSemanticaRodando = false;
+      if (!buscaSemantica) renderResultadoBuscaGlobal(query);
+    }
+  }
+};
+
+window.buscaAcervoTextual = function () {
+  buscaSemantica = null;
+  buscaSemanticaVersao++;
+  buscaSemanticaRodando = false;
+  globalSearchPage = 1;
+  renderResultadoBuscaGlobal(bgInput?.value || '');
+};
+
 function limparBuscaGlobal() {
+  buscaSemantica = null;
+  buscaSemanticaRodando = false;
+  buscaSemanticaVersao++;
   globalSearchRequest++;
   globalSearchPage = 1;
   globalSearchFilters = { course: '', discipline: '', format: '', type: '' };
@@ -12195,7 +12262,12 @@ function limparBuscaGlobal() {
 if (bgInput) {
   bgInput.addEventListener('input', e => {
     globalSearchPage = 1;
-    globalSearchDebounced(e.target.value);
+    const query = normAcc(e.target.value.trim());
+    if (buscaSemantica && buscaSemantica.query !== query) buscaSemantica = null;
+    if (buscaSemanticaRodando && query !== normAcc(buscaSemantica?.query || '')) {
+      buscaSemanticaVersao++;
+      buscaSemanticaRodando = false;
+    }
     globalSearchDebounced(e.target.value);
   });
   bgInput.addEventListener('focus', e => {
@@ -12220,6 +12292,7 @@ if (bgInput) {
     globalSearchFilters[key] = String(control.value || '').trim();
     globalSearchPage = 1;
     if (key === 'course') globalSearchFilters.discipline = '';
+    buscaSemantica = null;
     renderResultadoBuscaGlobal(bgInput.value).then(() => bgResult.querySelector('[data-global-search-filter="' + key + '"]')?.focus());
   });
   bgResult.addEventListener('keydown', e => {
@@ -12240,6 +12313,7 @@ if (bgInput) {
     if (clearFilters) {
       globalSearchFilters = { course: '', discipline: '', format: '', type: '' };
       globalSearchPage = 1;
+      buscaSemantica = null;
       renderResultadoBuscaGlobal(bgInput.value);
       return;
     }
@@ -12247,6 +12321,7 @@ if (bgInput) {
     if (recent) {
       bgInput.value = recent.dataset.globalSearchRecent || '';
       globalSearchPage = 1;
+      buscaSemantica = null;
       renderResultadoBuscaGlobal(bgInput.value);
       bgInput.focus();
       return;
