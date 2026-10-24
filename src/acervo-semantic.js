@@ -91,14 +91,28 @@ async function rerank(query, candidatos, topN) {
 }
 
 export function registerAcervoSemantic(app, { getCatalog, supabase, supabaseServiceRole = false }) {
+  const isIndexPreview = () => process.env.VERCEL_ENV === 'preview' && process.env.VERCEL_GIT_COMMIT_REF === INDEX_BRANCH;
+  const isAdmin = req => ['admin', 'super_admin'].includes(req.user?.role);
+
+  app.get('/api/admin/acervo/indexar-semantico', (req, res) => {
+    if (!isIndexPreview()) return res.status(404).send('Not found');
+    if (!isAdmin(req)) return res.status(403).send('Apenas administradores podem gerar o índice.');
+    res.set('Cache-Control', 'no-store').type('html').send(`<!doctype html><meta charset="utf-8"><title>Indexar acervo</title>
+      <main style="font:16px system-ui;max-width:640px;margin:64px auto;padding:24px">
+        <h1>Indexar o acervo para busca semântica</h1>
+        <p>Gera embeddings para o catálogo e atualiza o índice privado do Supabase. A versão atual só será substituída depois que o novo índice estiver pronto.</p>
+        <form method="post"><input type="hidden" name="confirm" value="true"><button type="submit">Gerar índice semântico</button></form>
+      </main>`);
+  });
+
   app.post('/api/admin/acervo/indexar-semantico', async (req, res) => {
-    if (process.env.VERCEL_ENV !== 'preview' || process.env.VERCEL_GIT_COMMIT_REF !== INDEX_BRANCH) {
+    if (!isIndexPreview()) {
       return res.status(404).json({ success: false, msg: 'Operação indisponível.' });
     }
-    if (!['admin', 'super_admin'].includes(req.user?.role)) {
+    if (!isAdmin(req)) {
       return res.status(403).json({ success: false, msg: 'Apenas administradores podem gerar o índice.' });
     }
-    if (req.body?.confirm !== true) return res.status(400).json({ success: false, msg: 'Confirme a geração do índice.' });
+    if (String(req.body?.confirm) !== 'true') return res.status(400).json({ success: false, msg: 'Confirme a geração do índice.' });
     if (!process.env.HF_TOKEN) return res.status(503).json({ success: false, msg: 'Hugging Face não está configurado no Preview.' });
     if (!supabase || !supabaseServiceRole) return res.status(503).json({ success: false, msg: 'Storage privado não está configurado no servidor.' });
     if (indexJobPromise) return res.status(409).json({ success: false, msg: 'A geração do índice já está em andamento.' });

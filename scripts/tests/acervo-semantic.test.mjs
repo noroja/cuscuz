@@ -49,7 +49,10 @@ try {
   };
 
   const handlers = new Map();
-  const app = { post(path, callback) { handlers.set(path, callback); } };
+  const app = {
+    get(path, callback) { handlers.set(`GET ${path}`, callback); },
+    post(path, callback) { handlers.set(`POST ${path}`, callback); }
+  };
   registerAcervoSemantic(app, { getCatalog: () => ({ generatedAt: '' }), supabase, supabaseServiceRole: true });
 
   const chamadas = [];
@@ -60,10 +63,13 @@ try {
   const res = {
     statusCode: 200,
     status(code) { this.statusCode = code; return this; },
-    json(body) { this.body = body; return this; }
+    json(body) { this.body = body; return this; },
+    set() { return this; },
+    type() { return this; },
+    send(body) { this.body = body; return this; }
   };
 
-  await handlers.get('/api/acervo/busca-semantica')({ body: { query: 'insuficiência cardíaca' } }, res);
+  await handlers.get('POST /api/acervo/busca-semantica')({ body: { query: 'insuficiência cardíaca' } }, res);
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.success, true);
   assert.equal(res.body.reranker, null, 'Cohere ausente deve manter a busca vetorial ativa');
@@ -77,19 +83,29 @@ try {
   process.env.VERCEL_ENV = 'production';
   process.env.VERCEL_GIT_COMMIT_REF = 'main';
   const deniedRes = { ...res, statusCode: 200, body: null };
-  await handlers.get('/api/admin/acervo/indexar-semantico')({ user: { role: 'admin' }, body: { confirm: true } }, deniedRes);
+  await handlers.get('POST /api/admin/acervo/indexar-semantico')({ user: { role: 'admin' }, body: { confirm: true } }, deniedRes);
   assert.equal(deniedRes.statusCode, 404, 'indexação administrativa deve ficar indisponível fora da branch Preview autorizada');
+  const deniedPageRes = { ...res, statusCode: 200, body: null };
+  await handlers.get('GET /api/admin/acervo/indexar-semantico')({ user: { role: 'admin' } }, deniedPageRes);
+  assert.equal(deniedPageRes.statusCode, 404, 'a página de indexação também deve ficar indisponível fora do Preview autorizado');
 
   process.env.VERCEL_ENV = 'preview';
   process.env.VERCEL_GIT_COMMIT_REF = 'codex/cuscuz-full-update-preview';
   const userRes = { ...res, statusCode: 200, body: null };
-  await handlers.get('/api/admin/acervo/indexar-semantico')({ user: { role: 'user' }, body: { confirm: true } }, userRes);
+  await handlers.get('POST /api/admin/acervo/indexar-semantico')({ user: { role: 'user' }, body: { confirm: true } }, userRes);
   assert.equal(userRes.statusCode, 403, 'usuário comum não pode gerar o índice');
+  const userPageRes = { ...res, statusCode: 200, body: null };
+  await handlers.get('GET /api/admin/acervo/indexar-semantico')({ user: { role: 'user' } }, userPageRes);
+  assert.equal(userPageRes.statusCode, 403, 'a página de indexação deve ser apenas para administradores');
+  const pageRes = { ...res, statusCode: 200, body: null };
+  await handlers.get('GET /api/admin/acervo/indexar-semantico')({ user: { role: 'admin' } }, pageRes);
+  assert.equal(pageRes.statusCode, 200);
+  assert.match(pageRes.body, /Gerar índice semântico/);
   const unconfirmedRes = { ...res, statusCode: 200, body: null };
-  await handlers.get('/api/admin/acervo/indexar-semantico')({ user: { role: 'admin' }, body: {} }, unconfirmedRes);
+  await handlers.get('POST /api/admin/acervo/indexar-semantico')({ user: { role: 'admin' }, body: {} }, unconfirmedRes);
   assert.equal(unconfirmedRes.statusCode, 400, 'a operação exige confirmação explícita');
   const indexRes = { ...res, statusCode: 200, body: null };
-  await handlers.get('/api/admin/acervo/indexar-semantico')({ user: { role: 'admin' }, body: { confirm: true } }, indexRes);
+  await handlers.get('POST /api/admin/acervo/indexar-semantico')({ user: { role: 'admin' }, body: { confirm: 'true' } }, indexRes);
   assert.equal(indexRes.statusCode, 200);
   assert.equal(indexRes.body.success, true);
   assert.equal(indexRes.body.quantidade, 1);
