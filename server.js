@@ -30,6 +30,7 @@ import { IS_SERVERLESS, TMP_DIR, writableDir, safeReadJson, safeWriteJson } from
 import { getSystemConfig, setSystemConfig, systemConfigHealth } from './src/system-config.js';
 import { getFlashcardSyncStatus, readFlashcardManifest, readFlashcardPage, readFlashcardMedia, startFlashcardSyncScheduler, syncDriveFlashcards } from './src/drive-flashcards.js';
 import { acceptDriveNotification, queueDriveChange, renewDrivePushChannel, startDrivePushRenewal } from './src/drive-push.js';
+import { detectMediaContainer } from './src/media-format.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -789,26 +790,37 @@ app.get('/api/drive/video-info', async (req, res) => {
   const ids = String(req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 6);
   if (!ids.length) return res.status(400).json({ error: 'Informe ids separados por vírgula' });
   const out = {};
-  await Promise.all(ids.map(id => new Promise(resolve => {
-    if (driveInfoCache.has(id)) { out[id] = driveInfoCache.get(id); return resolve(); }
-    driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=size,videoMediaMetadata,mimeType&supportsAllDrives=true`)
-      .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
-      .then(j => {
-        const sizeB = parseInt(j.size || '0', 10);
-        const ms = parseInt((j.videoMediaMetadata && j.videoMediaMetadata.durationMillis) || '0', 10);
-        const info = {
-          mimeType: j.mimeType || '',
-          sizeMB: sizeB ? Math.round(sizeB / 1048576 * 10) / 10 : 0,
-          durLabel: ms ? (Math.floor(ms / 60000) + ':' + String(Math.floor(ms / 1000) % 60).padStart(2, '0')) : '',
-          res: j.videoMediaMetadata ? (j.videoMediaMetadata.height || 0) + 'p' : ''
+  await Promise.all(ids.map(async (id, index) => {
+    try {
+      let info = driveInfoCache.get(id) || null;
+      if (!info) {
+        const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=size,videoMediaMetadata,mimeType&supportsAllDrives=true`);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const file = await response.json();
+        const sizeBytes = parseInt(file.size || '0', 10);
+        const durationMs = parseInt((file.videoMediaMetadata && file.videoMediaMetadata.durationMillis) || '0', 10);
+        info = {
+          mimeType: file.mimeType || '',
+          sizeBytes,
+          sizeMB: sizeBytes ? Math.round(sizeBytes / 1048576 * 10) / 10 : 0,
+          durationMs,
+          durLabel: durationMs ? (Math.floor(durationMs / 60000) + ':' + String(Math.floor(durationMs / 1000) % 60).padStart(2, '0')) : '',
+          res: file.videoMediaMetadata ? (file.videoMediaMetadata.height || 0) + 'p' : ''
         };
-        driveInfoCache.set(id, info);
-        saveDriveInfoCache();
-        out[id] = info;
-      })
-      .catch(err => { out[id] = { erro: String(err.message || err).slice(0, 60) }; })
-      .finally(resolve);
-  })));
+      }
+      // O primeiro ID é a aula aberta. Confere os bytes reais porque o MIME do Drive
+      // pode dizer MP4 mesmo quando o conteúdo é MPEG-TS.
+      if (index === 0 && !info.container) {
+        const detected = await sniffDriveMediaContainer(id);
+        if (detected) info = { ...info, container: detected };
+      }
+      driveInfoCache.set(id, info);
+      out[id] = info;
+    } catch (err) {
+      out[id] = { ...(driveInfoCache.get(id) || {}), erro: String(err.message || err).slice(0, 60) };
+    }
+  }));
+  saveDriveInfoCache();
   res.json({ info: out });
 });
 
@@ -857,6 +869,33 @@ async function driveOpen(fileId, start, end, method, client) {
   }
   if (lastErr) console.warn(`[Stream] ${fileId}: ${lastErr.message}`);
   return null;
+}
+
+async function sniffDriveMediaContainer(fileId) {
+  const client = new AbortController();
+  let opened = null, reader = null;
+  try {
+    opened = await driveOpen(fileId, 0, 376, 'GET', client);
+    if (!opened || !opened.resp.body) return null;
+    reader = opened.resp.body.getReader();
+    const chunks = [];
+    let size = 0;
+    while (size < 377) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+      chunks.push(chunk);
+      size += chunk.length;
+    }
+    return detectMediaContainer(Buffer.concat(chunks, size).subarray(0, 377));
+  } catch (err) {
+    console.warn(`[VideoInfo] Não foi possível identificar o contêiner de ${fileId}: ${err.message}`);
+    return null;
+  } finally {
+    if (reader) { try { await reader.cancel(); } catch (_) {} }
+    client.abort();
+    if (opened && opened.ac) { try { opened.ac.abort(); } catch (_) {} }
+  }
 }
 
 

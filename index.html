@@ -17,6 +17,7 @@
 <meta property="og:title" content="Cuscuz-MED">
 <meta property="og:description" content="Planejador de estudos médicos, cronograma inteligente, acervo completo de videoaulas, flashcards SRS e simulados.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif&display=swap" rel="stylesheet">
+<script defer src="/js/vendor/mpegts.js"></script>
 <script>
 /* Auth da API: anexa o token em /api/* e volta ao login se o servidor responder 401 */
 (function(){
@@ -10692,10 +10693,11 @@ function ac2Preencher(curso, disc) {
 }
 
 /* Buffer inteligente (metadados do Drive + pré-carregar a próxima aula) */
-function ac2Info(ids) {
-  const faltam = [...new Set(ids)].filter(id => id && !AC2.infoCache.has(id));
+function ac2Info(ids, detectSelectedContainer = false) {
+  const selectedId = detectSelectedContainer ? ids[0] : null;
+  const faltam = [...new Set(ids)].filter(id => id && (!AC2.infoCache.has(id) || (id === selectedId && !AC2.infoCache.get(id)?.container)));
   const p = faltam.length
-    ? fetch('/api/drive/video-info?ids=' + encodeURIComponent(faltam.join(','))).then(r => r.json())
+    ? fetch('/api/drive/video-info?ids=' + encodeURIComponent(faltam.join(','))).then(r => { if (!r.ok) throw new Error('video-info ' + r.status); return r.json(); })
         .then(d => { Object.entries(d.info || {}).forEach(([id, info]) => AC2.infoCache.set(id, info)); }).catch(() => {})
     : Promise.resolve();
   return p.then(() => ids.map(id => AC2.infoCache.get(id) || null));
@@ -10742,6 +10744,11 @@ function fmtTime(sec) {
 window.ac2TogglePlay = function () {
   const nv = $('ac2-native-video');
   if (!nv) return;
+  if (nv._ac2Mpegts && nv._ac2MpegtsStart) {
+    if (nv.paused) nv._ac2MpegtsStart();
+    else nv.pause();
+    return;
+  }
   if (nv.paused) {
     nv.play().catch(() => {});
   } else {
@@ -10751,8 +10758,14 @@ window.ac2TogglePlay = function () {
 
 window.ac2SeekOffset = function (sec) {
   const nv = $('ac2-native-video');
-  if (!nv || !nv.duration) return;
-  nv.currentTime = Math.max(0, Math.min(nv.duration, nv.currentTime + sec));
+  if (!nv) return;
+  const duration = ac2Duration(nv);
+  const target = Math.max(0, duration ? Math.min(duration, nv.currentTime + sec) : nv.currentTime + sec);
+  if (nv._ac2Mpegts && !ac2MpegtsCanSeek(nv, target)) {
+    toast('Esse trecho ainda não está em buffer. Aguarde carregar ou avance dentro do trecho disponível.', 'info');
+    return;
+  }
+  try { nv.currentTime = target; } catch (_) { return; }
   ac2WakeControls();
 };
 
@@ -10836,10 +10849,24 @@ function ac2WakeControls() {
 }
 
 // Sincronização automática contínua de buffer e timeline
+function ac2Duration(nv) {
+  if (Number.isFinite(nv?.duration) && nv.duration > 0) return nv.duration;
+  const hinted = Number(nv?._ac2Duration || 0);
+  return Number.isFinite(hinted) && hinted > 0 ? hinted : 0;
+}
+
+function ac2MpegtsCanSeek(nv, target) {
+  for (let i = 0; i < nv.buffered.length; i++) {
+    if (target >= nv.buffered.start(i) && target <= nv.buffered.end(i)) return true;
+  }
+  return false;
+}
+
 function ac2SyncBuffer() {
   const nv = $('ac2-native-video');
-  if (!nv || !nv.duration) return;
-  const d = nv.duration;
+  if (!nv) return;
+  const d = ac2Duration(nv);
+  if (!d && !nv._ac2Mpegts) return;
   let bufferedEnd = 0;
   for (let i = 0; i < nv.buffered.length; i++) {
     if (nv.buffered.start(i) <= nv.currentTime && nv.buffered.end(i) >= nv.currentTime) {
@@ -10850,16 +10877,18 @@ function ac2SyncBuffer() {
       bufferedEnd = nv.buffered.end(i);
     }
   }
-  const pct = Math.min(100, Math.round((bufferedEnd / d) * 100));
+  const pct = d ? Math.min(100, Math.round((bufferedEnd / d) * 100)) : 0;
   const bEl = $('ac2-timeline-buffer');
-  if (bEl) bEl.style.width = pct + '%';
+  if (bEl) bEl.style.width = d ? pct + '%' : '0%';
 
   const syncTxt = $('ac2-sync-text');
-  if (syncTxt) syncTxt.textContent = pct >= 98 ? '100% Sincronizado' : `Buffer: ${pct}%`;
+  if (syncTxt) syncTxt.textContent = d ? (pct >= 98 ? '100% Sincronizado' : `Buffer: ${pct}%`) : (nv._ac2Mpegts ? 'MPEG-TS · stream ativo' : 'Buffer em carregamento');
 
   const bStatus = $('ac2-buffer');
   if (bStatus) {
-    bStatus.innerHTML = pct >= 98
+    bStatus.innerHTML = !d && nv._ac2Mpegts
+      ? `<i class="ph ph-play-circle ok"></i> Aula MPEG-TS · carregado até ${fmtTime(bufferedEnd)}`
+      : pct >= 98
       ? '<i class="ph ph-check-circle ok"></i> Buffer 100% sincronizado'
       : `<i class="ph ph-lightning" style="color:var(--teal)"></i> Buffer dinâmico: <b>${pct}%</b> em cache`;
   }
@@ -10867,24 +10896,26 @@ function ac2SyncBuffer() {
 
 function ac2OnTimeUpdate() {
   const nv = $('ac2-native-video');
-  if (!nv || !nv.duration) return;
+  if (!nv || !Number.isFinite(nv.currentTime)) return;
   const cur = nv.currentTime;
-  const d = nv.duration;
-  const pct = Math.min(100, (cur / d) * 100);
+  const d = ac2Duration(nv);
+  const pct = d ? Math.min(100, (cur / d) * 100) : null;
 
   const pEl = $('ac2-timeline-play');
-  if (pEl) pEl.style.width = pct + '%';
+  if (pEl && pct != null) pEl.style.width = pct + '%';
   const hEl = $('ac2-timeline-handle');
-  if (hEl) hEl.style.left = pct + '%';
+  if (hEl && pct != null) hEl.style.left = pct + '%';
 
   const curEl = $('ac2-cur-time');
   if (curEl) curEl.textContent = fmtTime(cur);
+  const durEl = $('ac2-dur-time');
+  if (durEl && d) durEl.textContent = fmtTime(d);
 
   // Sincroniza buffer periodicamente
   ac2SyncBuffer();
 
   // Salva progresso a cada 3 segundos
-  if (AC2.atualId && Math.floor(cur) % 3 === 0) {
+  if (AC2.atualId && !nv._ac2ResumePending && Math.floor(cur) % 3 === 0) {
     lsSet('med_pos_' + AC2.atualId, cur);
   }
 }
@@ -10894,14 +10925,15 @@ function ac2OnLoadedMetadata() {
   if (!nv) return;
   const recovery = $('ac2-recovery'); if (recovery) recovery.hidden = true;
   const dEl = $('ac2-dur-time');
-  if (dEl && nv.duration) dEl.textContent = fmtTime(nv.duration);
+  const duration = ac2Duration(nv);
+  if (dEl && duration) dEl.textContent = fmtTime(duration);
   const durBadge = $('ac2-dur');
-  if (durBadge && nv.duration) durBadge.textContent = Math.round(nv.duration / 60) + ' min';
+  if (durBadge && duration) durBadge.textContent = Math.round(duration / 60) + ' min';
 
   // Retoma de onde o aluno parou
   if (AC2.atualId) {
     const saved = lsGet('med_pos_' + AC2.atualId, 0);
-    if (saved && saved > 5 && saved < (nv.duration - 15)) {
+    if (!nv._ac2Mpegts && saved && saved > 5 && (!duration || saved < (duration - 15))) {
       nv.currentTime = saved;
       toast(`⏱️ Retomando aula de onde você parou: ${fmtTime(saved)}`, 'info');
     }
@@ -10933,7 +10965,7 @@ function ac2InitNativeVideoListeners() {
   const spin = on => { const w = document.querySelector('.ac2-player-wrap'); if (w) w.classList.toggle('ac2-buffering', !!on); };
   const clearStall = () => { clearTimeout(stallT); stallT = null; spin(false); };
   const armStall = () => {
-    if (nv.paused || stallT || !nv._played) return;
+    if (nv._ac2Mpegts || nv.paused || stallT || !nv._played) return;
     spin(true);
     stallT = setTimeout(() => {
       stallT = null;
@@ -10990,13 +11022,20 @@ function ac2InitNativeVideoListeners() {
     const seekTo = (e) => {
       const rect = tWrap.getBoundingClientRect();
       const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      if (nv.duration) {
+      const duration = ac2Duration(nv);
+      if (duration) {
         // Arrastar a barra não dispara uma requisição por pixel: só o último ponto vale (evita lag/travadas)
-        const alvo = pos * nv.duration;
+        const alvo = pos * duration;
+        if (nv._ac2Mpegts && !ac2MpegtsCanSeek(nv, alvo)) {
+          if (e.type === 'mousedown') toast('Esse trecho ainda não está em buffer; avance dentro do trecho disponível.', 'info');
+          return;
+        }
         const fill = $('ac2-timeline-play');
         if (fill) fill.style.width = (pos * 100) + '%';
         clearTimeout(seekTimer);
         seekTimer = setTimeout(() => { try { nv.currentTime = alvo; } catch (_) {} ac2OnTimeUpdate(); }, 140);
+      } else if (nv._ac2Mpegts && e.type === 'mousedown') {
+        toast('A duração deste arquivo não está catalogada; use os botões de 10 segundos para navegar no trecho em buffer.', 'info');
       }
     };
     tWrap.addEventListener('mousedown', (e) => {
@@ -11008,11 +11047,12 @@ function ac2InitNativeVideoListeners() {
     tWrap.addEventListener('touchmove', tp, { passive: true });
     window.addEventListener('mousemove', (e) => {
       if (isDragging) seekTo(e);
-      if (tTip && tWrap.contains(e.target) && nv.duration) {
+      const duration = ac2Duration(nv);
+      if (tTip && tWrap.contains(e.target) && duration) {
         const rect = tWrap.getBoundingClientRect();
         const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         tTip.style.left = (pos * 100) + '%';
-        tTip.textContent = fmtTime(pos * nv.duration);
+        tTip.textContent = fmtTime(pos * duration);
         tTip.style.display = 'block';
       }
     });
@@ -11239,15 +11279,126 @@ class AC2MSEPlayer {
   }
 }
 
-let ac2PlayerMode = 'native'; // Player nativo como padrão permanente
+let ac2PlayerMode = 'native';
+let ac2MpegtsPlayer = null;
+
+function ac2DestroyMpegts() {
+  const nv = $('ac2-native-video');
+  if (nv) {
+    if (nv._ac2ResumeHandler) nv.removeEventListener('progress', nv._ac2ResumeHandler);
+    nv._ac2ResumeHandler = null;
+    nv._ac2ResumePending = false;
+    nv._ac2Mpegts = false;
+    nv._ac2MpegtsStart = null;
+    nv._ac2Duration = 0;
+    nv._ac2MpegtsRequestedPlay = false;
+  }
+  if (!ac2MpegtsPlayer) return;
+  try { ac2MpegtsPlayer.pause(); } catch (_) {}
+  try { ac2MpegtsPlayer.unload(); } catch (_) {}
+  try { ac2MpegtsPlayer.detachMediaElement(); } catch (_) {}
+  try { ac2MpegtsPlayer.destroy(); } catch (_) {}
+  ac2MpegtsPlayer = null;
+}
+
+function ac2UsarMpegts(nv, id, info, url, autoPlay) {
+  const shouldPlay = autoPlay || nv._ac2MpegtsRequestedPlay;
+  const recovery = $('ac2-recovery');
+  const status = $('ac2-buffer');
+  const syncTxt = $('ac2-sync-text');
+  if (!window.mpegts || !window.mpegts.isSupported()) {
+    if (recovery) recovery.hidden = false;
+    if (status) status.textContent = 'Este navegador não oferece suporte ao decodificador MPEG-TS desta aula.';
+    if (syncTxt) syncTxt.textContent = 'Formato MPEG-TS sem suporte';
+    nv._ac2Loading = false;
+    return;
+  }
+
+  ac2DestroyMpegts();
+  nv.pause();
+  nv.removeAttribute('src');
+  nv.load();
+  nv._ac2Mpegts = true;
+  nv._ac2Loading = false;
+  nv._ac2Duration = Number(info.durationMs) > 0
+    ? Number(info.durationMs) / 1000
+    : (info.durLabel && /^\d+:\d{2}$/.test(info.durLabel)
+        ? Number(info.durLabel.split(':')[0]) * 60 + Number(info.durLabel.split(':')[1])
+        : 0);
+  const player = window.mpegts.createPlayer({
+    type: 'mpegts',
+    isLive: false,
+    url: new URL(url, location.href).href
+  }, {
+    enableWorker: true,
+    lazyLoad: false,
+    autoCleanupSourceBuffer: true,
+    autoCleanupMaxBackwardDuration: 300,
+    autoCleanupMinBackwardDuration: 120,
+    seekType: 'range',
+    rangeLoadZeroStart: false
+  });
+  ac2MpegtsPlayer = player;
+  player.attachMediaElement(nv);
+  player.on(window.mpegts.Events.ERROR, (type, detail) => {
+    if (nv.getAttribute('data-vid') !== id || ac2MpegtsPlayer !== player) return;
+    console.error('[Acervo MPEG-TS]', type, detail);
+    nv._ac2MpegtsRequestedPlay = false;
+    ac2SetPlayingState(false);
+    if (recovery) recovery.hidden = false;
+    if (syncTxt) syncTxt.textContent = 'Falha no stream MPEG-TS';
+    if (status) status.innerHTML = '<i class="ph ph-warning-circle" style="color:var(--amber)"></i> Falha ao carregar o vídeo. Tente recarregar a aula.';
+  });
+
+  let started = false;
+  nv._ac2MpegtsStart = () => {
+    if (ac2MpegtsPlayer !== player || nv.getAttribute('data-vid') !== id) return;
+    nv._ac2Played = true;
+    nv._played = true;
+    if (!started) {
+      started = true;
+      player.load(); // O download começa somente após a ação explícita do aluno.
+    }
+    player.play().catch(err => {
+      console.warn('[Acervo MPEG-TS] Não foi possível iniciar a reprodução:', err.message);
+      if (recovery) recovery.hidden = false;
+    });
+    if (status) status.innerHTML = '<i class="ph ph-lightning" style="color:var(--teal)"></i> Conectando ao vídeo MPEG-TS…';
+    if (syncTxt) syncTxt.textContent = 'Conectando';
+  };
+  nv._ac2MpegtsPause = () => {
+    if (ac2MpegtsPlayer === player) player.pause();
+  };
+  const dur = $('ac2-dur-time');
+  if (dur) dur.textContent = nv._ac2Duration ? fmtTime(nv._ac2Duration) : '—';
+  const saved = Number(lsGet('med_pos_' + id, 0));
+  if (saved > 5 && (!nv._ac2Duration || saved < nv._ac2Duration - 15)) {
+    nv._ac2ResumePending = true;
+    nv._ac2ResumeHandler = () => {
+      if (!nv._ac2ResumePending || nv.getAttribute('data-vid') !== id || !ac2MpegtsCanSeek(nv, saved)) return;
+      try { nv.currentTime = saved; } catch (_) { return; }
+      nv._ac2ResumePending = false;
+      nv.removeEventListener('progress', nv._ac2ResumeHandler);
+      nv._ac2ResumeHandler = null;
+      toast(`⏱️ Retomando aula de onde você parou: ${fmtTime(saved)}`, 'info');
+    };
+    nv.addEventListener('progress', nv._ac2ResumeHandler);
+  }
+  const mode = $('ac2-mode-label');
+  if (mode) mode.innerHTML = '<i class="ph ph-shield-check ok"></i> Player MPEG-TS';
+  if (status) status.innerHTML = '<i class="ph ph-play-circle"></i> Clique em reproduzir para iniciar a aula';
+  if (syncTxt) syncTxt.textContent = 'Aguardando reprodução';
+  if (shouldPlay) nv._ac2MpegtsStart();
+  ac2SyncBuffer();
+}
 
 window.ac2AlternarModoPlayer = function () {
   ac2PlayerMode = 'native';
-  if (AC2.atualId) ac2Ativar(AC2.atualId, false);
+  if (AC2.atualId) ac2Ativar(AC2.atualId, false, true);
   toast('▶ Player ativado', 'info');
 };
 
-function ac2Ativar(id, autoPlay = false) {
+function ac2Ativar(id, autoPlay = false, forceReload = false) {
   if (window.appLocked && appLocked()) return; // nada carrega nem toca por trás da tela de login
   const ph = $('ac2-ph');
   if (ph) ph.style.display = 'none';
@@ -11269,17 +11420,53 @@ function ac2Ativar(id, autoPlay = false) {
     nv.style.display = 'block';
     nv.classList.add('ativo');
     ac2InitNativeVideoListeners();
-        nv.preload = autoPlay ? 'auto' : 'metadata'; // só baixa o vídeo inteiro quando o aluno der play
-    if (nv.getAttribute('data-vid') !== id) {
+    const changed = nv.getAttribute('data-vid') !== id;
+    if (changed || forceReload) nv._ac2LoadGeneration = (nv._ac2LoadGeneration || 0) + 1;
+    const loadGeneration = nv._ac2LoadGeneration;
+    if (changed || forceReload) {
       nv.setAttribute('data-vid', id);
       nv._retries = 0; nv._played = !!autoPlay; nv._failed = false;
-      // O servidor já retoma sozinho se o Drive cair; o navegador cuida do buffer com HTTP Range.
-      nv.pause(); if (!autoPlay) ac2SetPlayingState(false);
-      cuscuzTicket(id, 'v').then(tu => {
-        if (nv.getAttribute('data-vid') !== id) return;
-        nv.src = tu; nv.load();
+      nv._ac2Loading = true;
+      nv.pause();
+      ac2DestroyMpegts();
+      nv._ac2MpegtsRequestedPlay = !!autoPlay;
+      for (const timelineId of ['ac2-timeline-play', 'ac2-timeline-buffer']) {
+        const timeline = $(timelineId); if (timeline) timeline.style.width = '0%';
+      }
+      const handle = $('ac2-timeline-handle'); if (handle) handle.style.left = '0%';
+      const currentTime = $('ac2-cur-time'); if (currentTime) currentTime.textContent = '00:00';
+      const durationTime = $('ac2-dur-time'); if (durationTime) durationTime.textContent = '00:00';
+      nv.preload = 'metadata';
+      nv.removeAttribute('src');
+      nv.load();
+      if (!autoPlay) ac2SetPlayingState(false);
+      Promise.all([cuscuzTicket(id, 'v'), ac2Info([id], true)]).then(([tu, infos]) => {
+        if (nv.getAttribute('data-vid') !== id || nv._ac2LoadGeneration !== loadGeneration) return;
+        const info = infos[0] || {};
+        if (info.container === 'mpegts') {
+          ac2UsarMpegts(nv, id, info, tu, autoPlay);
+          return;
+        }
+        nv._ac2Loading = false;
+        nv._ac2MpegtsRequestedPlay = false;
+        nv._ac2Duration = Number(info.durationMs) > 0 ? Number(info.durationMs) / 1000 : 0;
+        nv.preload = autoPlay ? 'auto' : 'metadata';
+        nv.src = tu;
+        nv.load();
         if (autoPlay) nv.play().catch(() => {});
-      }).catch(() => { nv._failed = true; });
+      }).catch(err => {
+        if (nv.getAttribute('data-vid') !== id || nv._ac2LoadGeneration !== loadGeneration) return;
+        nv._ac2Loading = false;
+        nv._failed = true;
+        const recovery = $('ac2-recovery'); if (recovery) recovery.hidden = false;
+        console.warn('[Acervo] Falha ao preparar a aula:', err.message);
+      });
+    } else if (nv._ac2Mpegts && nv._ac2MpegtsStart) {
+      if (autoPlay) nv._ac2MpegtsStart();
+      else { nv._ac2MpegtsPause?.(); ac2SetPlayingState(false); }
+    } else if (nv._ac2Loading) {
+      if (autoPlay) nv._ac2MpegtsRequestedPlay = true;
+      else ac2SetPlayingState(false);
     } else if (autoPlay) {
       nv.play().catch(() => {});
     } else {
@@ -11287,7 +11474,8 @@ function ac2Ativar(id, autoPlay = false) {
       ac2SetPlayingState(false);
     }
     nv.onerror = () => {
-      if (nv.getAttribute('data-vid') !== id) return;
+      if (nv.getAttribute('data-vid') !== id || nv._ac2LoadGeneration !== loadGeneration) return;
+      if (nv._ac2Mpegts) return;
       if (!nv._played) { nv._failed = true; return; } // ninguém deu play ainda: não insiste nem avisa
       nv._retries = (nv._retries || 0) + 1;
       const t = nv.currentTime || 0, tocava = !nv.paused;
@@ -11297,13 +11485,14 @@ function ac2Ativar(id, autoPlay = false) {
       }
       if (nv._retries === 1) toast('Reconectando a aula…', 'info');
       setTimeout(() => {
-        if (!nv || nv.getAttribute('data-vid') !== id) return;
+        if (!nv || nv.getAttribute('data-vid') !== id || nv._ac2LoadGeneration !== loadGeneration) return;
         cuscuzTicket(id, 'v').then(tu => { nv.src = tu; nv.load();
         nv.addEventListener('loadedmetadata', function once() { nv.removeEventListener('loadedmetadata', once); try { if (t > 1) nv.currentTime = t; } catch (_) {} if (tocava) nv.play().catch(() => {}); }, { once: true }); });
       }, 1200 * nv._retries);
     };
     nv.onplaying = () => { nv._retries = 0; };
     nv.onplay = () => {
+      if (nv._ac2Mpegts) { nv._played = true; return; }
       nv._played = true; nv.preload = 'auto';
       if (nv._failed || nv.error) { nv._failed = false; nv._retries = 0; cuscuzTicket(id, 'v').then(tu => { nv.src = tu; nv.load(); nv.play().catch(() => {}); }); }
     };
@@ -11499,16 +11688,11 @@ window.ac2ToggleNav = function () {
 };
 
 window.ac2Recarregar = function () {
-  if (ac2PlayerMode === 'native') {
-    const nv = $('ac2-native-video');
-    if (nv && AC2.atualId) {
-      const cur = nv.currentTime;
-      cuscuzTicket(AC2.atualId, 'v').then(tu => { nv.src = tu; nv.load();
-      if (cur > 0) nv.currentTime = cur;
-      nv.play().catch(() => {}); });
-      toast('↻ Vídeo recarregado no player nativo', 'info');
-      return;
-    }
+  const nv = $('ac2-native-video');
+  if (nv && AC2.atualId) {
+    ac2Ativar(AC2.atualId, true, true);
+    toast('↻ Vídeo recarregado', 'info');
+    return;
   }
   const f = document.querySelector('#ac2-player iframe.ativo');
   if (!f) return;

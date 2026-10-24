@@ -11,6 +11,10 @@ assert.equal(dom('#ac2-progt').attr('onclick'),undefined,'Resumo sem ação não
 assert.equal(dom('#ac2-vol-slider').attr('aria-label'),'Volume da videoaula');
 assert.equal(dom('#ac2-views').length,0,'Não exibir visualizações inventadas');
 assert.ok(!html.includes('ac2CalcularLikes')&&!html.includes('ac2CalcularViews'));
+assert.equal(dom('script[src="/js/vendor/mpegts.js"]').length,1,'Carregar o transmuxer local para aulas MPEG-TS');
+assert.match(html,/info\.container === 'mpegts'/,'Detectar o formato real antes de escolher o player');
+assert.match(html,/lazyLoad:\s*false/,'Manter o stream progressivo ativo para arquivos TS estáticos');
+assert.match(html,/function ac2MpegtsCanSeek\(/,'Restringir a busca ao trecho já carregado no player MPEG-TS');
 const helper=html.slice(html.indexOf('function ac2StatusMensagem('),html.indexOf('/* Atualização por evento do Drive;'));
 let calls=0,finish;
 const ctx={Intl,ac2Atualizar:()=>{calls++;return new Promise(resolve=>{finish=resolve})}};

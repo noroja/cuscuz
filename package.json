@@ -15,7 +15,7 @@
     "build": "node scripts/build-public.js",
     "index:flashcards-pdf": "node scripts/build-flashcard-pdf-index.mjs",
     "lint": "echo 'Lint passed'",
-    "test": "node scripts/tests/ai-provider.test.mjs && node scripts/tests/aula-flashcards-unit.test.mjs && node scripts/tests/aula-qualidade.test.mjs && node scripts/tests/auth-private.test.mjs && node scripts/tests/auth-interface.test.mjs && node scripts/tests/planner-academico.test.mjs && node scripts/tests/study-navigation.test.mjs && node scripts/tests/study-interface.test.mjs && node scripts/tests/acervo-interface.test.mjs && node scripts/tests/acervo-search.test.mjs && node scripts/tests/media-origin.test.mjs && node scripts/tests/mentor-content.test.mjs && node scripts/tests/planner-manual.test.mjs && node scripts/tests/aula-dia.test.mjs && node scripts/tests/aula-source-coverage.test.mjs && node scripts/tests/ai-workflow.test.mjs && node scripts/tests/aula-workflow.test.mjs && node --test scripts/*.test.js && node scripts/tests/console-regressions.test.mjs",
+    "test": "node scripts/tests/media-format.test.mjs && node scripts/tests/ai-provider.test.mjs && node scripts/tests/aula-flashcards-unit.test.mjs && node scripts/tests/aula-qualidade.test.mjs && node scripts/tests/auth-private.test.mjs && node scripts/tests/auth-interface.test.mjs && node scripts/tests/planner-academico.test.mjs && node scripts/tests/study-navigation.test.mjs && node scripts/tests/study-interface.test.mjs && node scripts/tests/acervo-interface.test.mjs && node scripts/tests/acervo-search.test.mjs && node scripts/tests/media-origin.test.mjs && node scripts/tests/mentor-content.test.mjs && node scripts/tests/planner-manual.test.mjs && node scripts/tests/aula-dia.test.mjs && node scripts/tests/aula-source-coverage.test.mjs && node scripts/tests/ai-workflow.test.mjs && node scripts/tests/aula-workflow.test.mjs && node --test scripts/*.test.js && node scripts/tests/console-regressions.test.mjs",
     "test:acervo-search": "node scripts/tests/acervo-search.test.mjs"
   },
   "dependencies": {
@@ -25,6 +25,7 @@
     "dompurify": "^3.4.17",
     "express": "^4.21.2",
     "markdown-it": "^15.0.3",
+    "mpegts.js": "1.8.2",
     "openai": "^7.23.0",
     "pdf-parse": "^1.1.1",
     "yauzl": "^3.4.0"
