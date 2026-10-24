@@ -119,7 +119,7 @@ export function registerAcervoSemantic(app, { getCatalog, supabase, supabaseServ
     const providerLabel = config.provider === 'google'
       ? 'Gemini Embedding 2, nível gratuito'
       : config.provider === 'cohere' ? 'Cohere Trial, com limite de chamadas gratuitas' : 'Hugging Face Inference';
-    const interStageDelay = config.provider === 'google' ? 12000 : config.provider === 'cohere' ? 13000 : 0;
+    const interStageDelay = config.provider === 'google' ? 1000 : config.provider === 'cohere' ? 13000 : 0;
     const html = `<!doctype html><meta charset="utf-8"><title>Indexar acervo</title>
       <main style="font:16px system-ui;max-width:640px;margin:64px auto;padding:24px">
         <h1>Indexar o acervo para busca semântica</h1>
