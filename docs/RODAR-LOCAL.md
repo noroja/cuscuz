@@ -16,7 +16,7 @@ Limites: só funciona com o PC ligado. Sem Supabase, usuários e sessões ficam 
 
 - Texto, Aula do Dia, Mentor e mapas mentais: pelo menos uma chave entre Gemini, Groq ou OpenRouter.
 - Transcrição: Groq para Whisper; Gemini é usado como reserva quando configurado.
-- Busca semântica do acervo: Hugging Face (`HF_TOKEN` com acesso ao EmbeddingGemma), Cohere (`COHERE_API_KEY`) e Supabase (`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`); depois rode `npm run index:acervo-semantico`.
+- Busca semântica do acervo: Hugging Face (`HF_TOKEN` com acesso ao EmbeddingGemma) e Supabase (`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`); Cohere (`COHERE_API_KEY`) é opcional para refinar a ordem dos resultados. Gere o índice com `npm run index:acervo-semantico`.
 - Login Google, usuários duráveis e armazenamento do índice: Supabase configurado. Login Google também depende do provedor Google habilitado no Supabase e de uma conta previamente autorizada.
 
 `npm run local` lê `.env` automaticamente. O `.env` local é ignorado pelo Git; nunca copie chaves para `.env.example` nem as envie em logs ou mensagens.
