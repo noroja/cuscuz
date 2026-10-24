@@ -39,3 +39,4 @@ public/
 
 # Artefatos do skill de design (nao versionar)
 .taste-skill/
+__pycache__/

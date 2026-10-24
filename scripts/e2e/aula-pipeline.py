@@ -2,11 +2,14 @@
 # Uso: python3 scripts/e2e/aula-pipeline.py paralelo|sequencial   (não chama nenhuma IA real)
 import json, sys, time, datetime, urllib.request, subprocess, os, signal
 from playwright.sync_api import sync_playwright
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _usuario import criar_usuario_local, login_cookie
 MODO=sys.argv[1]; SP=3981; FP=3982; S=os.path.dirname(os.path.abspath(__file__)); ROOT=os.path.abspath(os.path.join(S,'..','..'))
 env=dict(os.environ, PORT=str(SP), AI_LOG='0', APP_PASSWORD='x')
 for k in ['GROQ_API_KEY','GEMINI_API_KEY','OPENROUTER_API_KEY','AI_PROVIDER','SUPABASE_URL','SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY']: env.pop(k,None)
 if MODO=='paralelo': env.update(AI_PROVIDER='openrouter', OPENROUTER_API_KEY='k', OPENROUTER_BASE_URL=f'http://127.0.0.1:{FP}/v1')
 else: env.update(AI_PROVIDER='groq', GROQ_API_KEY='k', GROQ_BASE_URL=f'http://127.0.0.1:{FP}/v1')
+USR='e2e'+str(os.getpid()); criar_usuario_local(ROOT, USR)
 fake=subprocess.Popen(['node',S+'/fakeai.mjs',str(FP)],stderr=subprocess.DEVNULL); srv=subprocess.Popen(['node','server.js'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 time.sleep(5)
 BASE=f'http://127.0.0.1:{SP}'
@@ -16,16 +19,15 @@ def api(path, body=None, method='POST'):
 res=[]
 def chk(n,ok,det=''): res.append((bool(ok),n,det))
 try:
-    u='aula'+datetime.datetime.now().strftime('%H%M%S')
-    api('/api/auth/signup',{'username':u,'password':'senha-teste-123','name':'A'})
-    tok=api('/api/auth/login',{'username':u,'password':'senha-teste-123'})['token']
-    st=json.loads(urllib.request.urlopen(urllib.request.Request(BASE+'/api/aula/status',headers={'Authorization':'Bearer '+tok})).read())
+    u=USR
+    tok=login_cookie(BASE,u)
+    st=json.loads(urllib.request.urlopen(urllib.request.Request(BASE+'/api/aula/status',headers={'Cookie':'cuscuz_session='+tok})).read())
     chk('status paralelo esperado', st['paralelo']==(3 if MODO=='paralelo' else 1), str(st))
     texto='\n\n'.join(f'Parágrafo {i}: ' + ('o professor explicou o tema com detalhes clínicos e números exatos. '*12) for i in range(60))
     sess={'id':'a1','data':'2026-10-21','inicio':1,'disciplina':'Clínica','tema':'Teste','parte':'Única','cor':'dourado','duracao':3600,'chunks':[{'i':0,'status':'ok','texto':texto}],'marcas':[],'texto':texto,'live':'','resultado':None}
     with sync_playwright() as p:
         b=p.chromium.launch(executable_path='/opt/pw-browsers/chromium')
-        ctx=b.new_context(viewport={'width':1280,'height':900}); ctx.add_init_script(f"localStorage.setItem('cuscuz_token','{tok}');localStorage.setItem('medplan_logged','1');localStorage.setItem('medplan_user','{u}');localStorage.setItem('hasSeenTour','1');")
+        ctx=b.new_context(viewport={'width':1280,'height':900}); ctx.add_cookies([{'name':'cuscuz_session','value':tok,'url':BASE}]); ctx.add_init_script(f"localStorage.setItem('medplan_logged','1');localStorage.setItem('medplan_user','{u}');localStorage.setItem('hasSeenTour','1');")
         pg=ctx.new_page(); errs=[]; pg.on('pageerror', lambda e: errs.append(str(e)[:200])); pg.on('dialog', lambda d: d.accept())
         pg.goto(BASE+'/'); pg.wait_for_timeout(2500)
         pg.evaluate("go('view-auladia')"); pg.wait_for_timeout(1500)

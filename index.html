@@ -2412,6 +2412,8 @@ mark.exam-highlight {
           <div class="ac2-recovery" id="ac2-recovery" role="status" aria-live="polite" hidden>
             <span>Não foi possível abrir esta videoaula. Tente carregá-la novamente ou escolha outra aula.</span>
             <button type="button" class="ac2-status-retry" onclick="ac2Recarregar()">Recarregar videoaula</button>
+            <button type="button" class="ac2-status-retry" onclick="ac2Diagnosticar()" title="Mostra por que o servidor não consegue entregar este vídeo">Diagnosticar</button>
+            <pre id="ac2-diag" hidden style="flex-basis:100%;white-space:pre-wrap;word-break:break-word;font-size:12px;max-height:260px;overflow:auto;user-select:all;margin:8px 0 0"></pre>
           </div>
 
           <!-- Barra utilitária do player -->
@@ -11498,6 +11500,15 @@ window.ac2ToggleNav = function () {
   ac2SyncNavToggle();
 };
 
+window.ac2Diagnosticar = async function () {
+  const pre = $('ac2-diag'); if (!pre) return;
+  pre.hidden = false; pre.textContent = 'Diagnosticando…';
+  try {
+    const r = await fetch('/api/drive/diagnostico/' + encodeURIComponent(AC2.atualId || ''));
+    const j = await r.json().catch(() => ({ erro: 'resposta inválida (HTTP ' + r.status + ')' }));
+    pre.textContent = JSON.stringify(j, null, 2) + '\n\nComo ver o erro do player: no Chrome, F12 → Rede → recarregue a aula e veja o status do pedido "/m/…" ou "/api/drive/stream/…".';
+  } catch (e) { pre.textContent = 'Falhou: ' + e.message; }
+};
 window.ac2Recarregar = function () {
   if (ac2PlayerMode === 'native') {
     const nv = $('ac2-native-video');

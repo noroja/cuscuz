@@ -1072,6 +1072,42 @@ async function drivePdfHandler(req, res) {
     if (!res.headersSent) res.status(500).send(err.message);
   }
 }
+// Diagnóstico de reprodução (exige login): mostra, para um arquivo do Drive, o que cada rota de download devolve ao servidor
+// (status, tipo, trecho do corpo se for erro/HTML) e os metadados da API. Serve para descobrir POR QUE um vídeo não abre
+// (cota de download do Drive, arquivo sem permissão, limite do Vercel…). Não grava nada e não devolve chaves.
+app.get('/api/drive/diagnostico/:id', async (req, res) => {
+  const fileId = cleanDriveId(req.params.id);
+  if (!fileId) return res.status(400).json({ success: false, error: 'ID inválido' });
+  const t0 = Date.now();
+  const out = { success: true, fileId, ambiente: { serverless: !!IS_SERVERLESS, contaDeServico: !!temConta(), chaveApi: !!DRIVE_API_KEY, mediaOrigin: !!process.env.MEDIA_ORIGIN, regiaoVercel: process.env.VERCEL_REGION || null }, metadados: null, rotas: [] };
+  const comTimeout = async (url, init, ms = 9000) => { const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), ms); try { return await fetch(url, { ...init, signal: ac.signal }); } finally { clearTimeout(tm); } };
+  if (DRIVE_OK) {
+    try {
+      const h = temConta() ? await authHeaders() : {};
+      const r = await comTimeout(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=name,mimeType,size,trashed,shared,videoMediaMetadata(durationMillis,width,height),capabilities(canDownload)&supportsAllDrives=true${temConta() ? '' : '&key=' + DRIVE_API_KEY}`, { headers: h });
+      const txt = await r.text(); let j = null; try { j = JSON.parse(txt); } catch (_) {}
+      out.metadados = r.ok && j ? j : { status: r.status, erro: j && j.error ? { code: j.error.code, message: j.error.message, motivo: (j.error.errors || []).map(e => e.reason).join(',') } : txt.slice(0, 200) };
+    } catch (e) { out.metadados = { erro: e.name === 'AbortError' ? 'timeout (9 s) consultando a API do Drive' : e.message }; }
+  } else out.metadados = { erro: 'Sem credencial do Drive configurada neste servidor.' };
+  for (const url of driveCandidates(fileId)) {
+    const item = { rota: url.replace(/([?&]key=)[^&]+/, '$1***').replace(/^https:\/\/([^/]+)\/.*/, '$1') + (url.includes('googleapis') ? ' (API)' : url.includes('usercontent') ? ' (usercontent)' : ' (uc)') };
+    const t1 = Date.now();
+    try {
+      const h = { Range: 'bytes=0-1023' }; if (temConta() && url.startsWith('https://www.googleapis.com/')) Object.assign(h, await authHeaders());
+      const r = await comTimeout(url, { headers: h });
+      item.status = r.status; item.tipo = r.headers.get('content-type'); item.contentRange = r.headers.get('content-range'); item.tamanho = r.headers.get('content-length');
+      const ehTexto = /text|json|html/i.test(item.tipo || '');
+      if (ehTexto) { const b = await r.text(); item.corpo = b.replace(/\s+/g, ' ').slice(0, 300); item.motivoProvavel = /quota|too many users|Too many/i.test(b) ? 'cota de download do Drive excedida para este arquivo' : /sign in|login|accounts\.google/i.test(b) ? 'arquivo exige login / sem link público' : /not found|File not found/i.test(b) ? 'arquivo não encontrado ou sem permissão' : 'resposta HTML/JSON em vez de vídeo'; }
+      else { try { await r.body?.cancel(); } catch (_) {} item.ok = (r.status === 206 || r.status === 200); }
+    } catch (e) { item.erro = e.name === 'AbortError' ? 'timeout (9 s)' : e.message; }
+    item.ms = Date.now() - t1; out.rotas.push(item);
+  }
+  const algumaOk = out.rotas.some(x => x.ok);
+  out.conclusao = algumaOk ? 'O servidor consegue ler o início do vídeo. Se o player falha no meio, o problema é a continuidade do download (limite de tempo/transferência da Vercel ou corte do Drive); veja os logs da função /api/drive/stream na Vercel.' : 'Nenhuma rota entregou o vídeo ao servidor: veja "motivoProvavel" e "metadados" abaixo.';
+  out.totalMs = Date.now() - t0;
+  res.set('Cache-Control', 'no-store').json(out);
+});
+
 app.get('/api/drive/pdf/:id', (req, res, next) => {
   const id = cleanDriveId(req.params.id);
   if (id && midiaRemota(req)) return redirecionarMidia(req, res, id, 'p');
