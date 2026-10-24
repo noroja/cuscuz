@@ -1788,6 +1788,27 @@ mark.exam-highlight {
 .sr-item:hover{background:var(--bg-hover);color:var(--text-primary);transform:translateX(3px)}
 .sr-item i{color:var(--teal)}
 .sr-mod{margin-left:auto;font-size:10px;font-family:var(--font-mono);color:var(--text-muted);flex-shrink:0}
+.acervo-search-panel{width:min(760px,calc(100vw - 32px));padding:12px;color:var(--text)}
+.acervo-search-filters{display:grid;grid-template-columns:1.2fr 1.2fr .8fr .8fr;gap:8px;padding:2px 0 10px;border-bottom:1px solid var(--border-muted)}
+.acervo-search-filters select,.acervo-search-filters input{min-width:0;width:100%;height:36px;padding:0 9px;border:1px solid var(--border-muted);border-radius:8px;background:var(--bg-elevated);color:var(--text);font:inherit;font-size:12px}
+.acervo-search-filters select:focus,.acervo-search-filters input:focus,.acervo-search-clear-filters:focus-visible,.acervo-search-result:focus-visible,.acervo-search-recent:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.acervo-search-clear-filters{grid-column:1/-1;justify-self:end;border:0;background:transparent;color:var(--text-secondary);font:inherit;font-size:11px;cursor:pointer;padding:2px 4px}
+.acervo-search-status{padding:10px 2px 6px;color:var(--text-muted);font-size:12px}
+.acervo-search-result{display:flex;width:100%;gap:10px;align-items:flex-start;padding:10px 8px;border:0;border-top:1px solid var(--border-subtle);border-radius:8px;background:transparent;color:inherit;text-align:left;cursor:pointer}
+.acervo-search-result:hover{background:var(--bg-hover)}
+.acervo-search-result-icon{flex:0 0 30px;height:30px;display:grid;place-items:center;border-radius:8px;background:rgba(0,190,170,.12);color:var(--teal);font-size:16px}
+.acervo-search-result-copy{min-width:0;flex:1}
+.acervo-search-result-title{display:block;font-size:13px;font-weight:650;line-height:1.35;overflow-wrap:anywhere}
+.acervo-search-result-meta,.acervo-search-result-location{display:block;margin-top:3px;color:var(--text-muted);font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+.acervo-search-result-location{opacity:.82}
+.acervo-search-result-type{flex:none;align-self:center;padding:3px 7px;border:1px solid var(--border-muted);border-radius:99px;color:var(--text-secondary);font-size:10px}
+.acervo-search-recent-wrap{display:flex;flex-wrap:wrap;gap:6px;padding:8px 0}
+.acervo-search-recent{border:1px solid var(--border-muted);border-radius:99px;background:var(--bg-elevated);color:var(--text-secondary);font:inherit;font-size:11px;padding:5px 9px;cursor:pointer}
+@media(max-width:820px){
+  #resultado-busca-global{position:fixed!important;top:64px!important;left:10px!important;right:10px!important;width:auto!important;max-height:calc(100dvh - 78px)!important;margin:0!important;transform:none!important}
+  .acervo-search-filters{grid-template-columns:1fr 1fr}
+}
+@media(max-width:420px){.acervo-search-result-type{display:none}.acervo-search-panel{padding:9px}}
 .vid-thumb{width:66px;height:38px;object-fit:cover;border-radius:6px;flex-shrink:0;background:var(--bg-elevated)}
 
 /* ═══ RADAR MÉDICO: ATUALIZAÇÕES E EDITAIS (Liquid Glass Feed) ═══ */
@@ -1993,10 +2014,10 @@ mark.exam-highlight {
 
     <!-- Campo de pesquisa global: vídeo, PDF, apostila -->
     <div class="busca-global-wrap" style="flex:1;max-width:460px;margin:0 16px;position:relative">
-      <input type="search" id="busca-global" name="globalSearch" aria-label="Pesquisar vídeos, PDFs, apostilas e disciplinas" placeholder="Buscar no seu acervo…" autocomplete="off" style="width:100%;padding:9px 12px 9px 36px;border-radius:20px;border:1px solid var(--border-default);background:var(--bg-surface);color:var(--text);font-size:13px;outline:none">
+      <input type="search" id="busca-global" name="globalSearch" aria-label="Pesquisar aulas e materiais no acervo" aria-expanded="false" aria-controls="resultado-busca-global" placeholder="Buscar aulas, temas e materiais…" autocomplete="off" style="width:100%;padding:9px 12px 9px 36px;border-radius:20px;border:1px solid var(--border-default);background:var(--bg-surface);color:var(--text);font-size:13px;outline:none">
       <i class="ph ph-magnifying-glass" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:14px;pointer-events:none"></i>
       <button type="button" id="busca-global-clear" aria-label="Limpar busca" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;display:none" onclick="limparBuscaGlobal()">×</button>
-      <div id="resultado-busca-global" style="position:absolute;top:100%;left:0;right:0;background:var(--bg-surface);border:1px solid var(--border-default);border-radius:12px;box-shadow:var(--shadow-lg);z-index:60;display:none;max-height:420px;overflow-y:auto;margin-top:6px"></div>
+      <div id="resultado-busca-global" class="acervo-search-panel" role="region" aria-label="Resultados da busca" style="position:absolute;top:100%;left:50%;transform:translateX(-50%);background:var(--bg-surface);border:1px solid var(--border-default);border-radius:12px;box-shadow:var(--shadow-lg);z-index:60;display:none;max-height:72vh;overflow-y:auto;margin-top:6px"></div>
     </div>
 
     <div class="header-actions">
@@ -8465,66 +8486,31 @@ function updateBadges(){let tot=0,dn=0;
  $('badge-total').textContent=tot;$('badge-done').textContent=dn;$('badge-pending').textContent=tot-dn}
 
 /* ═══ BUSCA GLOBAL ═══ */
-const searchDebounced=debounce(doSearch,180);
-function doSearch(q){
+const searchDebounced=debounce(doSearch,250);
+async function doSearch(q){
  const box=$('search-results');if(!box)return;
- const t=normAcc(q).trim();
- if(t.length<2){box.style.display='none';box.innerHTML='';return}
- const courses=[],items=[],res=[];
-
- // 1. Match Courses & Folders in Drive
- const courseList = (loadedRootFolders && loadedRootFolders.length) ? loadedRootFolders : KNOWN_DRIVE_COURSES;
- courseList.forEach(c => {
-   if(courses.length < 4 && normAcc(c.name).includes(t)) courses.push(c);
- });
-
- // 2. Match Cached Drive Files and Subfolders
- for (const [fId, grp] of driveFolderMemoryCache.entries()){
-   (grp.folders || []).forEach(f => {
-     if(courses.length < 6 && normAcc(f.name).includes(t)){
-       courses.push({ id: f.id, name: f.name, icon: 'ph-folder-notch-open' });
-     }
+ const t=String(q||'').trim();
+ if(t.length<2&&!globalSearchHasFilters()){box.style.display='none';box.innerHTML='';return}
+ const globalInput=$('busca-global');if(globalInput&&document.activeElement!==globalInput)globalInput.value=t;
+ box.style.display='block';box.innerHTML='<div class="sr-item" aria-live="polite">Carregando o índice do acervo…</div>';
+ try{
+  const catalog=await acervoSearchCatalog();
+  const search=window.CuscuzAcervoSearch;
+  if(!search)throw new Error('O mecanismo de busca ainda está carregando. Tente novamente.');
+  const result=search.searchAcervo(catalog,t,globalSearchFilters,24);
+  const items=result.items;
+  if(!box.dataset.searchBound){
+   box.dataset.searchBound='1';
+   box.addEventListener('click',event=>{
+    const button=event.target.closest('[data-legacy-search-id]');if(!button)return;
+    abrirResultadoBuscaGlobal({tipo:button.dataset.legacySearchType,id:button.dataset.legacySearchId,format:button.dataset.legacySearchFormat,title:button.dataset.legacySearchTitle});
    });
-   (grp.videos || []).forEach(v => {
-     if(items.length < 12 && normAcc(v.name).includes(t)){
-       items.push({ id: v.id, t: v.name, type: 'v', isDrive: true });
-     }
-   });
-   (grp.pdfs || []).forEach(p => {
-     if(items.length < 12 && normAcc(p.name).includes(t)){
-       items.push({ id: p.id, t: p.name, type: 'a', isDrive: true });
-     }
-   });
- }
-
- // 3. Match Curated Acervo / Manifest
- (ACERVO.videos || []).forEach((v, i) => {
-   if(items.length < 12 && normAcc(v.t).includes(t)){
-     items.push({ id: v.fid || '', t: v.t, type: 'v', mid: v.m, idx: i, isDrive: !!v.fid });
-   }
- });
- (ACERVO.apostilas || []).forEach((a, i) => {
-   if(items.length < 12 && normAcc(a.t).includes(t)){
-     items.push({ id: a.fid || '', t: a.t, type: 'a', mid: a.m, idx: i, isDrive: !!a.fid });
-   }
- });
-
- let html='';
- if(courses.length) html += '<div class="sr-grupo">Cursos e Pastas</div>' + courses.map(c => `
-   <div class="sr-item" onclick="srGoCourse('${c.id}','${esc(c.name).replace(/'/g, "\\'")}')">
-     <i class="ph ${c.icon || 'ph-graduation-cap'}"></i> ${esc(c.name)}
-   </div>
- `).join('');
-
- if(items.length) html += '<div class="sr-grupo">Aulas e Documentos</div>' + items.map(x => `
-   <div class="sr-item" onclick="srOpenDriveOrItem('${x.id}','${x.mid||''}','${x.type}',${x.idx||0})">
-     <i class="ph ${x.type==='v'?'ph-play-circle':'ph-file-pdf'}"></i> ${esc(x.t)}
-     <span class="sr-mod">${x.isDrive ? 'Drive' : 'Acervo'}</span>
-   </div>
- `).join('');
-
- if(!html) html='<div class="sr-item" style="color:var(--text-muted)">Nada encontrado para "'+esc(q)+'"</div>';
- box.innerHTML=html;box.style.display='block';
+  }
+  box.innerHTML='<div class="sr-grupo">'+result.total.toLocaleString('pt-BR')+' resultado(s) no acervo</div>'+items.map(item=>
+   '<button type="button" class="sr-item" data-legacy-search-id="'+esc(item.id)+'" data-legacy-search-type="'+item.type+'" data-legacy-search-format="'+esc(item.format)+'" data-legacy-search-title="'+esc(item.title)+'">'+
+    '<i class="ph '+(item.type==='video'?'ph-play-circle':'ph-file-text')+'"></i><span>'+esc(item.title)+'</span><span class="sr-mod">'+esc(item.course)+'</span></button>'
+  ).join('')||'<div class="sr-item" role="status">Nada encontrado para “'+esc(t)+'”.</div>';
+ }catch(error){box.innerHTML='<div class="sr-item" role="status">'+esc(error.message||'Não foi possível pesquisar agora.')+'</div>'}
 }
 function srHide(){const b=$('search-results');if(b){b.style.display='none';b.innerHTML=''}const i=$('global-search');if(i)i.value=''}
 function srGoCourse(id, name){srHide();enterDriveCourse(id, name)}
@@ -10401,6 +10387,7 @@ const AC2_DISLIKES = new Set(lsGet('acv_dislikes', []));
 const AC2 = {
   pronto: false,
   carregando: null,
+  CATALOGO: null,
   LISTA: [],
   ARVORE: new Map(),
   ORDEM: [],
@@ -10468,7 +10455,12 @@ window.ac2IniciarPrimeira = function () {
 function ac2Init() {
   if (AC2.pronto) return Promise.resolve();
   if (AC2.carregando) return AC2.carregando;
-  AC2.carregando = fetch('/acervo-manifest.json').then(r => r.json()).then(data => {
+  AC2.carregando = fetch('/acervo-manifest.json').then(r => {
+    if (!r.ok) throw new Error(r.status === 401 ? 'Sua sessão expirou. Entre novamente para pesquisar no acervo.' : 'O catálogo respondeu com erro (' + r.status + ').');
+    return r.json();
+  }).then(data => {
+    if (!data || !Array.isArray(data.videos) || !Array.isArray(data.materials)) throw new Error('O catálogo do acervo veio incompleto. Tente novamente.');
+    AC2.CATALOGO = data;
     (data.videos || []).forEach(v => {
       const curso = v.course || 'Geral';
       const disc = String(v.d || '').replace(/\.(mp4|webm|mkv|mov|pdf)$/i, '').trim() || 'Geral';
@@ -10517,6 +10509,13 @@ function ac2Init() {
       '<span><i class="ph ph-folder-simple" style="color:var(--teal)"></i> <b>' + AC2.ORDEM.length + '</b> módulos</span>';
     ac2RenderArvore();
     ac2Progresso();
+  }).catch(error => {
+    AC2.CATALOGO = null;
+    AC2.LISTA.length = 0; AC2.ARVORE.clear(); AC2.ORDEM.length = 0; AC2.MAT.clear(); AC2.indice.clear();
+    AC2.NOS = []; AC2.RAIZ = new Map();
+    AC2.carregando = null;
+    AC2.pronto = false;
+    throw error;
   });
   return AC2.carregando;
 }
@@ -11860,109 +11859,231 @@ const bgInput = $('busca-global');
 const bgResult = $('resultado-busca-global');
 const bgClear = $('busca-global-clear');
 
+let globalSearchFilters = { course: '', discipline: '', format: '', type: '' };
+let globalSearchRequest = 0, globalSearchPage = 1;
+const globalSearchPageSize = 40;
+const globalSearchDebounced = debounce(renderResultadoBuscaGlobal, 220);
+const globalSearchHistoryKey = () => 'cuscuz-search-history:' + (AUTH_USERNAME || 'guest');
+
+function globalSearchHasFilters() {
+  return Object.values(globalSearchFilters).some(Boolean);
+}
+
+async function acervoSearchCatalog() {
+  if (!window.CuscuzAcervoSearch) await import('/js/acervo-search.js');
+  if (AC2.CATALOGO && AC2.pronto) return Promise.resolve(AC2.CATALOGO);
+  return ac2Init().then(() => {
+    if (!AC2.CATALOGO) throw new Error('O catálogo não carregou. Tente novamente.');
+    return AC2.CATALOGO;
+  });
+}
+
+function globalSearchHistory() {
+  try { return JSON.parse(sessionStorage.getItem(globalSearchHistoryKey()) || '[]').filter(item => typeof item === 'string').slice(0, 5); }
+  catch (_) { return []; }
+}
+
+function rememberGlobalSearch(query) {
+  const value = String(query || '').trim();
+  if (value.length < 2) return;
+  try {
+    const history = [value, ...globalSearchHistory().filter(item => item !== value)].slice(0, 5);
+    sessionStorage.setItem(globalSearchHistoryKey(), JSON.stringify(history));
+  } catch (_) {}
+}
+
+function globalSearchFormatLabel(value) {
+  const labels = { pdf: 'PDF', mp4: 'MP4', webm: 'WebM', mov: 'MOV', m4v: 'M4V', mkv: 'MKV', avi: 'AVI', html: 'HTML', htm: 'HTML', doc: 'DOC', docx: 'DOCX', ppt: 'PPT', pptx: 'PPTX', xlsx: 'XLSX', txt: 'TXT' };
+  return labels[String(value || '').toLowerCase()] || String(value || '').toUpperCase();
+}
+
+function globalSearchFilterMarkup(options) {
+  const makeOptions = (items, selected, formatter = value => value) => items.map(item =>
+    '<option value="' + esc(item.value || item.label) + '"' + ((item.value || item.label) === selected ? ' selected' : '') + '>' + esc(formatter(item.label)) + ' · ' + item.count.toLocaleString('pt-BR') + '</option>'
+  ).join('');
+  const types = options.types.map(item => ({ ...item, value: item.label, label: item.label === 'video' ? 'Videoaulas' : 'Materiais' }));
+  return '<div class="acervo-search-filters" aria-label="Filtros da busca">' +
+    '<select aria-label="Filtrar por curso" data-global-search-filter="course"><option value="">Todos os cursos</option>' + makeOptions(options.courses, globalSearchFilters.course) + '</select>' +
+    '<input type="search" list="acervo-search-disciplines" aria-label="Filtrar por disciplina ou pasta" placeholder="Disciplina / pasta" value="' + esc(globalSearchFilters.discipline) + '" data-global-search-filter="discipline">' +
+    '<datalist id="acervo-search-disciplines">' + makeOptions(options.disciplines, globalSearchFilters.discipline, value => value) + '</datalist>' +
+    '<select aria-label="Filtrar por formato" data-global-search-filter="format"><option value="">Todos os formatos</option>' + makeOptions(options.formats, globalSearchFilters.format, globalSearchFormatLabel) + '</select>' +
+    '<select aria-label="Filtrar por tipo de conteúdo" data-global-search-filter="type"><option value="">Todos os tipos</option>' + makeOptions(types, globalSearchFilters.type, value => value) + '</select>' +
+    '<button type="button" class="acervo-search-clear-filters" data-global-search-clear-filters>Limpar filtros</button>' +
+  '</div>';
+}
+
+function globalSearchResultMarkup(item) {
+  const normalize = window.CuscuzAcervoSearch.normalizeSearchText;
+  const provider = item.courseLabels.find(label => normalize(label) !== normalize(item.course)) || item.course;
+  const courseLine = [provider, item.discipline].filter(Boolean).join(' · ');
+  const done = item.type === 'video' && DONE.has('drive:' + item.id);
+  return '<button type="button" class="acervo-search-result" aria-label="Abrir ' + esc(item.title) + ' — ' + esc(courseLine || item.course) + '" data-global-search-open data-id="' + esc(item.id) + '" data-type="' + item.type + '" data-format="' + esc(item.format) + '" data-title="' + esc(item.title) + '">' +
+    '<span class="acervo-search-result-icon"><i class="ph ' + (done ? 'ph-check-circle' : item.type === 'video' ? 'ph-play-circle' : 'ph-file-text') + '"></i></span>' +
+    '<span class="acervo-search-result-copy"><span class="acervo-search-result-title">' + esc(item.title) + '</span>' +
+    '<span class="acervo-search-result-meta">' + esc(courseLine || item.course) + ' · ' + (item.type === 'video' ? 'Videoaula' : 'Material') + '</span>' +
+    '<span class="acervo-search-result-location">' + esc(item.location) + '</span></span>' +
+    '<span class="acervo-search-result-type">' + esc(globalSearchFormatLabel(item.format) || 'Acervo') + '</span></button>';
+}
+
 async function abrirResultadoBuscaGlobal(item) {
-  bgInput.value = '';
-  bgClear.style.display = 'none';
+  if (!item || !item.id) return;
+  rememberGlobalSearch(bgInput.value);
+  globalSearchPage = 1;
   bgResult.style.display = 'none';
-  bgResult.innerHTML = '';
-
-  // Sempre navega para o acervo (Acervo) primeiro
-  go('view-acervo');
-
-  if (item.tipo === 'video') {
-    // Aguarda o acervo inicializar (ac2Init é assíncrono) antes de abrir a aula
-    try {
-      if (typeof ac2Init === 'function') await ac2Init();
-    } catch (e) {
-      // ac2Init pode já ter sido executado anteriormente
+  bgInput.setAttribute('aria-expanded', 'false');
+  try {
+    const catalog = await acervoSearchCatalog();
+    const search = window.CuscuzAcervoSearch;
+    const entry = search && search.buildAcervoSearchIndex(catalog).find(record => record.id === String(item.id));
+    if (!entry) throw new Error('Este item não está mais no catálogo. Atualize a busca e tente novamente.');
+    if (entry.type === 'video') {
+      go('view-acervo');
+      await ac2Init();
+      if (!AC2.indice.has(entry.id)) throw new Error('A aula está no índice, mas não foi carregada pelo player. Tente atualizar o acervo.');
+      ac2Abrir(entry.id);
+    } else if (['html', 'htm'].includes(entry.format)) {
+      openApostilaReader(entry.id, entry.title);
+    } else {
+      window.cuscuzAbrirPdf(entry.id);
     }
-    if (typeof ac2Abrir === 'function') ac2Abrir(item.id);
-  } else if (item.tipo === 'material') {
-    window.cuscuzAbrirPdf(item.id);
+    bgInput.value = '';
+    bgClear.style.display = 'none';
+  } catch (error) {
+    toast(error.message || 'Não foi possível abrir este material.', 'error');
+    bgResult.style.display = 'block';
+    bgInput.setAttribute('aria-expanded', 'true');
   }
 }
 
-function renderResultadoBuscaGlobal(q) {
-  if (!q) {
-    bgResult.style.display = 'none';
-    bgResult.innerHTML = '';
-    bgClear.style.display = 'none';
-    return;
-  }
-  const nq = normAcc(q).trim();
-  const videos = (Array.isArray(AC2.LISTA) ? AC2.LISTA : []).filter(v =>
-    normAcc(v.titulo + ' ' + v.disc + ' ' + v.curso).includes(nq)
-  ).slice(0, 20);
-
-  const materiais = [];
-  if (AC2.MAT) {
-    AC2.MAT.forEach((lista, chave) => {
-      const [curso, disc] = String(chave).split('||');
-      (lista || []).forEach(m => {
-        if (normAcc(m.nome + ' ' + (m.t || '') + ' ' + disc).includes(nq)) {
-          materiais.push({ ...m, curso, disc });
-        }
-      });
-    });
-  }
-
-  const total = videos.length + materiais.length;
-  bgClear.style.display = 'flex';
-
-  if (total === 0) {
-    bgResult.style.display = 'block';
-    bgResult.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:13px;text-align:center"><i class="ph ph-magnifying-glass" style="font-size:22px;display:block;margin:0 auto 6px;color:var(--text-muted)"></i>Nenhum resultado para "' + esc(q) + '".</div>';
-    return;
-  }
-
-  let html = '<div style="padding:8px 10px;font-size:11.5px;color:var(--text-muted);font-weight:600;border-bottom:1px solid var(--border-muted)">' + total + ' resultado(s)</div>';
-
-  if (videos.length) {
-    html += '<div style="font-size:11px;color:var(--text-secondary);padding:6px 10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em">Videoaulas</div>';
-    html += videos.map(v => {
-      const feita = DONE.has('drive:' + v.id);
-      return '<div style="padding:8px 10px;border-bottom:1px solid var(--border-muted);cursor:pointer;display:flex;align-items:center;gap:8px" onclick="abrirResultadoBuscaGlobal({tipo:\'video\',id:\'' + esc(v.id) + '\'})" onmouseover="this.style.background=var(--bg-hover)" onmouseout="this.style.background=\'transparent\'" style="background:transparent">' +
-        '<i class="ph ' + (feita ? 'ph-check-circle ok-i' : 'ph-play-circle') + '" style="font-size:14px;color:var(--teal);flex:none"></i>' +
-        '<div style="flex:1"><div style="font-size:13px;color:var(--text);font-weight:500">' + esc(v.titulo) + '</div><div style="font-size:11px;color:var(--text-muted)">' + esc(v.curso) + ' › ' + esc(v.disc) + '</div></div>' +
-        '</div>';
-    }).join('');
-  }
-
-  if (materiais.length) {
-    html += '<div style="font-size:11px;color:var(--text-secondary);padding:6px 10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-top:4px">PDFs / Apostilas</div>';
-    html += materiais.map(m => {
-      return '<div style="padding:8px 10px;border-bottom:1px solid var(--border-muted);cursor:pointer;display:flex;align-items:center;gap:8px" onclick="abrirResultadoBuscaGlobal({tipo:\'material\',id:\'' + esc(m.id) + '\'})" onmouseover="this.style.background=var(--bg-hover)" onmouseout="this.style.background=\'transparent\'" style="background:transparent">' +
-        '<i class="ph ph-file-pdf" style="font-size:14px;color:var(--rose);flex:none"></i>' +
-        '<div style="flex:1"><div style="font-size:13px;color:var(--text);font-weight:500">' + esc(m.nome || m.t || 'Material') + '</div><div style="font-size:11px;color:var(--text-muted)">' + esc(m.curso || '') + ' › ' + esc(m.disc || 'Geral') + '</div></div>' +
-        '</div>';
-    }).join('');
-  }
-
-  bgResult.innerHTML = html;
+async function renderResultadoBuscaGlobal(q) {
+  const query = String(q || '').trim();
+  const request = ++globalSearchRequest;
+  const hasFilters = globalSearchHasFilters();
+  bgClear.style.display = query || hasFilters ? 'flex' : 'none';
   bgResult.style.display = 'block';
+  bgInput.setAttribute('aria-expanded', 'true');
+  bgResult.innerHTML = '<div class="acervo-search-status" role="status" aria-live="polite">Carregando catálogo para pesquisa…</div>';
+  try {
+    const catalog = await acervoSearchCatalog();
+    if (request !== globalSearchRequest) return;
+    const search = window.CuscuzAcervoSearch;
+    if (!search) throw new Error('A busca ainda está carregando. Tente novamente.');
+    const options = search.getAcervoFilterOptions(catalog, globalSearchFilters.course);
+    const searchQuery = query.length >= 2 ? query : '';
+    const textual = search.searchAcervo(catalog, searchQuery, globalSearchFilters, globalSearchPage * globalSearchPageSize);
+    const resultItems = textual.items;
+    const total = textual.total;
+    let html = globalSearchFilterMarkup(options);
+    if (!query && !hasFilters) {
+      const recent = globalSearchHistory();
+      html += '<div class="acervo-search-status">Escolha um curso ou pesquise por aula, tema ou material.' + (recent.length ? ' Buscas recentes:' : '') + '</div>';
+      if (recent.length) html += '<div class="acervo-search-recent-wrap">' + recent.map(value => '<button type="button" class="acervo-search-recent" data-global-search-recent="' + esc(value) + '">' + esc(value) + '</button>').join('') + '</div>';
+    } else if (query.length < 2 && !hasFilters) {
+      html += '<div class="acervo-search-status">Digite pelo menos 2 caracteres ou escolha um filtro.</div>';
+    } else {
+      html += '<div class="acervo-search-status" role="status" aria-live="polite">' + total.toLocaleString('pt-BR') + ' resultado(s)' + (total > resultItems.length ? ' · mostrando ' + resultItems.length : '') + '</div>';
+      if (resultItems.length) html += resultItems.map(globalSearchResultMarkup).join('');
+      else html += '<div class="acervo-search-status">Nenhum resultado para “' + esc(query || globalSearchFilters.course || globalSearchFilters.discipline || globalSearchFilters.format) + '”.</div>';
+      if (total > resultItems.length) html += '<button type="button" class="acervo-search-clear-filters" data-global-search-more>Mostrar mais resultados</button>';
+    }
+    bgResult.innerHTML = html;
+  } catch (error) {
+    if (request !== globalSearchRequest) return;
+    bgResult.innerHTML = '<div class="acervo-search-status" role="status">' + esc(error.message || 'Não foi possível carregar o índice do acervo.') +
+      ' <button type="button" class="acervo-search-clear-filters" data-global-search-retry>Tentar novamente</button></div>';
+  }
 }
 
 function limparBuscaGlobal() {
+  globalSearchRequest++;
+  globalSearchPage = 1;
+  globalSearchFilters = { course: '', discipline: '', format: '', type: '' };
   bgInput.value = '';
+  const legacySearch = $('global-search'); if (legacySearch) legacySearch.value = '';
   bgClear.style.display = 'none';
   bgResult.style.display = 'none';
   bgResult.innerHTML = '';
+  bgInput.setAttribute('aria-expanded', 'false');
 }
 
 if (bgInput) {
   bgInput.addEventListener('input', e => {
-    renderResultadoBuscaGlobal(e.target.value);
+    globalSearchPage = 1;
+    globalSearchDebounced(e.target.value);
+    globalSearchDebounced(e.target.value);
   });
   bgInput.addEventListener('focus', e => {
-    if (e.target.value.trim()) bgResult.style.display = 'block';
+    renderResultadoBuscaGlobal(e.target.value);
+  });
+  bgInput.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      bgResult.style.display = 'none';
+      bgInput.setAttribute('aria-expanded', 'false');
+    } else if (e.key === 'ArrowDown') {
+      const first = bgResult.querySelector('.acervo-search-result, .acervo-search-recent');
+      if (first) { e.preventDefault(); first.focus(); }
+    } else if (e.key === 'Enter') {
+      const firstResult = bgResult.querySelector('.acervo-search-result');
+      if (firstResult) { e.preventDefault(); firstResult.click(); }
+    }
+  });
+  bgResult.addEventListener('change', e => {
+    const control = e.target.closest('[data-global-search-filter]');
+    if (!control) return;
+    const key = control.dataset.globalSearchFilter;
+    globalSearchFilters[key] = String(control.value || '').trim();
+    globalSearchPage = 1;
+    if (key === 'course') globalSearchFilters.discipline = '';
+    renderResultadoBuscaGlobal(bgInput.value).then(() => bgResult.querySelector('[data-global-search-filter="' + key + '"]')?.focus());
+  });
+  bgResult.addEventListener('keydown', e => {
+    if (!['ArrowDown', 'ArrowUp'].includes(e.key) || !e.target.matches('.acervo-search-result')) return;
+    const options = [...bgResult.querySelectorAll('.acervo-search-result')];
+    const index = options.indexOf(e.target);
+    const next = options[index + (e.key === 'ArrowDown' ? 1 : -1)];
+    if (next) { e.preventDefault(); next.focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); bgInput.focus(); }
+  });
+  bgResult.addEventListener('click', e => {
+    if (e.target.closest('[data-global-search-more]')) {
+      globalSearchPage++;
+      renderResultadoBuscaGlobal(bgInput.value);
+      return;
+    }
+    const clearFilters = e.target.closest('[data-global-search-clear-filters]');
+    if (clearFilters) {
+      globalSearchFilters = { course: '', discipline: '', format: '', type: '' };
+      globalSearchPage = 1;
+      renderResultadoBuscaGlobal(bgInput.value);
+      return;
+    }
+    const recent = e.target.closest('[data-global-search-recent]');
+    if (recent) {
+      bgInput.value = recent.dataset.globalSearchRecent || '';
+      globalSearchPage = 1;
+      renderResultadoBuscaGlobal(bgInput.value);
+      bgInput.focus();
+      return;
+    }
+    if (e.target.closest('[data-global-search-retry]')) { renderResultadoBuscaGlobal(bgInput.value); return; }
+    const result = e.target.closest('[data-global-search-open]');
+    if (result) abrirResultadoBuscaGlobal({ tipo: result.dataset.type, id: result.dataset.id, format: result.dataset.format, title: result.dataset.title });
   });
   // Fecha ao clicar fora
   document.addEventListener('click', e => {
     if (!bgInput.contains(e.target) && !bgResult.contains(e.target)) {
       bgResult.style.display = 'none';
+      bgInput.setAttribute('aria-expanded', 'false');
     }
   });
 }
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    bgInput?.focus();
+  }
+});
 
 // ═══ BOTÃO PRATICAR QUESTÕES SELECIONADAS POR TEMA DA VIDEOAULA ═══
 function extrairTemaLimpoDaAula(v) {
