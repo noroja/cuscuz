@@ -2,21 +2,22 @@
 const fast = ['groq', 'gemini', 'openrouter'];
 const context = ['gemini', 'openrouter', 'groq'];
 const writing = ['openrouter', 'gemini', 'groq'];
+const aula = ['gemini', 'openrouter', 'groq'];
 export const AI_TASKS = {
-  aula_revisar: { label: 'Revisar transcrição', providers: fast },
+  aula_revisar: { label: 'Revisar transcrição', providers: aula },
   aula_mapa: { label: 'Organizar capítulos e fontes', providers: context },
-  aula_mapa_consolidar: { label: 'Consolidar inventário', providers: fast },
-  aula_capitulo: { label: 'Escrever capítulos', providers: writing, families: ['nvidia/', 'minimax/', 'google/gemma'] },
-  aula_fechamento: { label: 'Sintetizar e fechar o material', providers: writing, families: ['minimax/', 'nvidia/', 'google/gemma'] },
-  aula_flashcards: { label: 'Gerar flashcards', providers: writing, families: ['google/gemma', 'nvidia/', 'minimax/'] },
+  aula_mapa_consolidar: { label: 'Consolidar inventário', providers: aula },
+  aula_capitulo: { label: 'Escrever capítulos', providers: aula, families: ['nvidia/', 'minimax/', 'google/gemma'] },
+  aula_fechamento: { label: 'Sintetizar e fechar o material', providers: aula, families: ['minimax/', 'nvidia/', 'google/gemma'] },
+  aula_flashcards: { label: 'Gerar flashcards', providers: ['groq', 'openrouter', 'gemini'], models: { groq: 'openai/gpt-oss-20b' }, families: ['google/gemma', 'nvidia/', 'minimax/'] },
   aula_extrair: { label: 'Extrair fatos da aula (uma leitura)', providers: context },
-  aula_processar: { label: 'Extrair pontos de prova', providers: fast },
+  aula_processar: { label: 'Extrair pontos de prova', providers: aula },
   aula_resumo: { label: 'Produzir visão geral', providers: context },
   aula_mapa_mental: { label: 'Estruturar mapa mental', providers: context },
-  mentor_chat: { label: 'Conversar com o Mentor', providers: fast },
+  mentor_chat: { label: 'Conversar com o Mentor', providers: fast, models: { groq: 'openai/gpt-oss-120b' } },
   documento: { label: 'Interpretar documentos', providers: context },
-  planner_enrich: { label: 'Detalhar tarefas de estudo', providers: writing, families: ['nvidia/', 'minimax/', 'google/gemma'] },
-  planner_associacoes: { label: 'Conferir relações entre temas', providers: fast },
+  planner_enrich: { label: 'Detalhar tarefas do Mentor IA', providers: ['groq', 'gemini', 'openrouter'], models: { groq: 'openai/gpt-oss-120b' } },
+  planner_associacoes: { label: 'Conferir relações do Mentor IA', providers: fast, models: { groq: 'openai/gpt-oss-120b' } },
   resumo_rapido: { label: 'Resumir tópicos curtos', providers: fast },
   questoes: { label: 'Gerar questões estruturadas', providers: writing, families: ['google/gemma', 'nvidia/', 'minimax/'] },
   tutor: { label: 'Orientar raciocínio de estudo', providers: fast },
@@ -27,6 +28,15 @@ const parseOrder = value => [...new Set(String(value || '').toLowerCase().split(
 export function taskOrder(task) {
   const specific = /^[a-z_]+$/.test(task || '') ? process.env['AI_ORDER_' + task.toUpperCase()] : '';
   return parseOrder(specific || AI_TASKS[task]?.providers?.join(',') || process.env.AI_ORDER);
+}
+export function taskModel(task, provider, fallback = '') {
+  const specific = /^[a-z_]+$/.test(task || '') && ['groq', 'gemini'].includes(provider)
+    ? String(process.env[`AI_MODEL_${task.toUpperCase()}_${provider.toUpperCase()}`] || '').trim()
+    : '';
+  const aulaGemini = provider === 'gemini' && /^aula_/.test(task || '')
+    ? String(process.env.AULA_GEMINI_MODEL || 'gemini-2.5-flash').trim()
+    : '';
+  return specific || AI_TASKS[task]?.models?.[provider] || aulaGemini || fallback;
 }
 export function taskModels(task, models) {
   const families = AI_TASKS[task]?.families || [];
@@ -66,7 +76,15 @@ export function runAiJob(provider, run, { background = false } = {}) {
 }
 export function workflowStatus() {
   return {
-    tasks: Object.fromEntries(Object.entries(AI_TASKS).map(([task, p]) => [task, { descricao: p.label, ordem: taskOrder(task), familiasOpenRouter: p.families || [] }])),
+    tasks: Object.fromEntries(Object.entries(AI_TASKS).map(([task, p]) => [task, {
+      descricao: p.label,
+      ordem: taskOrder(task),
+      modelos: Object.fromEntries([...new Set([...p.providers.filter(provider => ['groq', 'gemini'].includes(provider)), ...Object.keys(p.models || {})])].map(provider => [
+        provider,
+        taskModel(task, provider, p.models?.[provider] || (provider === 'groq' ? process.env.GROQ_MODEL || 'openai/gpt-oss-120b' : process.env.GEMINI_MODEL || 'gemini-3.8-flash'))
+      ])),
+      familiasOpenRouter: p.families || []
+    }])),
     fila: { ativos: total, aguardando: pending.length, limites: limits() }
   };
 }

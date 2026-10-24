@@ -13,7 +13,8 @@ http.createServer((req, res) => {
     else if (/Síntese do trecho/.test(txt)) { tipo = 'fech'; saida = '### Síntese do trecho\n- ligação\n### Memória do trecho\n- fato'; await dormir(200); }
     else if (/Crie flashcards/.test(txt)) { tipo = 'fc'; saida = JSON.stringify([{ frente: 'F1', verso: 'V1', tema: 'Tema 1' }, { frente: 'F2', verso: 'V2' }]); await dormir(300); }
     else if (/Extraia, SOMENTE do TRECHO/.test(txt)) { tipo = 'ext'; saida = JSON.stringify({ fatos: [{ tipo: 'dose', texto: 'Fato A', capitulo: 'Tema 1' }, { tipo: 'conduta', texto: 'Fato B', capitulo: 'Tema 2' }], sintese: ['Ligação X'], termos: [], caiNaProva: ['cai isto'], duvidas: [], assuntosCobertos: [] }); await dormir(200); }
-    else if (/monitor de Medicina/.test(txt)) { tipo = 'proc'; saida = JSON.stringify({ titulo: 'T', resumo: 'r', topicos: [{ titulo: 'a', pontos: ['x'] }], caiNaProva: ['cai isto'], assuntosCobertos: [] }); await dormir(300); }
+    else if (/Tutor IA contextual da seção Aula do Dia/.test(txt)) { tipo = 'tutor'; saida = 'Este trecho da aula explica o tema e seu mecanismo [T1].'; await dormir(150); }
+    else if (/monitor de Medicina|RESUMO ESTRUTURADO de fatos/.test(txt)) { tipo = 'proc'; saida = JSON.stringify({ titulo: 'T', resumo: 'r', topicos: [{ titulo: 'a', pontos: ['x'] }], caiNaProva: ['cai isto'], assuntosCobertos: [] }); await dormir(300); }
     else if (/revisa transcrições/.test(txt)) { tipo = 'rev'; saida = 'TEXTO REVISADO\n\n' + txt.slice(txt.indexOf('TEXTO:\n') + 7); await dormir(300); }
     log.push(tipo);
     voo--;

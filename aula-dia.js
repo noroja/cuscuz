@@ -12,7 +12,7 @@
   const duracaoAudio = s => { const n = Math.max(0, Math.round(Number(s) || 0)), m = Math.floor(n / 60), seg = n % 60; return m >= 60 ? Math.floor(m / 60) + 'h ' + (m % 60) + 'min' : m + 'min ' + seg + 's'; };
 
   // geminiOk = há IA de texto (revisão/resumo); transcOk = há Whisper no servidor; paralelo = chamadas de texto simultâneas permitidas
-  let geminiOk = null, transcOk = false, paralelo = 1, iniciando = false, uploadRodando = false;
+  let geminiOk = null, transcOk = false, paralelo = 1, iniciando = false, uploadRodando = false, perfisPedagogicos = [], tutorRodando = false, tutorFalha = '';
   let audioUploadDireto = false, audioGrandeGemini = false, audioMaxBytes = 3 * 1024 * 1024, audioInlineMaxBytes = 3 * 1024 * 1024, groqAudioMaxBytes = 25_000_000;
   async function carregarStatus() {
     if (geminiOk !== null) return;
@@ -26,6 +26,7 @@
       audioInlineMaxBytes = Math.max(1, Number(j.limiteAudioInlineBytes) || 3 * 1024 * 1024);
       groqAudioMaxBytes = Math.max(1, Number(j.limiteGroqAudioBytes) || 25_000_000);
       audioGrandeGemini = !!j.audioGrandeGemini;
+      perfisPedagogicos = Array.isArray(j.perfisPedagogicos) ? j.perfisPedagogicos : [];
     } catch (_) { geminiOk = false; transcOk = false; paralelo = 1; }
   }
   let rec = null;       // estado da gravação em andamento
@@ -40,16 +41,27 @@
   const PROFUNDIDADES = { conciso: 'Enxuto', equilibrado: 'Equilibrado', detalhado: 'Detalhado' };
   function preferenciasAula() {
     const p = get(K_PREF, {});
-    return { tipoAula: TIPOS_AULA[p.tipoAula] ? p.tipoAula : 'expositiva', preferenciaMaterial: PROFUNDIDADES[p.preferenciaMaterial] ? p.preferenciaMaterial : 'equilibrado' };
+    return {
+      tipoAula: TIPOS_AULA[p.tipoAula] ? p.tipoAula : 'expositiva',
+      preferenciaMaterial: PROFUNDIDADES[p.preferenciaMaterial] ? p.preferenciaMaterial : 'equilibrado'
+    };
   }
   function salvarPreferencias() {
     const tipoAula = ($('ad-tipo') || {}).value, preferenciaMaterial = ($('ad-detalhe') || {}).value;
     if (TIPOS_AULA[tipoAula] && PROFUNDIDADES[preferenciaMaterial]) set(K_PREF, { tipoAula, preferenciaMaterial });
   }
+  function preferenciasPedagogicasFormulario() {
+    return {
+      perfilPedagogico: ($('ad-perfil') || {}).value || 'automatico',
+      objetivoEstudo: ($('ad-objetivo') || {}).value || 'automatico',
+      objetivosAprendizagem: String(($('ad-objetivos') || {}).value || '').slice(0, 1600),
+      enfasePedagogica: String(($('ad-enfase') || {}).value || '').slice(0, 300)
+    };
+  }
   // Só o resumo da aula vai para o localStorage; textos grandes (transcrição, resumo, flashcards) ficam no IndexedDB
   function metaDe(s) {
-    return { id: s.id, data: s.data, inicio: s.inicio, disciplina: s.disciplina, tema: s.tema, parte: s.parte || 'Única', cor: s.cor || 'dourado', duracao: s.duracao || 0, tipoAula: s.tipoAula || 'expositiva', preferenciaMaterial: s.preferenciaMaterial || 'equilibrado', audioImportado: s.audioImportado || '', audioBytes: s.audioBytes || 0, marcas: s.marcas || [],
-      palavras: palavrasDe(s.textoRevisado || s.texto), pronto: !!(s.resumoMd && s.flashcards), revisada: !!s.textoRevisado, nFlash: (s.flashcards || []).length };
+    return { id: s.id, data: s.data, inicio: s.inicio, disciplina: s.disciplina, tema: s.tema, parte: s.parte || 'Única', cor: s.cor || 'dourado', duracao: s.duracao || 0, tipoAula: s.tipoAula || 'expositiva', preferenciaMaterial: s.preferenciaMaterial || 'equilibrado', perfilPedagogico: s.perfilPedagogico || 'automatico', objetivoEstudo: s.objetivoEstudo || 'automatico', objetivosAprendizagem: s.objetivosAprendizagem || '', enfasePedagogica: s.enfasePedagogica || '', audioImportado: s.audioImportado || '', audioBytes: s.audioBytes || 0, marcas: s.marcas || [],
+      palavras: palavrasDe(s.textoRevisado || s.texto), pronto: !!(s.resumoMd && s.resultado), revisada: !!s.textoRevisado, nFlash: (s.flashcards || []).length };
   }
   let _docTimer = null;
   function salvarSess(s) {
@@ -83,6 +95,7 @@
 .ad .card{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:14px;margin-bottom:14px}
 .ad label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:0 0 4px}
 .ad input,.ad select{width:100%;background:var(--bg-base);color:var(--text-primary);border:1px solid var(--border-muted);border-radius:var(--radius-md);padding:9px 10px;font:inherit;font-size:16px}
+.ad textarea{width:100%;min-height:58px;resize:vertical;background:var(--bg-base);color:var(--text-primary);border:1px solid var(--border-muted);border-radius:var(--radius-md);padding:9px 10px;font:inherit;font-size:14px}
 .ad .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .ad .b{background:var(--bg-surface);border:1px solid var(--border-muted);color:var(--text-primary);border-radius:var(--radius-md);padding:8px 12px;font-size:13px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;touch-action:manipulation}
 .ad .b:hover{border-color:var(--teal-border);background:var(--teal-dim)}.ad .b.pri{background:var(--teal);color:var(--text-inverse);border-color:var(--teal);font-weight:700}
@@ -105,12 +118,13 @@
 .ad .hist{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border-subtle);font-size:13px}
 .ad .hist small{color:var(--text-secondary)}
 .ad .aviso{font-size:12px;color:var(--amber);background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--radius-md);padding:8px 10px;margin-top:10px}
+.ad-tutor-msg{padding:12px 0;border-bottom:1px solid var(--border-subtle);line-height:1.6}.ad-tutor-msg:last-child{border-bottom:0}.ad-tutor-msg.user{color:var(--text-secondary)}.ad-tutor-msg.assistant{font-size:14px}.ad-tutor-msg .ad-md{max-height:none;overflow:visible;padding:0}.ad-tutor-source{margin:6px 0 0 12px;font-size:12px;color:var(--text-secondary)}.ad-tutor-source blockquote{white-space:pre-wrap;margin:6px 0;padding:8px 10px;border-left:2px solid var(--border-muted);background:var(--bg-base)}.ad-tutor-quick{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.ad-tutor-form{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}.ad-tutor-form textarea{min-height:74px}.ad-objective{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border-subtle);font-size:13.5px}.ad-objective input{width:18px;height:18px;flex:0 0 18px;margin:1px 0 0;accent-color:var(--teal)}.ad-progress-line{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border-subtle);font-size:13px}.ad-progress-line span:last-child{color:var(--text-secondary);text-align:right}
 
 .ad .row3{display:grid;grid-template-columns:1.2fr 1.6fr .8fr;gap:10px;margin-top:10px}
 .ad .file-note{font-size:12px;color:var(--text-secondary);line-height:1.5;margin:8px 0 0}
 .ad .file-meta{font-size:13px;color:var(--text-primary);margin-top:2px;flex-basis:100%;overflow-wrap:anywhere}
 .ad .file-meta[data-state="error"]{color:var(--amber)}.ad .file-meta[data-state="success"]{color:var(--teal)}
-.ad .b:focus-visible,.ad input:focus-visible,.ad select:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.ad .b:focus-visible,.ad input:focus-visible,.ad select:focus-visible,.ad textarea:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.ad-dot{animation:none}.ad-meter i{transition:none}}
 .ad .grp{margin:10px 0 2px;font-weight:700;font-size:14px;color:var(--teal)}.ad .grp2{margin:6px 0 0 8px;font-size:13px;color:var(--text-secondary)}
 .ad-md{font-size:14px;line-height:1.7;max-height:70vh;overflow:auto;padding:2px 4px}
@@ -137,7 +151,8 @@
 .mm-inner{transform-origin:0 0;width:max-content}
 .mm-node{cursor:pointer}
 .mm-node text{user-select:none}
-@media(max-width:600px){.ad .row,.ad .row3{grid-template-columns:1fr}}`;
+@media(max-width:600px){.ad .row,.ad .row3,.ad-tutor-form{grid-template-columns:1fr}.ad-tutor-form .b{min-height:44px;justify-content:center}.ad-tabs .b{flex:0 0 auto;min-height:40px}.ad-tutor-form textarea{font-size:16px}}
+@media(max-width:420px){.ad-progress-line{display:grid;grid-template-columns:1fr;gap:3px}.ad-progress-line span:last-child{text-align:left}}`;
     document.head.appendChild(s);
   }
 
@@ -191,7 +206,7 @@
     const ordP = p => { const m = /(\d+)/.exec(p || ''); return m ? +m[1] : 0; };
     return Object.keys(arv).sort().map(a => `<div class="grp">📚 ${E(a)}</div>` + Object.keys(arv[a]).sort().map(c =>
       `<div class="grp2">📖 ${E(c)}</div>` + arv[a][c].sort((x, y) => ordP(x.parte) - ordP(y.parte) || (x.inicio || 0) - (y.inicio || 0)).map(s =>
-        `<div class="hist"><div><b>${E(s.parte || 'Única')}</b> <small>${E(s.data)} · ${hms(s.duracao || 0)} · ${s.palavras != null ? s.palavras : 0} palavras${s.tipoAula ? ' · ' + E(TIPOS_AULA[s.tipoAula] || s.tipoAula) : ''}${s.preferenciaMaterial ? ' · material ' + E(PROFUNDIDADES[s.preferenciaMaterial] || s.preferenciaMaterial) : ''}${s.audioImportado ? ' · áudio ' + E(s.audioImportado) + ' (' + bytesAudio(s.audioBytes || 0) + ')' : ''}${s.revisada ? ' · ✔ revisada' : ''}${s.pronto ? ' · ✔ resumo + ' + (s.nFlash || 0) + ' flashcards' : ''}</small></div><div style="display:flex;gap:6px"><button class="b" onclick="auladia.abrir('${s.id}')">Abrir</button><button class="b" aria-label="Apagar aula ${E(s.tema || s.disciplina || s.parte || '')}" title="Apagar aula" onclick="auladia.apagar('${s.id}')">🗑</button></div></div>`).join('')).join('')).join('');
+        `<div class="hist"><div><b>${E(s.parte || 'Única')}</b> <small>${E(s.data)} · ${hms(s.duracao || 0)} · ${s.palavras != null ? s.palavras : 0} palavras${s.tipoAula ? ' · ' + E(TIPOS_AULA[s.tipoAula] || s.tipoAula) : ''}${s.preferenciaMaterial ? ' · material ' + E(PROFUNDIDADES[s.preferenciaMaterial] || s.preferenciaMaterial) : ''}${s.audioImportado ? ' · áudio ' + E(s.audioImportado) + ' (' + bytesAudio(s.audioBytes || 0) + ')' : ''}${s.revisada ? ' · ✔ revisada' : ''}${s.pronto ? ' · ✔ resumo' + (s.nFlash ? ' + ' + s.nFlash + ' flashcards' : '') : ''}</small></div><div style="display:flex;gap:6px"><button class="b" onclick="auladia.abrir('${s.id}')">Abrir</button><button class="b" aria-label="Apagar aula ${E(s.tema || s.disciplina || s.parte || '')}" title="Apagar aula" onclick="auladia.apagar('${s.id}')">🗑</button></div></div>`).join('')).join('')).join('');
   }
 
   async function render() {
@@ -205,12 +220,14 @@
     const aulaHoje = hoje.find(a => a.data === hojeISO());
     const d0 = aulaHoje ? aulaHoje.disciplina : '', t0 = aulaHoje ? aulaHoje.tema : '', pref = preferenciasAula();
     const partes = ['Única'].concat([1, 2, 3, 4, 5, 6, 7, 8].map(n => 'Parte ' + n));
-    r.innerHTML = `<div class="ad"><h2>Aula do dia</h2><div class="sub">Grave a aula da faculdade: transcrição fiel, revisada e arquivada por Área › Conteúdo › Parte. No fim eu gero o resumo completo e os flashcards de revisão.</div>
+    r.innerHTML = `<div class="ad"><h2>Aula do dia</h2><div class="sub">Grave ou envie a aula para organizar a transcrição e gerar material de estudo. Os flashcards só são criados quando você solicitar.</div>
     <div class="card"><div class="row"><div><label for="ad-disc">Área / disciplina</label><input id="ad-disc" name="disciplina" autocomplete="off" list="ad-discs" placeholder="Ex.: Psiquiatria…" value="${E(d0)}" oninput="auladia.parteAuto()"><datalist id="ad-discs">${opts.map(o => `<option value="${E(o)}">`).join('')}</datalist></div>
     <div><label for="ad-tema">Conteúdo da aula</label><input id="ad-tema" name="conteudo" autocomplete="off" placeholder="Ex.: Transtornos de humor…" value="${E(t0)}" oninput="auladia.parteAuto()"></div></div>
     <div class="row3"><div><label for="ad-parte">Parte</label><select id="ad-parte" name="parte" onchange="this.dataset.manual=1">${partes.map(p => `<option${p === sugerirParte(d0, t0) ? ' selected' : ''}>${p}</option>`).join('')}</select></div>
 <div></div></div>
     <div class="row3"><div><label for="ad-tipo">Tipo de aula</label><select id="ad-tipo" name="tipoAula" onchange="auladia.salvarPreferencias()"><option value="expositiva"${pref.tipoAula === 'expositiva' ? ' selected' : ''}>Expositiva</option><option value="caso-clinico"${pref.tipoAula === 'caso-clinico' ? ' selected' : ''}>Discussão de caso</option><option value="revisao-prova"${pref.tipoAula === 'revisao-prova' ? ' selected' : ''}>Revisão para prova</option><option value="pratica"${pref.tipoAula === 'pratica' ? ' selected' : ''}>Aula prática ou procedimento</option></select></div><div><label for="ad-detalhe">Tamanho do material</label><select id="ad-detalhe" name="preferenciaMaterial" onchange="auladia.salvarPreferencias()"><option value="conciso"${pref.preferenciaMaterial === 'conciso' ? ' selected' : ''}>Enxuto</option><option value="equilibrado"${pref.preferenciaMaterial === 'equilibrado' ? ' selected' : ''}>Equilibrado</option><option value="detalhado"${pref.preferenciaMaterial === 'detalhado' ? ' selected' : ''}>Detalhado</option></select></div><div class="file-note">A duração do arquivo é detectada automaticamente.</div></div>
+    <div class="row3"><div><label for="ad-perfil">Perfil pedagógico</label><select id="ad-perfil" name="perfilPedagogico"><option value="automatico" selected>Inferir pelo conteúdo</option>${perfisPedagogicos.map(p => `<option value="${E(p.id)}">${E(p.nome)}</option>`).join('')}</select></div><div><label for="ad-objetivo">Objetivo de estudo</label><select id="ad-objetivo" name="objetivoEstudo"><option value="automatico" selected>Automático pelo tipo e conteúdo</option><option value="compreender">Compreender</option><option value="prova">Preparar para prova</option><option value="osce">Aplicação prática / OSCE</option><option value="revisar">Revisar conteúdo estudado</option><option value="aprofundar">Aprofundar mecanismos</option></select></div><div class="file-note">O perfil é inferido pela aula ou pode ser fixado manualmente.</div></div>
+    <div class="row"><div><label for="ad-objetivos">Objetivos de aprendizagem (opcional)</label><textarea id="ad-objetivos" name="objetivosAprendizagem" maxlength="1600" placeholder="Um objetivo por linha"></textarea></div><div><label for="ad-enfase">Ênfase desta aula (opcional)</label><input id="ad-enfase" name="enfasePedagogica" maxlength="300" placeholder="Ex.: diferenciar mecanismos e correlações"><div class="file-note">Essas escolhas ficam registradas nesta aula.</div></div></div>
     <div class="ad-big"><button class="b rec" id="ad-start" onclick="auladia.iniciar()"><i class="ph ph-record" aria-hidden="true"></i> Gravar agora</button><button class="b" type="button"${transcOk ? '' : ' disabled title="Configure um provedor de transcrição no servidor"'} aria-describedby="ad-audio-note" onclick="document.getElementById('ad-audio-file').click()"><i class="ph ph-upload-simple" aria-hidden="true"></i> Enviar áudio</button><input id="ad-audio-file" name="audio" type="file" accept="audio/mpeg,audio/mp4,audio/wav,audio/ogg,audio/webm,audio/flac,audio/x-m4a,.mp3,.m4a,.wav,.ogg,.webm,.flac" hidden onchange="auladia.importarAudio(this)"><span id="ad-audio-meta" class="file-meta" role="status" aria-live="polite" aria-atomic="true"></span>
     <span class="sub" style="margin:0">${transcOk ? (geminiOk ? 'A gravação é enviada em trechos de ~1,5 min; arquivos selecionados são transcritos antes dos materiais.' : 'A transcrição por áudio está disponível; configure também uma IA de texto para gerar resumo e flashcards.') : (geminiOk ? 'Transcrição de áudio indisponível neste momento; você ainda pode gravar com a legenda ao vivo do navegador.' : 'Sem provedor de IA no servidor: a gravação usa apenas a legenda ao vivo do navegador.')}</span></div>
     <div id="ad-audio-note" class="file-note">MP3, M4A, WAV, OGG, WebM ou FLAC. ${audioUploadDireto ? 'Até 50 MB e 60 min; uma aula de 1 h costuma caber em MP3 mono a 64–96 kbps. Arquivos acima de 3 MB passam temporariamente pelo bucket privado do Supabase e são removidos após a transcrição; a cópia local fica para reprodução e retry. Áudios acima de ' + bytesAudio(groqAudioMaxBytes) + (audioGrandeGemini ? ' usam a transcrição dedicada do Gemini.' : ' precisam de Gemini configurado. WAV pode passar do limite.') : 'Sem armazenamento de áudio configurado: arquivos de até 3 MB. Para aulas longas, configure SUPABASE_SERVICE_ROLE_KEY. A duração é detectada automaticamente.'}</div>
@@ -282,19 +299,21 @@
     iniciando = true;
     try {
       // lê o formulário e pede o microfone ANTES de qualquer outra espera: o iPhone só libera o microfone no toque do usuário
-      const disc = ($('ad-disc') || {}).value || '', tema = ($('ad-tema') || {}).value || '', parte = ($('ad-parte') || {}).value || 'Única', cor = ($('ad-cor') || {}).value || 'dourado', tipoAula = ($('ad-tipo') || {}).value || 'expositiva', preferenciaMaterial = ($('ad-detalhe') || {}).value || 'equilibrado';
+      const disc = ($('ad-disc') || {}).value || '', tema = ($('ad-tema') || {}).value || '', parte = ($('ad-parte') || {}).value || 'Única', cor = ($('ad-cor') || {}).value || 'dourado';
       salvarPreferencias();
+      const pref = preferenciasAula();
+      const pedagogia = preferenciasPedagogicasFormulario();
       const stream = await pedirMicrofone();
       if (!stream) return;
       garantirView(); css();
       await carregarStatus();
       if ($('view-auladia') && !$('view-auladia').classList.contains('active')) { go(VIEW); await new Promise(r => setTimeout(r, 200)); }
-      await comecar(stream, disc, tema, parte, cor, tipoAula, preferenciaMaterial);
+      await comecar(stream, disc, tema, parte, cor, pref.tipoAula, pref.preferenciaMaterial, pedagogia);
     } finally { iniciando = false; }
   }
 
-  async function comecar(stream, disc, tema, parte, cor, tipoAula = 'expositiva', preferenciaMaterial = 'equilibrado') {
-    const sess = { id: 'a' + Date.now(), data: hojeISO(), inicio: Date.now(), disciplina: disc.trim(), tema: tema.trim(), parte, cor, tipoAula, preferenciaMaterial, duracao: 0, chunks: [], marcas: [], texto: '', live: '', resultado: null };
+  async function comecar(stream, disc, tema, parte, cor, tipoAula = 'expositiva', preferenciaMaterial = 'equilibrado', preferenciasPedagogicas = {}) {
+    const sess = { id: 'a' + Date.now(), data: hojeISO(), inicio: Date.now(), disciplina: disc.trim(), tema: tema.trim(), parte, cor, tipoAula, preferenciaMaterial, perfilPedagogico: preferenciasPedagogicas.perfilPedagogico || 'automatico', objetivoEstudo: preferenciasPedagogicas.objetivoEstudo || 'automatico', objetivosAprendizagem: preferenciasPedagogicas.objetivosAprendizagem || '', enfasePedagogica: preferenciasPedagogicas.enfasePedagogica || '', duracao: 0, chunks: [], marcas: [], texto: '', live: '', resultado: null };
     const mime = escolherMime();
     rec = { sess, stream, mime, mr: null, t0: Date.now(), parar: false, pausado: false, parado: false, ganho: 0, refer: Date.now(), fila: [], enviando: false, chunkIdx: 0, silencio: 0, timers: [], ctx: null, wake: null, sr: null };
     sessAtual = sess; salvarSess(sess);
@@ -541,7 +560,7 @@
       statusArquivo(file.name + ' · ' + duracaoAudio(duracao) + ' · ' + bytesAudio(file.size) + ' · salvando uma cópia local…', 'info');
       salvarPreferencias();
       const pref = preferenciasAula();
-      const sess = { id: 'a' + Date.now(), data: hojeISO(), inicio: Date.now(), disciplina: (($('ad-disc') || {}).value || '').trim(), tema: (($('ad-tema') || {}).value || '').trim(), parte: ($('ad-parte') || {}).value || 'Única', tipoAula: pref.tipoAula, preferenciaMaterial: pref.preferenciaMaterial, duracao: Math.round(duracao), audioBytes: file.size, chunks: [{ i: 0, status: 'pendente', texto: '', mime, duracao }], marcas: [], texto: '', live: '', resultado: null, audioImportado: file.name };
+      const sess = { id: 'a' + Date.now(), data: hojeISO(), inicio: Date.now(), disciplina: (($('ad-disc') || {}).value || '').trim(), tema: (($('ad-tema') || {}).value || '').trim(), parte: ($('ad-parte') || {}).value || 'Única', ...pref, ...preferenciasPedagogicasFormulario(), duracao: Math.round(duracao), audioBytes: file.size, chunks: [{ i: 0, status: 'pendente', texto: '', mime, duracao }], marcas: [], texto: '', live: '', resultado: null, audioImportado: file.name };
       await idbPut(sess.id + ':0', file);
       sessAtual = sess; await salvarAgora(sess); desenharResultado();
       const c = sess.chunks[0]; c.status = 'transcrevendo'; await salvarAgora(sess); desenharResultado();
@@ -678,7 +697,7 @@
   }
 
   function passos(s, estado) {
-    const L = [['rev', 'Revisando a transcrição (termos médicos, emendas, parágrafos)'], ['res', 'Escrevendo o resumo completo ()'], ['fc', 'Criando os flashcards de revisão'], ['mat', 'Montando "cai na prova" e assuntos do plano']];
+    const L = [['rev', 'Revisando a transcrição (termos médicos, emendas, parágrafos)'], ['res', 'Escrevendo o resumo completo'], ['fc', 'Flashcards (sob demanda)'], ['mat', 'Montando "cai na prova" e assuntos do plano']];
     const html = L.map(([k, n]) => { const e = estado[k] || ''; return `<div class="ad-step ${e === 'ok' ? 'ok' : e === 'go' ? 'go' : e === 'er' ? 'er' : ''}">${e === 'ok' ? '✔' : e === 'go' ? '⏳' : e === 'er' ? '✖' : '○'} ${n}${estado[k + 'Info'] ? ' — ' + E(estado[k + 'Info']) : ''}</div>`; }).join('');
     htmlPassos = html; const el = $('ad-proc'); if (el && sessAtual === s) el.innerHTML = html;
   }
@@ -686,10 +705,11 @@
   async function pipeline(s) {
     if (pipelineRodando) return toast('Já estou processando esta aula.', 'info');
     if (!geminiOk) return toast('Para revisar e resumir é preciso uma chave de IA (Gemini ou Groq) no servidor.', 'warning');
+    const solicitouCartoes = !!s.solicitouFlashcards;
     pipelineRodando = true;
     const est = { rev: s.textoRevisado ? 'ok' : '', res: s.resumoMd ? 'ok' : '', fc: s.flashcards ? 'ok' : '', mat: s.resultado ? 'ok' : '' };
     passos(s, est);
-    const ctx = { area: s.disciplina, conteudo: [s.tema, s.parte && s.parte !== 'Única' ? s.parte : ''].filter(Boolean).join(' — '), glossario: assuntosPlano(s.disciplina).slice(0, 60), tipoAula: s.tipoAula || 'expositiva', preferenciaMaterial: s.preferenciaMaterial || 'equilibrado' };
+    const ctx = { area: s.disciplina, conteudo: [s.tema, s.parte && s.parte !== 'Única' ? s.parte : ''].filter(Boolean).join(' — '), glossario: assuntosPlano(s.disciplina).slice(0, 60), tipoAula: s.tipoAula || 'expositiva', preferenciaMaterial: s.preferenciaMaterial || 'equilibrado', perfilPedagogico: s.perfilPedagogico || 'automatico', objetivoEstudo: s.objetivoEstudo || 'automatico', objetivosAprendizagem: s.objetivosAprendizagem || '', enfasePedagogica: s.enfasePedagogica || '' };
     try {
       s.texto = textoPuro(s) || s.texto;
       const N = Math.max(1, paralelo);
@@ -712,14 +732,22 @@
       //    A) capítulos + fechamento, B) flashcards, C) "cai na prova"/assuntos. Em paralelo quando N > 1.
       if (!s.resumoMd) {
         est.res = 'go'; est.resInfo = 'mapeando tópicos'; passos(s, est);
-        if (!s.mapa) { s.mapa = (await postL('/api/aula/mapa', Object.assign({ transcricao: fonte, parte: s.parte }, ctx))).mapa; await salvarAgora(s); }
+        if (!s.mapa) {
+          const mapeado = await postL('/api/aula/mapa', Object.assign({ transcricao: fonte, parte: s.parte }, ctx));
+          s.mapa = mapeado.mapa; s.planoPedagogico = mapeado.planoPedagogico || null; await salvarAgora(s);
+        }
       }
+      if (!s.planoPedagogico) {
+        const plano = await postL('/api/aula/plano', Object.assign({}, ctx, { capitulos: (s.mapa && s.mapa.capitulos) || [] }));
+        s.planoPedagogico = plano.planoPedagogico; await salvarAgora(s);
+      }
+      ctx.planoPedagogico = s.planoPedagogico;
       // 2b) Extração única (fase 2): lê a aula UMA vez e deriva fechamento/flashcards/"cai na prova" da base.
       //     Se falhar, segue o caminho antigo (cada etapa relendo a aula) — nada deixa de ser gerado.
       if (!s.base && (!s.fechamento || !s.flashcards || !s.resultado)) {
         try {
           est.res = est.res === 'ok' ? 'ok' : 'go'; est.resInfo = 'extraindo fatos da aula'; passos(s, est);
-          s.base = (await postL('/api/aula/extrair', { transcricao: fonte, area: s.disciplina, conteudo: ctx.conteudo, tipoAula: ctx.tipoAula, preferenciaMaterial: ctx.preferenciaMaterial, capitulos: (s.mapa && s.mapa.capitulos) || [], assuntosPlano: assuntosPlano(s.disciplina), marcas: s.marcas, duvidasMarcas: s.duvidasMarcas || [] })).base;
+          s.base = (await postL('/api/aula/extrair', Object.assign({ transcricao: fonte, capitulos: (s.mapa && s.mapa.capitulos) || [], assuntosPlano: assuntosPlano(s.disciplina), marcas: s.marcas, duvidasMarcas: s.duvidasMarcas || [] }, ctx))).base;
           await salvarAgora(s);
         } catch (_) { s.base = null; }
       }
@@ -752,15 +780,17 @@
         if (!s.resultado) throw new Error('Material de revisão ausente.');
         est.mat = 'ok'; await salvarAgora(s); passos(s, est);
       };
-      const frentes = [frenteResumo, frenteFlash, frenteMaterial];
+      const frentes = [frenteResumo, frenteMaterial];
+      if (s.solicitouFlashcards && !s.flashcards) frentes.push(frenteFlash);
       if (N > 1) {
         // allSettled: uma frente que falha não interrompe as outras (o que ficou pronto é salvo); o primeiro erro é relançado no fim
         const rs = await Promise.allSettled(frentes.map(f => f()));
         const falha = rs.find(r => r.status === 'rejected'); if (falha) throw falha.reason;
       } else { for (const f of frentes) await f(); }
-      if (sessAtual === s) { abaRes = 'resumo'; desenharResultado(); }
+      if (s.flashcards) { s.solicitouFlashcards = false; await salvarAgora(s); }
+      if (sessAtual === s) { abaRes = solicitouCartoes ? 'flash' : 'resumo'; desenharResultado(); }
       verificarQualidade(s, true); // sem IA: não atrasa nem pode quebrar o pipeline
-      toast('Aula pronta: transcrição revisada, resumo e ' + (s.flashcards || []).length + ' flashcards.', 'success');
+      toast('Aula pronta: transcrição revisada e material gerado.' + (s.flashcards ? ' ' + s.flashcards.length + ' flashcards disponíveis.' : ' Flashcards serão criados quando você solicitar.'), 'success');
     } catch (e) {
       Object.keys(est).forEach(k => { if (est[k] === 'go') est[k] = 'er'; }); passos(s, est);
       const el = $('ad-proc'); if (el && sessAtual === s) el.insertAdjacentHTML('beforeend', `<div class="ad-step er">Parei por um erro (${E(e.message)}). O que já ficou pronto foi salvo — toque em "Gerar / continuar" para retomar.</div>`);
@@ -928,6 +958,11 @@
         parte: s.parte || '',
         tipoAula: s.tipoAula || 'expositiva',
         preferenciaMaterial: s.preferenciaMaterial || 'equilibrado',
+        perfilPedagogico: s.perfilPedagogico || 'automatico',
+        objetivoEstudo: s.objetivoEstudo || 'automatico',
+        objetivosAprendizagem: s.objetivosAprendizagem || '',
+        enfasePedagogica: s.enfasePedagogica || '',
+        planoPedagogico: s.planoPedagogico || null,
         capitulos: (s.mapa && s.mapa.capitulos) || []
       }, 3);
       s.resumoGeral = j.markdown; await salvarAgora(s);
@@ -996,7 +1031,7 @@
       const fs = n.d === 0 ? 13 : 11.5, fw = n.d === 0 ? '700' : '600';
       return `<g class="mm-node" data-p="${n.p}" onclick="auladia.mmToggle('${n.p}')"><rect x="${n.x}" y="${n.y - h / 2}" width="${n.w}" height="${h}" rx="10" fill="${fundo}"/><text x="${n.x + 12}" y="${n.y + 4.5}" font-size="${fs}" font-weight="${fw}" fill="#e9fbf7">${E(trunc(n.t, n.d === 0 ? 28 : 52))}</text>${n.temFilhos ? `<text x="${n.x + n.w - 14}" y="${n.y + 4}" font-size="11" fill="#9fd8cf">${n.aberto ? '−' : '+'}</text>` : ''}</g>`;
     }).join('');
-    const tools = `<div class="mm-tools"><button class="b" onclick="auladia.mmZoom(0.75)">−</button><button class="b" onclick="auladia.mmZoom(1.3)">+</button><button class="b" onclick="auladia.mmFit()">⌂ Ajustar</button><button class="b" onclick="auladia.mmTudo(true)">⇲ Fechar ramos</button><button class="b" onclick="auladia.mmTudo(false)">⇱ Abrir tudo</button><button class="b" onclick="auladia.mmPNG()">⬇ PNG</button><button class="b pri" onclick="auladia.mmGerar()"><i class="ph ph-tree-structure"></i> ${s.mindmap ? 'Regenerar (IA)' : 'Gerar (IA)'}</button></div>`;
+    const tools = `<div class="mm-tools"><button class="b" onclick="auladia.mmZoom(0.75)">−</button><button class="b" onclick="auladia.mmZoom(1.3)">+</button><button class="b" onclick="auladia.mmFit()">⌂ Ajustar</button><button class="b" onclick="auladia.mmTudo(true)">⇲ Fechar ramos</button><button class="b" onclick="auladia.mmTudo(false)">⇱ Abrir tudo</button><button class="b" onclick="auladia.mmPNG()">⬇ PNG</button><button class="b" onclick="auladia.mmMermaid()" title="Baixar diagrama editável em Mermaid">⬇ Mermaid (.mmd)</button><button class="b pri" onclick="auladia.mmGerar()"><i class="ph ph-tree-structure"></i> ${s.mindmap ? 'Regenerar (IA)' : 'Gerar (IA)'}</button></div>`;
     box.innerHTML = tools + `<div class="mm-sc"><div class="mm-inner" style="transform:scale(${mm.zoom})"><svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${svg}</svg></div></div><div class="sub" style="margin-top:6px">🗺 Toque num nó para fechar/abrir os ramos dele · arraste as barras de rolagem para navegar · ⬇ PNG para imprimir ou colar no caderno.</div>`;
   }
 
@@ -1007,7 +1042,7 @@
     if (rqRodando || pipelineRodando) return toast('Já estou gerando material para esta aula — aguarde.', 'info');
     mmRodando = true; desenharMindmap();
     try {
-      const j = await post('/api/aula/mapa-mental', { transcricao: s.textoRevisado || s.texto || textoPuro(s), area: s.disciplina || '', conteudo: s.tema || '', capitulos: (s.mapa && s.mapa.capitulos) || [], tipoAula: s.tipoAula || 'expositiva', preferenciaMaterial: s.preferenciaMaterial || 'equilibrado' }, 1);
+      const j = await post('/api/aula/mapa-mental', { transcricao: s.textoRevisado || s.texto || textoPuro(s), area: s.disciplina || '', conteudo: s.tema || '', capitulos: (s.mapa && s.mapa.capitulos) || [], tipoAula: s.tipoAula || 'expositiva', preferenciaMaterial: s.preferenciaMaterial || 'equilibrado', perfilPedagogico: s.perfilPedagogico || 'automatico', objetivoEstudo: s.objetivoEstudo || 'automatico', objetivosAprendizagem: s.objetivosAprendizagem || '', enfasePedagogica: s.enfasePedagogica || '', planoPedagogico: s.planoPedagogico || null }, 1);
       if (j.raiz && j.raiz.t) { mmAceitar(j.raiz); s.mindmap = j.raiz; await salvarAgora(s); toast('Mapa mental pronto!', 'success'); }
     } catch (e) {
       if (s.mindmap) toast('Falha ao regenerar: o mapa anterior foi mantido.', 'warning');
@@ -1031,6 +1066,25 @@
       toast('PNG do mapa mental salvo.', 'success');
     } catch (_) { toast('Não consegui exportar o PNG neste navegador.', 'error'); }
   }
+  function mmMermaid() {
+    const root = mm.raiz || (sessAtual && sessAtual.mindmap ? mmEnxugia(sessAtual.mindmap) : null);
+    if (!root) return toast('Gere ou abra um mapa mental antes de exportar.', 'info');
+    const label = value => String(value || '').replace(/[\r\n]+/g, ' ').replace(/[()[\]{}#;"<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 64) || 'Ponto';
+    const lines = ['mindmap', `  root((${label(root.t)}))`];
+    const addChildren = (node, indent) => (node.f || []).forEach(child => {
+      lines.push(' '.repeat(indent) + label(child.t));
+      addChildren(child, indent + 2);
+    });
+    addChildren(root, 4);
+    const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'mapa-mental-' + slug((sessAtual && (sessAtual.tema || sessAtual.disciplina)) || 'aula') + '.mmd';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('Arquivo Mermaid editável salvo.', 'success');
+  }
 
   /* ───────────── resultado ───────────── */
   const camposMaterial = ['textoRevisado', 'base', 'mapa', 'caps', 'fechamento', 'resumoMd', 'flashcards', 'resultado', 'resumoGeral', 'mindmap'];
@@ -1048,15 +1102,13 @@
     s.textoRevisado = texto.trim(); s.revisaoManualEm = new Date().toISOString();
     await salvarAgora(s); desenharResultado();
   }
-  async function regenerar(tipo) {
-    const s = sessAtual; if (!s || pipelineRodando || mmRodando || rqRodando) return;
-    const campos = { resumo: ['caps', 'fechamento', 'resumoMd'], flashcards: ['flashcards'], material: ['resultado'] }[tipo];
-    if (!campos) return;
-    arquivarMateriais(s, 'Regeneração: ' + tipo);
-    const anteriores = {}; campos.forEach(k => { anteriores[k] = s[k]; delete s[k]; });
-    await pipeline(s);
-    campos.forEach(k => { if (!s[k] && anteriores[k]) s[k] = anteriores[k]; });
-    await salvarAgora(s); desenharResultado();
+  async function gerarFlashcards() {
+    const s = sessAtual;
+    if (!s || !fonteGeracao(s)) return toast('Gere ou importe a transcrição antes de pedir flashcards.', 'warning');
+    if (s.flashcards) return regenerar('flashcards');
+    if (pipelineRodando) return toast('A aula já está sendo processada. Aguarde e tente novamente.', 'info');
+    if (!geminiOk) return toast('Configure um provedor de IA de texto para gerar flashcards.', 'warning');
+    s.solicitouFlashcards = true; await salvarAgora(s); await pipeline(s);
   }
   function baixarHistorico() {
     if (!sessAtual) return;
@@ -1064,12 +1116,131 @@
     const a = document.createElement('a'); a.href = url; a.download = 'historico-aula.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  function personalizacaoHtml(s) {
+    const objetivo = s.objetivoEstudo || 'automatico';
+    const perfil = s.perfilPedagogico || 'automatico';
+    const objetivos = s.objetivosAprendizagem || '';
+    const enfase = s.enfasePedagogica || '';
+    return `<details class="card"><summary style="cursor:pointer;font-weight:600">Personalizar metodologia desta aula</summary><div class="row3" style="margin-top:12px"><div><label for="ad-edit-tipo">Tipo de aula</label><select id="ad-edit-tipo"><option value="expositiva"${s.tipoAula === 'expositiva' ? ' selected' : ''}>Expositiva</option><option value="caso-clinico"${s.tipoAula === 'caso-clinico' ? ' selected' : ''}>Discussão de caso</option><option value="revisao-prova"${s.tipoAula === 'revisao-prova' ? ' selected' : ''}>Revisão para prova</option><option value="pratica"${s.tipoAula === 'pratica' ? ' selected' : ''}>Aula prática / procedimento</option></select></div><div><label for="ad-edit-depth">Profundidade</label><select id="ad-edit-depth"><option value="conciso"${s.preferenciaMaterial === 'conciso' ? ' selected' : ''}>Essencial</option><option value="equilibrado"${(!s.preferenciaMaterial || s.preferenciaMaterial === 'equilibrado') ? ' selected' : ''}>Completa</option><option value="detalhado"${s.preferenciaMaterial === 'detalhado' ? ' selected' : ''}>Avançada</option></select></div><div><label for="ad-edit-profile">Perfil pedagógico</label><select id="ad-edit-profile"><option value="automatico"${perfil === 'automatico' ? ' selected' : ''}>Inferir pelo conteúdo</option>${perfisPedagogicos.map(p => `<option value="${E(p.id)}"${perfil === p.id ? ' selected' : ''}>${E(p.nome)}</option>`).join('')}</select></div></div><div class="row3" style="margin-top:10px"><div><label for="ad-edit-goal">Objetivo de estudo</label><select id="ad-edit-goal"><option value="automatico"${objetivo === 'automatico' ? ' selected' : ''}>Automático</option><option value="compreender"${objetivo === 'compreender' ? ' selected' : ''}>Compreender</option><option value="prova"${objetivo === 'prova' ? ' selected' : ''}>Preparar para prova</option><option value="osce"${objetivo === 'osce' ? ' selected' : ''}>Aplicação prática / OSCE</option><option value="revisar"${objetivo === 'revisar' ? ' selected' : ''}>Revisar</option><option value="aprofundar"${objetivo === 'aprofundar' ? ' selected' : ''}>Aprofundar</option></select></div><div><label for="ad-edit-objectives">Objetivos de aprendizagem</label><textarea id="ad-edit-objectives" maxlength="1600" placeholder="Um objetivo por linha">${E(objetivos)}</textarea></div><div><label for="ad-edit-emphasis">Ênfase desta aula</label><input id="ad-edit-emphasis" maxlength="300" value="${E(enfase)}" placeholder="Ex.: relações entre mecanismo e manifestação"></div></div><div class="file-note">A alteração preserva os materiais existentes e orienta as próximas gerações. Para atualizar um material, use seu botão de regeneração.</div><button class="b" type="button" onclick="auladia.salvarMetodologia()">Salvar metodologia</button></details>`;
+  }
+
+  async function salvarMetodologia() {
+    const s = sessAtual; if (!s) return;
+    const tipoAula = ($('ad-edit-tipo') || {}).value || 'expositiva';
+    const preferenciaMaterial = ($('ad-edit-depth') || {}).value || 'equilibrado';
+    const perfilPedagogico = ($('ad-edit-profile') || {}).value || 'automatico';
+    const objetivoEstudo = ($('ad-edit-goal') || {}).value || 'automatico';
+    const objetivosAprendizagem = String(($('ad-edit-objectives') || {}).value || '').slice(0, 1600);
+    const enfasePedagogica = String(($('ad-edit-emphasis') || {}).value || '').slice(0, 300);
+    const j = await post('/api/aula/plano', {
+      area: s.disciplina, conteudo: [s.tema, s.parte && s.parte !== 'Única' ? s.parte : ''].filter(Boolean).join(' — '),
+      tipoAula, preferenciaMaterial, perfilPedagogico, objetivoEstudo, objetivosAprendizagem, enfasePedagogica,
+      perfisSugeridos: s.planoPedagogico?.perfisSugeridos || [],
+      objetivosSugeridos: s.planoPedagogico?.origemObjetivos === 'sugestao_ia' ? s.planoPedagogico.objetivos : [],
+      capitulos: (s.mapa && s.mapa.capitulos) || []
+    }, 1);
+    Object.assign(s, { tipoAula, preferenciaMaterial, perfilPedagogico, objetivoEstudo, objetivosAprendizagem, enfasePedagogica, planoPedagogico: j.planoPedagogico });
+    await salvarAgora(s); desenharResultado(); toast('Metodologia desta aula atualizada. Os materiais anteriores foram preservados.', 'success');
+  }
+
+  function progressoHtml(s) {
+    const fonte = !!(s.textoRevisado || s.texto || textoPuro(s));
+    const etapas = [
+      ['Transcrição disponível', fonte ? (s.textoRevisado ? 'Revisada' : 'Original; revisão pendente') : 'Pendente'],
+      ['Resumo didático', s.resumoMd ? 'Gerado' : 'Pendente'],
+      ['Verificação heurística', s.qualidade ? 'Executada; confira os alertas' : 'Pendente'],
+      ['Flashcards', s.flashcards ? `${s.flashcards.length} cartão(ões) gerado(s)` : 'Não solicitados'],
+      ['Mapa mental', s.mindmap ? 'Gerado' : 'Opcional; ainda não solicitado'],
+      ['Revisões no Mentor', s.ciclo?.revisoes ? `${s.ciclo.revisoes} revisão(ões) agendada(s)` : 'Aguardando fechar o ciclo']
+    ];
+    const revisados = new Set(Array.isArray(s.objetivosRevisados) ? s.objetivosRevisados : []);
+    const objetivos = (s.planoPedagogico?.objetivos || []).slice(0, 20);
+    const objetivosHtml = objetivos.length ? objetivos.map(obj => `<label class="ad-objective"><input type="checkbox" data-ad-objective="${E(obj)}"${revisados.has(obj) ? ' checked' : ''}><span>${E(obj)}<small class="file-note" style="display:block">${revisados.has(obj) ? 'Marcado como revisado por você' : 'Ainda não marcado como revisado'}</small></span></label>`).join('') : '<div class="sub">Os objetivos serão sugeridos ao organizar a transcrição. Você também pode defini-los na metodologia da aula.</div>';
+    return `<div class="card"><b>Produção desta aula</b>${etapas.map(([nome, valor]) => `<div class="ad-progress-line"><span>${E(nome)}</span><span>${E(valor)}</span></div>`).join('')}<div class="file-note">Estas etapas mostram materiais e ações registrados; não são uma medida de domínio.</div></div><div class="card"><b>Objetivos de aprendizagem</b><div class="sub" style="margin:4px 0 8px">Marque um objetivo depois de revisá-lo. Essa marca é sua autodeclaração; a compreensão não é inferida por leitura.</div>${objetivosHtml}<div class="file-note">Compreensão demonstrada: não avaliada automaticamente nesta tela. Use “Testar agora” para praticar questões.</div><button class="b" type="button" onclick="auladia.testar()">Testar agora</button></div>`;
+  }
+
+  function tutorHtml(s) {
+    const historico = Array.isArray(s.tutorHistory) ? s.tutorHistory.slice(-12) : [];
+    const mensagens = historico.map(m => {
+      const assistant = m.role === 'assistant';
+      const citadas = assistant ? [...new Set((String(m.content || '').match(/\[(T[1-4])\]/g) || []).map(x => x.slice(1, -1)))] : [];
+      const fontes = (Array.isArray(m.sources) ? m.sources : []).filter(src => citadas.includes(src.id));
+      return `<div class="ad-tutor-msg ${assistant ? 'assistant' : 'user'}"><b>${assistant ? 'Tutor IA' : 'Você'}</b><div class="${assistant ? 'ad-md' : ''}">${assistant ? mdParaHtml(m.content || '') : E(m.content || '').replace(/\n/g, '<br>')}</div>${fontes.map(src => `<details class="ad-tutor-source"><summary>Fonte ${E(src.id)} · transcrição, caracteres ${src.inicio}–${src.fim}</summary><blockquote>${E(src.texto)}</blockquote></details>`).join('')}</div>`;
+    }).join('') || '<div class="sub">Pergunte sobre esta aula. O Tutor combina o plano pedagógico, o material gerado e trechos da transcrição relacionados à sua dúvida.</div>';
+    const erro = tutorFalha ? `<div class="aviso" role="status">${E(tutorFalha)} ${s.tutorPendente ? '<button class="b" type="button" onclick="auladia.tutorReenviar()">Tentar novamente</button>' : ''}</div>` : '';
+    return `<div class="card"><div id="ad-tutor-history" aria-live="polite">${mensagens}</div>${tutorRodando ? '<div class="ad-step go" role="status">O Tutor está relacionando sua pergunta ao material da aula…</div>' : ''}${erro}<div class="ad-tutor-quick"><button class="b" type="button" onclick="auladia.tutorAtalho('Explique do zero')">Explique do zero</button><button class="b" type="button" onclick="auladia.tutorAtalho('Aprofunde o mecanismo deste tema')">Aprofunde o mecanismo</button><button class="b" type="button" onclick="auladia.tutorAtalho('Dê um exemplo didático')">Dê um exemplo</button><button class="b" type="button" onclick="auladia.tutorAtalho('O que ainda falta revisar nesta aula?')">O que falta revisar?</button></div><form class="ad-tutor-form" onsubmit="event.preventDefault();auladia.tutorEnviar()"><div><label for="ad-tutor-input">Sua pergunta</label><textarea id="ad-tutor-input" maxlength="1600" placeholder="Ex.: como o mecanismo explica a manifestação discutida?"${tutorRodando ? ' disabled' : ''}></textarea></div><button class="b pri" type="submit"${tutorRodando ? ' disabled' : ''}>Enviar</button></form><div class="file-note">O Tutor usa o conteúdo salvo nesta aula e envia a pergunta e trechos pertinentes ao provedor de IA configurado no servidor. Não inclua dados que identifiquem pacientes.</div></div>`;
+  }
+
+  async function marcarObjetivoRevisado(objetivo, revisado) {
+    const s = sessAtual; if (!s) return;
+    const list = Array.isArray(s.objetivosRevisados) ? s.objetivosRevisados : [];
+    s.objetivosRevisados = revisado ? [...new Set(list.concat([objetivo]))] : list.filter(x => x !== objetivo);
+    await salvarAgora(s); desenharResultado();
+  }
+
+  async function salvarContextoTutor(s, pergunta, registrar) {
+    const historico = Array.isArray(s.tutorHistory) ? s.tutorHistory : [];
+    let paraEnviar = historico;
+    if (registrar) {
+      paraEnviar = historico.slice(-6);
+      s.tutorHistory = historico.concat([{ role: 'user', content: pergunta }]).slice(-12);
+    } else if (historico.at(-1)?.role === 'user' && historico.at(-1)?.content === pergunta) {
+      paraEnviar = historico.slice(0, -1).slice(-6);
+    } else paraEnviar = historico.slice(-6);
+    s.tutorPendente = pergunta;
+    tutorFalha = ''; tutorRodando = true;
+    await salvarAgora(s); if (sessAtual === s) desenharResultado();
+    try {
+      const fonte = s.textoRevisado || s.texto || textoPuro(s);
+      const resultado = await post('/api/aula/tutor', {
+        pergunta, historico: paraEnviar,
+        transcricao: fonte,
+        resumoMd: s.resumoMd || '', base: s.base || null,
+        capitulos: (s.mapa && s.mapa.capitulos) || [],
+        area: s.disciplina, conteudo: [s.tema, s.parte && s.parte !== 'Única' ? s.parte : ''].filter(Boolean).join(' — '),
+        tipoAula: s.tipoAula || 'expositiva', preferenciaMaterial: s.preferenciaMaterial || 'equilibrado',
+        perfilPedagogico: s.perfilPedagogico || 'automatico', objetivoEstudo: s.objetivoEstudo || 'automatico',
+        objetivosAprendizagem: s.objetivosAprendizagem || '', enfasePedagogica: s.enfasePedagogica || '',
+        planoPedagogico: s.planoPedagogico || null, objetivosRevisados: s.objetivosRevisados || []
+      }, 1);
+      s.tutorHistory = (Array.isArray(s.tutorHistory) ? s.tutorHistory : []).concat([{ role: 'assistant', content: resultado.reply, sources: resultado.sources || [] }]).slice(-12);
+      if (/\b(n[aã]o entendi|n[aã]o compreendi|tenho dificuldade|me confundi)\b/i.test(pergunta)) {
+        s.dificuldadesDeclaradas = [...new Set([...(s.dificuldadesDeclaradas || []), pergunta])].slice(-20);
+      }
+      delete s.tutorPendente; await salvarAgora(s);
+    } catch (e) { tutorFalha = e.message || 'Não consegui responder agora.'; await salvarAgora(s); }
+    finally { tutorRodando = false; if (sessAtual === s) desenharResultado(); }
+  }
+
+  function tutorEnviar() {
+    const pergunta = String(($('ad-tutor-input') || {}).value || '').trim().slice(0, 1600);
+    if (!pergunta) return toast('Escreva uma pergunta para o Tutor.', 'info');
+    return salvarContextoTutor(sessAtual, pergunta, true);
+  }
+
+  function tutorReenviar() {
+    const s = sessAtual; if (!s || !s.tutorPendente) return;
+    return salvarContextoTutor(s, s.tutorPendente, false);
+  }
+
+  function tutorAtalho(pergunta) {
+    return salvarContextoTutor(sessAtual, String(pergunta || '').slice(0, 1600), true);
+  }
+
   function desenharResultado() {
     const r = $('ad-root'); const s = sessAtual; if (!r || !s) return;
     const res = s.resultado;
+    const planoPedagogico = s.planoPedagogico;
+    const nomesPerfil = planoPedagogico ? [planoPedagogico.perfilPrincipal, ...(planoPedagogico.perfisSecundarios || [])].map(id => (perfisPedagogicos.find(p => p.id === id) || {}).nome || (id === 'geral' ? 'Geral' : id)).filter(Boolean) : [];
+    const objetivoNome = ({ compreender: 'compreender', prova: 'preparar para prova', osce: 'aplicar na prática / OSCE', revisar: 'revisar', aprofundar: 'aprofundar' })[planoPedagogico && planoPedagogico.objetivoEstudo];
+    const origemPerfil = planoPedagogico && planoPedagogico.origemPerfilPrincipal === 'manual' ? 'manual' : 'inferido';
+    const resumoPlano = planoPedagogico ? ` · perfil ${origemPerfil}: ${E(nomesPerfil.join(' + ') || 'Geral')}${objetivoNome ? ' · objetivo: ' + E(objetivoNome) : ''}` : '';
+    const temFonte = !!(s.textoRevisado || s.texto || textoPuro(s) || s.resumoMd || s.base);
     const tabs = [['transcricao', s.textoRevisado ? 'Transcrição (revisada)' : 'Transcrição']];
     if (s.resumoMd) tabs.push(['resumo', 'Resumo']);
-    if (s.flashcards) tabs.push(['flash', 'Flashcards (' + s.flashcards.length + ')']);
+    if (temFonte) tabs.push(['flash', s.flashcards ? 'Flashcards (' + s.flashcards.length + ')' : 'Flashcards']);
+    if (temFonte) tabs.push(['tutor', 'Tutor IA']);
+    tabs.push(['progresso', 'Progresso']);
     if (res) tabs.push(['prova', 'Cai na prova']);
     if (s.resumoMd || s.flashcards) tabs.push(['qual', '🔎 Qualidade' + (s.qualidade && s.qualidade.flashcards && (s.qualidade.flashcards.comAlerta || (s.qualidade.flashcards.revisaoHumana || []).length) ? ' ⚠' : '')]);
     if (s.textoRevisado || s.texto) tabs.push(['resumo_g', s.resumoGeral ? '📜 Resumo Geral' : '📜 Resumo Geral ✨']);
@@ -1083,6 +1254,9 @@
     else if (abaRes === 'audio') corpo = `<div id="ak-box"><div class="sub">Montando o player do karaoke…</div></div>`;
     else if (abaRes === 'resumo') corpo = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="b" onclick="auladia.regenerar('resumo')"><i class="ph ph-arrows-clockwise"></i> Regenerar resumo</button></div>${versoesHtml(s, 'resumoMd')}<div class="ad-md" id="ad-md">${mdParaHtml(s.resumoMd)}</div>`;
     else if (abaRes === 'qual') corpo = qualidadeHtml(s);
+    else if (abaRes === 'tutor') corpo = tutorHtml(s);
+    else if (abaRes === 'progresso') corpo = progressoHtml(s);
+    else if (abaRes === 'flash' && !s.flashcards) corpo = `<div class="card"><b>Flashcards sob demanda</b><div class="sub">Os cartões não são gerados automaticamente. Peça-os quando quiser praticar recuperação ativa a partir da transcrição e do plano desta aula.</div><button class="b pri" type="button" onclick="auladia.gerarFlashcards()"${pipelineRodando ? ' disabled' : ''}><i class="ph ph-cards"></i> Gerar flashcards</button></div>`;
     else if (abaRes === 'flash') {
       const grupos = {}; (s.flashcards || []).forEach(f => { (grupos[f.tema || 'Geral'] = grupos[f.tema || 'Geral'] || []).push(f); });
       corpo = `<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="b pri" onclick="auladia.enviarFlash()"><i class="ph ph-cards"></i> Revisar e adicionar ao Treino</button><button class="b" onclick="auladia.regenerar('flash')"><i class="ph ph-arrows-clockwise"></i> Regenerar cartões</button></div>${versoesHtml(s, 'flashcards')}<div class="sub" style="margin-top:6px">Confira pergunta, resposta e alertas; edite ou remova qualquer cartão antes de aprová-lo para o Treino. As referências de origem apontam para o trecho usado na geração.</div><div style="margin-top:10px">${Object.keys(grupos).map(g => `<div class="grp2">${E(g)}</div>` + grupos[g].map(f => { const i = s.flashcards.indexOf(f); const qi = s.qualidade && s.qualidade.flashcards; const fl = (qi && qi.itens[i] || {}).flags || []; const revisar = qi && (qi.revisaoHumana || []).some(x => x.i === i); const fmt = ({ pergunta: 'Pergunta', mecanismo: 'Mecanismo', comparativo: 'Comparativo', sequencia: 'Sequência', vinheta: 'Vinheta' })[f.formato] || 'Pergunta'; const temOrigem = origemCartaoTexto(s, f); return `<div class="fc"${fl.length || revisar ? ' style="border-color:var(--amber)"' : ''}><div class="sub">${E(fmt)} · ${E(({ facil: 'Fácil', media: 'Média', dificil: 'Difícil' })[f.dificuldade] || 'Média')}</div><b>${E(f.frente)}</b>${E(f.verso)}${fl.length ? `<div class="sub" style="color:var(--amber)">⚠ ${fl.map(E).join(' · ')}</div>` : ''}${revisar ? '<div class="sub" style="color:var(--amber)">🩺 Revisão humana recomendada: confira os pontos clínicos diretamente na aula.</div>' : ''}<div style="margin-top:6px"><button class="b" onclick="auladia.cartaoEditar(${i})">✎ Editar</button> <button class="b" onclick="auladia.cartaoRemover(${i})">✕ Remover</button>${temOrigem ? ` <button class="b" onclick="auladia.verOrigem(${i})">↗ Trecho de origem</button>` : ''}</div></div>`; }).join('')).join('')}</div>`;
@@ -1101,10 +1275,11 @@
     const statusAudio = audioEmCurso
       ? '<div class="ad-step go" role="status" aria-live="polite">⏳ Transcrevendo o arquivo… Ele já está salvo neste navegador; a etapa pode levar alguns minutos.</div>'
       : audioComErro ? `<div class="ad-step" role="status" aria-live="polite">⚠ ${E(audioComErro.erro)} O áudio continua salvo; use “Tentar novamente”.</div>` : '';
-    const completo = s.resumoMd && s.flashcards && s.resultado;
-    r.innerHTML = `<div class="ad"><h2>${E(nomeCompleto(s))}</h2><div class="sub">${E(s.disciplina || '')} › ${E(s.tema || 'sem conteúdo definido')} › ${E(s.parte || 'Única')} · ${E(s.data)} · ${s.audioImportado ? duracaoAudio(s.duracao || 0) : hms(s.duracao || 0)}${s.audioImportado ? ' · ' + E(s.audioImportado) + ' · ' + bytesAudio(s.audioBytes || 0) : ''} · ${E(TIPOS_AULA[s.tipoAula] || s.tipoAula || 'Expositiva')} · material ${E(PROFUNDIDADES[s.preferenciaMaterial] || s.preferenciaMaterial || 'Equilibrado')} · ${palavrasDe(s.textoRevisado || s.texto)} palavras</div>
-    <div class="card">${statusAudio}<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="b" onclick="auladia.voltar()"><i class="ph ph-arrow-left"></i> Aulas</button>${geminiOk && !completo ? '<button class="b pri" onclick="auladia.gerar()"><i class="ph ph-sparkle"></i> Gerar / continuar</button>' : ''}${falhas ? `<button class="b" onclick="auladia.reenviar()">Tentar novamente (${falhas})</button>` : ''}<button class="b" onclick="auladia.copiar()">Copiar texto</button><button class="b" onclick="auladia.baixar('transcricao')">⬇ Transcrição .md</button>${s.resumoMd ? '<button class="b" onclick="auladia.baixar(\'resumo\')">⬇ Resumo .md</button>' : ''}${s.resumoGeral ? '<button class="b" onclick="auladia.baixar(\'resumogeral\')">⬇ Resumo Geral .md</button>' : ''}<button class="b" onclick="auladia.baixar('tudo')">⬇ Tudo (NotebookLM)</button></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="b" onclick="auladia.editarTranscricao()">Revisar transcrição</button><button class="b" onclick="auladia.regenerar('resumo')">Refazer resumo</button><button class="b" onclick="auladia.regenerar('flashcards')">Refazer cartões</button><button class="b" onclick="auladia.baixarHistorico()">Baixar histórico</button></div><div id="ad-proc" style="margin:0 0 8px"></div>${cicloHtml(s)}
-    <div class="ad-tabs">${tabs.map(([k, n]) => `<button class="b ${abaRes === k ? 'on' : ''}" onclick="auladia.aba('${k}')">${n}</button>`).join('')}</div>${corpo}</div></div>`;
+    const completo = !!(s.resumoMd && s.resultado);
+    r.innerHTML = `<div class="ad"><h2>${E(nomeCompleto(s))}</h2><div class="sub">${E(s.disciplina || '')} › ${E(s.tema || 'sem conteúdo definido')} › ${E(s.parte || 'Única')} · ${E(s.data)} · ${s.audioImportado ? duracaoAudio(s.duracao || 0) : hms(s.duracao || 0)}${s.audioImportado ? ' · ' + E(s.audioImportado) + ' · ' + bytesAudio(s.audioBytes || 0) : ''} · ${E(TIPOS_AULA[s.tipoAula] || s.tipoAula || 'Expositiva')} · material ${E(PROFUNDIDADES[s.preferenciaMaterial] || s.preferenciaMaterial || 'Equilibrado')} · ${palavrasDe(s.textoRevisado || s.texto)} palavras${resumoPlano}</div>
+    ${personalizacaoHtml(s)}<div class="card">${statusAudio}<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="b" onclick="auladia.voltar()"><i class="ph ph-arrow-left"></i> Aulas</button>${geminiOk && !completo ? '<button class="b pri" onclick="auladia.gerar()"><i class="ph ph-sparkle"></i> Gerar / continuar</button>' : ''}${falhas ? `<button class="b" onclick="auladia.reenviar()">Tentar novamente (${falhas})</button>` : ''}<button class="b" onclick="auladia.copiar()">Copiar texto</button><button class="b" onclick="auladia.baixar('transcricao')">⬇ Transcrição .md</button>${s.resumoMd ? '<button class="b" onclick="auladia.baixar(\'resumo\')">⬇ Resumo .md</button>' : ''}${s.resumoGeral ? '<button class="b" onclick="auladia.baixar(\'resumogeral\')">⬇ Resumo Geral .md</button>' : ''}<button class="b" onclick="auladia.baixar('tudo')">⬇ Tudo (NotebookLM)</button></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="b" onclick="auladia.editarTranscricao()">Revisar transcrição</button><button class="b" onclick="auladia.regenerar('resumo')">Refazer resumo</button>${s.flashcards ? '<button class="b" onclick="auladia.regenerar(\'flashcards\')">Refazer cartões</button>' : '<button class="b" onclick="auladia.gerarFlashcards()">Gerar flashcards</button>'}<button class="b" onclick="auladia.baixarHistorico()">Baixar histórico</button></div><div id="ad-proc" style="margin:0 0 8px"></div>${cicloHtml(s)}
+    <div class="ad-tabs" role="tablist" aria-label="Conteúdo da aula">${tabs.map(([k, n]) => `<button class="b ${abaRes === k ? 'on' : ''}" role="tab" aria-selected="${abaRes === k}" aria-controls="ad-tab-panel" onclick="auladia.aba('${k}')">${n}</button>`).join('')}</div><div id="ad-tab-panel" role="tabpanel" tabindex="0">${corpo}</div></div></div>`;
+    r.querySelectorAll('[data-ad-objective]').forEach(el => el.addEventListener('change', () => marcarObjetivoRevisado(el.dataset.adObjective, el.checked)));
     if (pipelineRodando && sessAtual && htmlPassos) { const el = $('ad-proc'); if (el) el.innerHTML = htmlPassos; }
     if (abaRes === 'audio') desenharKaraoke();
     if (abaRes === 'mm') desenharMindmap();
@@ -1170,7 +1345,7 @@
     if (!geminiOk) return toast('Preciso de uma chave de IA no servidor para regenerar.', 'warning');
     const regenerarCartoes = tipo === 'flash' || tipo === 'flashcards';
     if (!confirm(regenerarCartoes ? 'Regenerar os flashcards? A versão atual fica guardada em "Versões anteriores".' : 'Regenerar o resumo? A versão atual fica guardada em "Versões anteriores".')) return;
-    if (regenerarCartoes) { guardarVersao(s, 'flashcards', s.flashcards); s.flashcards = null; s.qualidade = null; }
+    if (regenerarCartoes) { guardarVersao(s, 'flashcards', s.flashcards); s.flashcards = null; s.solicitouFlashcards = true; s.qualidade = null; }
     else { guardarVersao(s, 'resumoMd', s.resumoMd); s.resumoMd = ''; s.caps = []; s.fechamento = ''; s.qualidade = null; }
     await salvarAgora(s); pipeline(s);
   }
@@ -1354,8 +1529,8 @@
     kVai, fecharCiclo, testar: testarAgora,
     _deveCortar: deveCortar, _chunksProntos: () => (sessAtual && sessAtual.chunks ? sessAtual.chunks.length : 0), _CHUNK: { SOFT: CHUNK_SOFT_MS, HARD: CHUNK_MS }, _pool: pool, _limitador: limitador, _revisoes: revisoesParaPlano, _previa: concluirPrevia,
     editarTranscricao, regenerar, baixarHistorico, importarAudio, salvarPreferencias,
-    gerarRQ: gerarResumoGeral,
-    mmGerar, mmToggle: mmClique, mmZoom, mmFit, mmTudo, mmPNG,
+    gerarRQ: gerarResumoGeral, gerarFlashcards, salvarMetodologia, tutorEnviar, tutorReenviar, tutorAtalho,
+    mmGerar, mmToggle: mmClique, mmZoom, mmFit, mmTudo, mmPNG, mmMermaid,
     ancora(id) { const el = document.getElementById('adh-' + id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
     aba(k) { if (abaRes === 'audio' && k !== 'audio') karaokeParar(true); abaRes = k; desenharResultado(); },
     voltar() { if (rec) return; karaokeParar(true); sessAtual = null; render(); }

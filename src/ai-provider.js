@@ -24,6 +24,7 @@
 //   GEMINI_MAX_OUTPUT_TOKENS  teto de saída (padrão 8192)
 //   GEMINI_MAX_PROMPT_CHARS  teto de caracteres de prompt enviado ao Gemini (padrão 300000)
 //   AI_ORDER           ordem de preferência no modo auto, ex.: "gemini,groq,openrouter" (padrão groq,gemini,openrouter)
+//   AI_MODEL_<TASK>_<PROVIDER> substitui o modelo de texto somente naquela tarefa/provedor.
 //   AI_LOG             "0" silencia a linha de log por chamada (provedor, modelo, ms, resultado — nunca o conteúdo)
 //   OPENROUTER_API_KEY chave da OpenRouter (3º provedor, compatível com OpenAI). No modo auto entra como
 //                      ÚLTIMO recurso (depois de Groq/Gemini); com AI_PROVIDER=openrouter vira o único.
@@ -35,7 +36,7 @@
 //   OPENROUTER_MAX_PROMPT_CHARS teto de caracteres de prompt enviado à OpenRouter (padrão 120000)
 //   OPENROUTER_SITE_URL / OPENROUTER_APP_NAME cabeçalhos opcionais de atribuição (HTTP-Referer / X-Title)
 
-import { taskOrder, taskModels, runAiJob, workflowStatus } from './ai-workflow.js';
+import { taskOrder, taskModel, taskModels, runAiJob, workflowStatus } from './ai-workflow.js';
 
 export const Type = { OBJECT: 'object', ARRAY: 'array', STRING: 'string', NUMBER: 'number', INTEGER: 'integer', BOOLEAN: 'boolean' };
 
@@ -472,7 +473,9 @@ export async function generateAI(params) {
     if (nome === 'openrouter' && r.modo === 'auto' && chars > base.janelaMax) { trilha.push({ provider: nome, pulado: 'grande' }); ultimo = ultimo || new AIError('Prompt grande demais para o OpenRouter.', { status: 413, code: 'upstream', provider: nome }); continue; }
     // Falha rápida: havendo outro provedor livre na fila, gasta no máximo 1 retry aqui e passa a bola.
     const temProximo = fila.slice(i + 1).some(n => disponivel(n) && !(n === 'openrouter' && chars > r.c.openrouter.janelaMax));
-    const cc = temProximo ? { ...base, retries: Math.min(base.retries, 1) } : base;
+    const modeloTarefa = ['groq', 'gemini'].includes(nome) ? taskModel(params.task, nome, base.model) : base.model;
+    const selecionado = modeloTarefa === base.model ? base : { ...base, model: modeloTarefa };
+    const cc = temProximo ? { ...selecionado, retries: Math.min(selecionado.retries, 1) } : selecionado;
     const t0 = Date.now();
     try {
       const out = await runAiJob(nome, async () => {
@@ -488,7 +491,7 @@ export async function generateAI(params) {
       return { ...out, task: params.task || null, tentativas: trilha };
     } catch (failure) {
       const err = failure.code === 'ai_queue_busy' ? new AIError(failure.message, { status: 503, code: 'busy', provider: nome }) : failure;
-      ultimo = err; if (err.code !== 'busy') registrar(nome, false, Date.now() - t0, err, base.model, params.task); trilha.push({ provider: nome, ok: false, code: err.code });
+      ultimo = err; if (err.code !== 'busy') registrar(nome, false, Date.now() - t0, err, cc.model, params.task); trilha.push({ provider: nome, ok: false, code: err.code });
       if (err.code === 'unsupported_media' || err.code === 'pdf_unavailable' || err.code === 'pdf_sem_texto') throw err; // independe do provedor
       if (!(err instanceof AIError) || !TROCA_DE_PROVEDOR.has(err.code)) throw err;
     }

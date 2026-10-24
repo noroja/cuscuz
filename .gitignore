@@ -6,6 +6,8 @@ data/hwq-token.json
 
 # Dependências
 node_modules/
+__pycache__/
+*.py[cod]
 
 # Sistema
 Thumbs.db
@@ -39,3 +41,6 @@ public/
 
 # Artefatos do skill de design (nao versionar)
 .taste-skill/
+.vercel
+.env*
+!.env.example

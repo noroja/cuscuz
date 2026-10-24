@@ -4,11 +4,24 @@ Node 22 ou superior. O app lê o arquivo `.env` sozinho.
 
 ## Modo 1 — tudo local (sem Vercel)
 1. `npm install`
-2. Copie `.env.example` para `.env` e preencha ao menos `APP_PASSWORD` e as chaves do Drive e das IAs que usa.
+2. Se `.env` ainda não existir, copie `.env.example` para `.env`. Configure ao menos uma chave de IA (`GEMINI_API_KEY`, `GROQ_API_KEY` ou `OPENROUTER_API_KEY`) para habilitar geração; configure o Drive apenas se for usar materiais sincronizados. `MEDIA_TICKET_SECRET` protege links temporários de mídia e não é a senha de login.
 3. `npm run local` e abra http://localhost:3000.
 4. No celular, na mesma rede Wi-Fi: `http://<IP-do-PC>:3000` (o servidor escuta em todas as interfaces; libere a porta 3000 no firewall se precisar).
 
-Limites: só funciona com o PC ligado. Sem Supabase, usuários e sessões ficam em `data/` neste computador. Os dados de estudo (marcações, planner) ficam no navegador de cada aparelho.
+Login: o cadastro público permanece desativado. Login Google exige Supabase configurado e uma conta autorizada; login local exige uma conta já existente em `data/users.json`. Um `.env` sozinho não cria uma conta.
+
+Limites: só funciona com o PC ligado. Sem Supabase, usuários e sessões ficam em `data/` neste computador. Os dados de estudo (marcações, planner) ficam no navegador de cada aparelho. Sem chaves de IA, os fluxos determinísticos continuam disponíveis, mas as gerações dependentes de provedor ficam indisponíveis.
+
+### Chaves por funcionalidade de IA
+
+- Texto, Aula do Dia, Mentor e mapas mentais: pelo menos uma chave entre Gemini, Groq ou OpenRouter.
+- Transcrição: Groq para Whisper; Gemini é usado como reserva quando configurado.
+- Busca semântica do acervo: Hugging Face (`HF_TOKEN` com acesso ao EmbeddingGemma), Cohere (`COHERE_API_KEY`) e Supabase (`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`); depois rode `npm run index:acervo-semantico`.
+- Login Google, usuários duráveis e armazenamento do índice: Supabase configurado. Login Google também depende do provedor Google habilitado no Supabase e de uma conta previamente autorizada.
+
+`npm run local` lê `.env` automaticamente. O `.env` local é ignorado pelo Git; nunca copie chaves para `.env.example` nem as envie em logs ou mensagens.
+
+As variáveis cadastradas no projeto Vercel são usadas pelo app publicado. O comando `vercel env pull` pode substituir valores secretos por `[SENSITIVE]`; esse marcador não é uma chave válida. Para desenvolvimento local, configure credenciais próprias no `.env` e evite apontar o processo local para dados de produção sem intenção explícita.
 
 ## Modo 2 — híbrido: site na Vercel, vídeos e PDFs no seu PC
 Objetivo: parar de gastar a "Transferência rápida de origem" (10 GB no plano Hobby). Vídeos e PDFs são o que mais pesa, e passam inteiros pela função da Vercel. Com este modo a Vercel só **redireciona** (poucos bytes) e o arquivo vem do seu PC.
