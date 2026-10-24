@@ -91,7 +91,7 @@ export function registerAcervoSemantic(app, { getCatalog, supabase, supabaseServ
   app.post('/api/acervo/busca-semantica', async (req, res) => {
     const query = String(req.body?.query || '').trim().slice(0, 180);
     if (query.length < 3) return res.status(400).json({ success: false, msg: 'Digite ao menos 3 caracteres para buscar.' });
-    if (!process.env.HF_TOKEN || !process.env.COHERE_API_KEY) {
+    if (!process.env.HF_TOKEN) {
       return res.status(503).json({ success: false, msg: 'Busca semântica ainda não configurada no servidor.' });
     }
     if (!supabase || !supabaseServiceRole) {
@@ -108,11 +108,15 @@ export function registerAcervoSemantic(app, { getCatalog, supabase, supabaseServ
       const candidatos = buscarVizinhos(index, queryVector, 40);
       let resultados = candidatos;
       let rerankerAtivo = false;
-      try {
-        resultados = await rerank(query, candidatos, 12);
-        rerankerAtivo = true;
-      } catch (error) {
-        console.warn('[Busca semântica] Reranker indisponível; usando similaridade vetorial:', error.message);
+      if (process.env.COHERE_API_KEY) {
+        try {
+          resultados = await rerank(query, candidatos, 12);
+          rerankerAtivo = true;
+        } catch (error) {
+          console.warn('[Busca semântica] Reranker indisponível; usando similaridade vetorial:', error.message);
+          resultados = candidatos.slice(0, 12);
+        }
+      } else {
         resultados = candidatos.slice(0, 12);
       }
       return res.json({

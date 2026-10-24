@@ -12,7 +12,7 @@ Implementação: `src/ai-workflow.js`, usada pelo roteador `src/ai-provider.js`.
 | Questões estruturadas | OpenRouter / família Gemma | Nemotron, MiniMax; depois Gemini e Groq |
 | Chat, detalhamento do plano e associações do Mentor IA | Groq GPT-OSS 120B | Gemini, OpenRouter |
 | Resumo geral e mapa mental sob demanda | Gemini | OpenRouter, Groq |
-| Busca semântica no acervo | EmbeddingGemma no Hugging Face + Cohere Rerank | Similaridade vetorial sem reranker se Cohere falhar |
+| Busca semântica no acervo | EmbeddingGemma no Hugging Face + Cohere Rerank opcional | Similaridade vetorial se Cohere estiver ausente ou falhar |
 
 As preferências do OpenRouter reorganizam somente os modelos presentes em `OPENROUTER_MODELS`: não acrescentam um modelo não configurado nem ativam uma opção paga. O retorno informa o modelo que efetivamente respondeu, que pode ser uma reserva. Formatos JSON continuam sendo validados; `json_object` continua disponível como alternativa ao schema.
 
@@ -24,9 +24,9 @@ O restante do sistema mantém `GEMINI_MODEL=gemini-3.8-flash` como padrão globa
 
 ## Busca semântica
 
-- `POST /api/acervo/busca-semantica` recebe a consulta, calcula o embedding com `google/embeddinggemma-300m`, compara com o índice vetorial e reordena os 40 melhores resultados com Cohere Rerank.
+- `POST /api/acervo/busca-semantica` recebe a consulta, calcula o embedding com `google/embeddinggemma-300m` e compara com o índice vetorial. Se `COHERE_API_KEY` estiver configurada, Cohere Rerank reordena os 40 melhores resultados; sem essa chave ou se o serviço falhar, a API retorna os 12 melhores por similaridade vetorial.
 - A versão atual indexa **título, curso e caminho do catálogo**, não o texto integral dos PDFs nem o áudio das videoaulas. A busca semântica ajuda a localizar o material pelo assunto descrito nesses metadados.
-- O índice fica em `acervo/semantic-index/` no bucket privado `acervo` do Supabase. Para criá-lo ou atualizá-lo após uma sincronização do catálogo, configure `HF_TOKEN`, `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`, aceite a licença Gemma no Hugging Face e rode `npm run index:acervo-semantico`. A busca requer também `COHERE_API_KEY` e o cliente Supabase com service role. O frontend mantém a busca textual local como alternativa.
+- O índice fica em `acervo/semantic-index/` no bucket privado `acervo` do Supabase. Para criá-lo ou atualizá-lo após uma sincronização do catálogo, configure `HF_TOKEN`, `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`, aceite a licença Gemma no Hugging Face e rode `npm run index:acervo-semantico`. A busca requer `HF_TOKEN`, o cliente Supabase com service role e um índice atualizado; `COHERE_API_KEY` é opcional e ativa apenas o reranking. O frontend mantém a busca textual local como alternativa.
 - O índice usa vetores int8 normalizados para reduzir o armazenamento e é carregado uma vez por processo. Se o catálogo mudar, a API responde que o índice está desatualizado até ele ser regenerado.
 - O Hugging Face inclui US$ 0,10 mensais para usuários gratuitos, sujeito a mudança; a chave de avaliação do Cohere é gratuita, mas limitada e o endpoint Rerank tem limite de 10 requisições/minuto. Isso não equivale a uso gratuito ilimitado.
 - A consulta é enviada ao Hugging Face e os metadados dos resultados candidatos ao Cohere. Não inclua dados identificáveis de pacientes nas consultas.
