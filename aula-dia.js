@@ -32,23 +32,31 @@
   let rec = null;       // estado da gravação em andamento
   let sessAtual = null; // sessão exibida (em gravação ou aberta do histórico)
   let abaRes = 'transcricao';
+  let slidesPendente = null;
 
   /* ───────────── armazenamento ───────────── */
   const sessoes = () => get(K_SESS, []);
   const salvarSessoes = l => set(K_SESS, l.slice(0, 120));
   const palavrasDe = t => (t || '').split(/\s+/).filter(Boolean).length;
+  const chavesIscDaSessao = s => [...new Set([
+    ...(Array.isArray(s?.iscResourceKeys) ? s.iscResourceKeys : []),
+    ...(Array.isArray(s?.iscSlideResourceKeys) ? s.iscSlideResourceKeys : []),
+    s?.iscTranscriptResourceKey, s?.iscResourceKey
+  ].filter(key => typeof key === 'string' && key.startsWith('user:')))].slice(-12);
   const TIPOS_AULA = { expositiva: 'Expositiva', 'caso-clinico': 'Discussão de caso', 'revisao-prova': 'Revisão para prova', pratica: 'Aula prática ou procedimento' };
   const PROFUNDIDADES = { conciso: 'Enxuto', equilibrado: 'Equilibrado', detalhado: 'Detalhado' };
   function preferenciasAula() {
     const p = get(K_PREF, {});
     return {
       tipoAula: TIPOS_AULA[p.tipoAula] ? p.tipoAula : 'expositiva',
-      preferenciaMaterial: PROFUNDIDADES[p.preferenciaMaterial] ? p.preferenciaMaterial : 'equilibrado'
+      preferenciaMaterial: PROFUNDIDADES[p.preferenciaMaterial] ? p.preferenciaMaterial : 'equilibrado',
+      processamentoAudio: p.processamentoAudio !== false
     };
   }
   function salvarPreferencias() {
     const tipoAula = ($('ad-tipo') || {}).value, preferenciaMaterial = ($('ad-detalhe') || {}).value;
-    if (TIPOS_AULA[tipoAula] && PROFUNDIDADES[preferenciaMaterial]) set(K_PREF, { tipoAula, preferenciaMaterial });
+    const anterior = get(K_PREF, {});
+    if (TIPOS_AULA[tipoAula] && PROFUNDIDADES[preferenciaMaterial]) set(K_PREF, { ...anterior, tipoAula, preferenciaMaterial, processamentoAudio: ($('ad-mic-processing') || {}).checked !== false });
   }
   function preferenciasPedagogicasFormulario() {
     return {
@@ -61,7 +69,10 @@
   // Só o resumo da aula vai para o localStorage; textos grandes (transcrição, resumo, flashcards) ficam no IndexedDB
   function metaDe(s) {
     return { id: s.id, data: s.data, inicio: s.inicio, disciplina: s.disciplina, tema: s.tema, parte: s.parte || 'Única', cor: s.cor || 'dourado', duracao: s.duracao || 0, tipoAula: s.tipoAula || 'expositiva', preferenciaMaterial: s.preferenciaMaterial || 'equilibrado', perfilPedagogico: s.perfilPedagogico || 'automatico', objetivoEstudo: s.objetivoEstudo || 'automatico', objetivosAprendizagem: s.objetivosAprendizagem || '', enfasePedagogica: s.enfasePedagogica || '', audioImportado: s.audioImportado || '', audioBytes: s.audioBytes || 0, marcas: s.marcas || [],
-      palavras: palavrasDe(s.textoRevisado || s.texto), pronto: !!(s.resumoMd && s.resultado), revisada: !!s.textoRevisado, nFlash: (s.flashcards || []).length };
+      palavras: palavrasDe(s.textoRevisado || s.texto), pronto: !!(s.resumoMd && s.resultado), revisada: !!s.textoRevisado, nFlash: (s.flashcards || []).length,
+      iscResourceKey: s.iscResourceKey || '', iscTranscriptResourceKey: s.iscTranscriptResourceKey || '',
+      iscResourceKeys: chavesIscDaSessao(s), iscSlideResourceKeys: Array.isArray(s.iscSlideResourceKeys) ? s.iscSlideResourceKeys : [],
+      iscSelectedTopicIds: Array.isArray(s.iscSelectedTopicIds) ? s.iscSelectedTopicIds : [] };
   }
   let _docTimer = null;
   function salvarSess(s) {
@@ -90,21 +101,21 @@
     if ($('ad-css')) return;
     const s = document.createElement('style'); s.id = 'ad-css';
     s.textContent = `
-.ad{max-width:980px;margin:0 auto;font-family:var(--font-ui);color:var(--text-primary)}
+.ad{max-width:1280px;margin:0 auto;font-family:var(--font-ui);color:var(--text-primary);color-scheme:dark}
 .ad h2{margin:0 0 4px;font-size:21px;text-wrap:balance}.ad .sub{font-size:12.5px;color:var(--text-secondary);margin-bottom:14px;overflow-wrap:anywhere}
 .ad .card{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:14px;margin-bottom:14px}
 .ad label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:0 0 4px}
 .ad input,.ad select{width:100%;background:var(--bg-base);color:var(--text-primary);border:1px solid var(--border-muted);border-radius:var(--radius-md);padding:9px 10px;font:inherit;font-size:16px}
 .ad textarea{width:100%;min-height:58px;resize:vertical;background:var(--bg-base);color:var(--text-primary);border:1px solid var(--border-muted);border-radius:var(--radius-md);padding:9px 10px;font:inherit;font-size:14px}
 .ad .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.ad .b{background:var(--bg-surface);border:1px solid var(--border-muted);color:var(--text-primary);border-radius:var(--radius-md);padding:8px 12px;font-size:13px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;touch-action:manipulation}
+.ad .b{background:var(--bg-surface);border:1px solid var(--border-muted);color:var(--text-primary);border-radius:var(--radius-md);padding:8px 12px;min-height:40px;font-size:13px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;touch-action:manipulation}
 .ad .b:hover{border-color:var(--teal-border);background:var(--teal-dim)}.ad .b.pri{background:var(--teal);color:var(--text-inverse);border-color:var(--teal);font-weight:700}
 .ad .b.rec{background:#e11d48;border-color:#e11d48;color:#fff;font-weight:700}
 .ad .b:disabled{opacity:.5}
 .ad-big{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
-.ad-timer{font:700 28px var(--font-mono);letter-spacing:.04em}
+.ad-timer{font:700 28px var(--font-ui);font-variant-numeric:tabular-nums;letter-spacing:.04em}
 .ad-meter{flex:1;min-width:120px;height:10px;background:var(--bg-base);border-radius:99px;overflow:hidden;border:1px solid var(--border-subtle)}
-.ad-meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--teal),var(--cyan));transition:width .1s}
+.ad-meter i{display:block;height:100%;width:0;background:var(--teal);transition:width .1s}
 .ad-dot{width:10px;height:10px;border-radius:50%;background:#e11d48;animation:adp 1s infinite}
 @keyframes adp{50%{opacity:.25}}
 .ad-tr{white-space:pre-wrap;font-size:14px;line-height:1.65;max-height:55vh;overflow:auto;padding:4px 2px}
@@ -117,12 +128,55 @@
 .ad .fc b{display:block;margin-bottom:4px}
 .ad .hist{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border-subtle);font-size:13px}
 .ad .hist small{color:var(--text-secondary)}
+.ad-setup-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:2px 0 18px}
+.ad-setup-actions .b{min-height:48px;padding-inline:16px}
+.ad-setup-actions .b.pri{min-width:180px;justify-content:center}
+.ad-setup-slides{color:var(--text-secondary);font-size:12px;margin:-8px 0 14px}
+.ad-advanced{margin-top:14px;border-top:1px solid var(--border-subtle);padding-top:10px}
+.ad-advanced summary{cursor:pointer;color:var(--text-secondary);font-size:13px;font-weight:600;padding:7px 0}
+.ad-advanced summary:focus-visible,.ad .b:focus-visible,.ad button:focus-visible,.ad input:focus-visible,.ad select:focus-visible,.ad textarea:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.ad-setup{padding:20px 22px}
+.ad-history-search{max-width:420px;margin:0 0 12px}
+.ad-workspace-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:10px}
+.ad-workspace-grid{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:14px;align-items:start}
+.ad-workspace-main{min-width:0}
+.ad-primary-tabs{display:flex;gap:18px;border-bottom:1px solid var(--border-muted);overflow-x:auto;scrollbar-width:thin}
+.ad-primary-tabs .b{background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;color:var(--text-secondary);min-height:44px;white-space:nowrap}
+.ad-primary-tabs .b[aria-pressed="true"]{color:var(--teal);border-bottom-color:var(--teal);background:transparent}
+.ad-subtabs{display:flex;gap:6px;margin:8px 0 12px;overflow-x:auto}
+.ad-workspace-rail{position:sticky;top:76px;min-width:0}
+.ad-workspace-actions{display:grid;gap:8px;margin-bottom:12px}
+.ad-study-panel{min-height:300px}
+.ad-action-details{border-top:1px solid var(--border-subtle);margin-top:8px;padding-top:8px}
+.ad-action-details summary{cursor:pointer;color:var(--text-secondary);font-size:12px;padding:6px 0}
+.ad-rail-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0}
+.ad-rail-actions .b{justify-content:center;text-align:center;min-width:0;padding:7px}
+.ad-rail-section{padding:12px 0;border-bottom:1px solid var(--border-subtle)}
+.ad-rail-section:first-child{padding-top:0}
+.ad-rail-section b{display:block;font-size:13px;margin-bottom:4px}
+.ad-rail-section .sub{margin-bottom:0}
+.ad-workspace .ad-panel{min-height:300px}
+.ad-index-state{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px;border-top:1px solid var(--border-subtle);margin:12px 0 0}
+.ad-index-state .ad-progress-line{min-width:0}
+.ad-empty{padding:18px 0;color:var(--text-secondary);font-size:13px;line-height:1.6}
+.ad-actions-details{margin-top:8px}
+.ad-actions-details summary{cursor:pointer;color:var(--text-secondary);font-size:12px;padding:8px 0}
+.ad-actions-list{display:flex;gap:7px;flex-wrap:wrap;padding:6px 0}
+.ad-recording{max-width:1000px;margin:0 auto}
+.ad-recording .ad-timer{font-size:clamp(32px,5vw,54px)}
+.ad-recording .ad-big{gap:8px}
+.ad-recording .b{min-height:44px}
+.ad-recording .ad-meter{height:12px}
+.ad-recording .ad-tr{min-height:180px}
 .ad .aviso{font-size:12px;color:var(--amber);background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--radius-md);padding:8px 10px;margin-top:10px}
 .ad-tutor-msg{padding:12px 0;border-bottom:1px solid var(--border-subtle);line-height:1.6}.ad-tutor-msg:last-child{border-bottom:0}.ad-tutor-msg.user{color:var(--text-secondary)}.ad-tutor-msg.assistant{font-size:14px}.ad-tutor-msg .ad-md{max-height:none;overflow:visible;padding:0}.ad-tutor-source{margin:6px 0 0 12px;font-size:12px;color:var(--text-secondary)}.ad-tutor-source blockquote{white-space:pre-wrap;margin:6px 0;padding:8px 10px;border-left:2px solid var(--border-muted);background:var(--bg-base)}.ad-tutor-quick{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.ad-tutor-form{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}.ad-tutor-form textarea{min-height:74px}.ad-objective{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border-subtle);font-size:13.5px}.ad-objective input{width:18px;height:18px;flex:0 0 18px;margin:1px 0 0;accent-color:var(--teal)}.ad-progress-line{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border-subtle);font-size:13px}.ad-progress-line span:last-child{color:var(--text-secondary);text-align:right}
 
 .ad .row3{display:grid;grid-template-columns:1.2fr 1.6fr .8fr;gap:10px;margin-top:10px}
 .ad .file-note{font-size:12px;color:var(--text-secondary);line-height:1.5;margin:8px 0 0}
 .ad .file-meta{font-size:13px;color:var(--text-primary);margin-top:2px;flex-basis:100%;overflow-wrap:anywhere}
+.ad .ad-mic-toggle{display:flex;align-items:flex-start;gap:8px;margin:8px 0 0;color:var(--text-secondary);font-size:12px;line-height:1.45;text-transform:none;letter-spacing:0}
+.ad .ad-mic-toggle input{width:16px;height:16px;flex:0 0 16px;margin:1px 0 0;accent-color:var(--teal)}
+.ad #ad-mic-test-status[data-state="warning"]{color:var(--amber)}.ad #ad-mic-test-status[data-state="success"]{color:var(--teal)}
 .ad .file-meta[data-state="error"]{color:var(--amber)}.ad .file-meta[data-state="success"]{color:var(--teal)}
 .ad .b:focus-visible,.ad input:focus-visible,.ad select:focus-visible,.ad textarea:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.ad-dot{animation:none}.ad-meter i{transition:none}}
@@ -142,8 +196,8 @@
 .ak-chunk{margin:8px 0}.ak-chunk h5{margin:0 0 2px;font-size:10.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em}
 .ak-line{padding:4px 10px;border-radius:10px;cursor:pointer;font-size:14px;line-height:1.6;transition:background .15s}
 .ak-line:hover{background:var(--bg-base)}
-.ak-line.on{background:var(--teal-dim);box-shadow:inset 0 0 0 1.5px var(--teal-border);color:var(--text-primary)}
-.ak-line .t{color:var(--text-muted);font-family:var(--font-mono);font-size:11.5px;margin-right:8px}
+.ak-line.on{background:var(--teal-dim);outline:1px solid var(--teal-border);color:var(--text-primary)}
+.ak-line .t{color:var(--text-muted);font-family:var(--font-ui);font-variant-numeric:tabular-nums;font-size:11.5px;margin-right:8px}
 .ak-info{font-size:12px;color:var(--text-muted);margin:6px 0}
 .mm-tools{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}
 .mm-tools .b{padding:5px 10px;font-size:12px}
@@ -151,6 +205,8 @@
 .mm-inner{transform-origin:0 0;width:max-content}
 .mm-node{cursor:pointer}
 .mm-node text{user-select:none}
+@media(max-width:900px){.ad-workspace-grid{grid-template-columns:1fr}.ad-workspace-rail{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px}.ad-workspace-rail .ad-rail-section:last-child{border-bottom:0}}
+@media(max-width:600px){.ad-setup{padding:15px}.ad-setup-actions{display:grid;grid-template-columns:1fr}.ad-setup-actions .b{width:100%;justify-content:center}.ad-workspace-rail{grid-template-columns:1fr}.ad-index-state{grid-template-columns:1fr}.ad-workspace-head{display:block}.ad-primary-tabs{gap:8px}}
 @media(max-width:600px){.ad .row,.ad .row3,.ad-tutor-form{grid-template-columns:1fr}.ad-tutor-form .b{min-height:44px;justify-content:center}.ad-tabs .b{flex:0 0 auto;min-height:40px}.ad-tutor-form textarea{font-size:16px}}
 @media(max-width:420px){.ad-progress-line{display:grid;grid-template-columns:1fr;gap:3px}.ad-progress-line span:last-child{text-align:left}}`;
     document.head.appendChild(s);
@@ -198,15 +254,22 @@
     const d = ($('ad-disc') || {}).value || '', t = ($('ad-tema') || {}).value || '', p = $('ad-parte');
     if (p && !p.dataset.manual) p.value = sugerirParte(d, t);
   }
-  function historicoAgrupado() {
-    const lista = sessoes();
-    if (!lista.length) return '<div class="sub" style="margin-top:6px">Nenhuma aula gravada ainda.</div>';
+  function historicoAgrupado(filtro = '') {
+    const normalizar = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const busca = normalizar(filtro).trim();
+    const todas = sessoes();
+    const lista = busca ? todas.filter(session => normalizar([session.disciplina, session.tema, session.parte, session.data].join(' ')).includes(busca)) : todas;
+    if (!lista.length) return `<div class="ad-empty">${busca ? 'Nenhuma aula corresponde à busca.' : 'Nenhuma aula gravada ainda. Suas aulas aparecerão aqui depois de gravar ou enviar áudio.'}</div>`;
     const arv = {};
     lista.forEach(x => { const a = (x.disciplina || 'Sem área').trim() || 'Sem área', c = (x.tema || 'Sem conteúdo definido').trim() || 'Sem conteúdo definido'; ((arv[a] = arv[a] || {})[c] = arv[a][c] || []).push(x); });
     const ordP = p => { const m = /(\d+)/.exec(p || ''); return m ? +m[1] : 0; };
-    return Object.keys(arv).sort().map(a => `<div class="grp">📚 ${E(a)}</div>` + Object.keys(arv[a]).sort().map(c =>
-      `<div class="grp2">📖 ${E(c)}</div>` + arv[a][c].sort((x, y) => ordP(x.parte) - ordP(y.parte) || (x.inicio || 0) - (y.inicio || 0)).map(s =>
-        `<div class="hist"><div><b>${E(s.parte || 'Única')}</b> <small>${E(s.data)} · ${hms(s.duracao || 0)} · ${s.palavras != null ? s.palavras : 0} palavras${s.tipoAula ? ' · ' + E(TIPOS_AULA[s.tipoAula] || s.tipoAula) : ''}${s.preferenciaMaterial ? ' · material ' + E(PROFUNDIDADES[s.preferenciaMaterial] || s.preferenciaMaterial) : ''}${s.audioImportado ? ' · áudio ' + E(s.audioImportado) + ' (' + bytesAudio(s.audioBytes || 0) + ')' : ''}${s.revisada ? ' · ✔ revisada' : ''}${s.pronto ? ' · ✔ resumo' + (s.nFlash ? ' + ' + s.nFlash + ' flashcards' : '') : ''}</small></div><div style="display:flex;gap:6px"><button class="b" onclick="auladia.abrir('${s.id}')">Abrir</button><button class="b" aria-label="Apagar aula ${E(s.tema || s.disciplina || s.parte || '')}" title="Apagar aula" onclick="auladia.apagar('${s.id}')">🗑</button></div></div>`).join('')).join('')).join('');
+    return Object.keys(arv).sort().map(a => `<div class="grp"><i class="ph ph-books" aria-hidden="true"></i> ${E(a)}</div>` + Object.keys(arv[a]).sort().map(c =>
+      `<div class="grp2"><i class="ph ph-book-open" aria-hidden="true"></i> ${E(c)}</div>` + arv[a][c].sort((x, y) => ordP(x.parte) - ordP(y.parte) || (x.inicio || 0) - (y.inicio || 0)).map(s =>
+        `<div class="hist"><div><b>${E(s.parte || 'Única')}</b> <small>${E(s.data)} · ${hms(s.duracao || 0)} · ${s.palavras != null ? s.palavras : 0} palavras${s.tipoAula ? ' · ' + E(TIPOS_AULA[s.tipoAula] || s.tipoAula) : ''}${s.preferenciaMaterial ? ' · material ' + E(PROFUNDIDADES[s.preferenciaMaterial] || s.preferenciaMaterial) : ''}${s.audioImportado ? ' · áudio ' + E(s.audioImportado) + ' (' + bytesAudio(s.audioBytes || 0) + ')' : ''}${s.revisada ? ' · revisada' : ''}${s.pronto ? ' · resumo disponível' + (s.nFlash ? ' + ' + s.nFlash + ' flashcards' : '') : ''}</small></div><div style="display:flex;gap:6px"><button class="b" onclick="auladia.abrir('${s.id}')">Abrir</button><button class="b" aria-label="Apagar aula ${E(s.tema || s.disciplina || s.parte || '')}" title="Apagar aula" onclick="auladia.apagar('${s.id}')"><i class="ph ph-trash" aria-hidden="true"></i></button></div></div>`).join('')).join('')).join('');
+  }
+
+  function filtrarHistorico(value) {
+    const output = $('ad-history-list'); if (output) output.innerHTML = historicoAgrupado(value);
   }
 
   async function render() {
@@ -220,19 +283,26 @@
     const aulaHoje = hoje.find(a => a.data === hojeISO());
     const d0 = aulaHoje ? aulaHoje.disciplina : '', t0 = aulaHoje ? aulaHoje.tema : '', pref = preferenciasAula();
     const partes = ['Única'].concat([1, 2, 3, 4, 5, 6, 7, 8].map(n => 'Parte ' + n));
-    r.innerHTML = `<div class="ad"><h2>Aula do dia</h2><div class="sub">Grave ou envie a aula para organizar a transcrição e gerar material de estudo. Os flashcards só são criados quando você solicitar.</div>
-    <div class="card"><div class="row"><div><label for="ad-disc">Área / disciplina</label><input id="ad-disc" name="disciplina" autocomplete="off" list="ad-discs" placeholder="Ex.: Psiquiatria…" value="${E(d0)}" oninput="auladia.parteAuto()"><datalist id="ad-discs">${opts.map(o => `<option value="${E(o)}">`).join('')}</datalist></div>
-    <div><label for="ad-tema">Conteúdo da aula</label><input id="ad-tema" name="conteudo" autocomplete="off" placeholder="Ex.: Transtornos de humor…" value="${E(t0)}" oninput="auladia.parteAuto()"></div></div>
-    <div class="row3"><div><label for="ad-parte">Parte</label><select id="ad-parte" name="parte" onchange="this.dataset.manual=1">${partes.map(p => `<option${p === sugerirParte(d0, t0) ? ' selected' : ''}>${p}</option>`).join('')}</select></div>
-<div></div></div>
-    <div class="row3"><div><label for="ad-tipo">Tipo de aula</label><select id="ad-tipo" name="tipoAula" onchange="auladia.salvarPreferencias()"><option value="expositiva"${pref.tipoAula === 'expositiva' ? ' selected' : ''}>Expositiva</option><option value="caso-clinico"${pref.tipoAula === 'caso-clinico' ? ' selected' : ''}>Discussão de caso</option><option value="revisao-prova"${pref.tipoAula === 'revisao-prova' ? ' selected' : ''}>Revisão para prova</option><option value="pratica"${pref.tipoAula === 'pratica' ? ' selected' : ''}>Aula prática ou procedimento</option></select></div><div><label for="ad-detalhe">Tamanho do material</label><select id="ad-detalhe" name="preferenciaMaterial" onchange="auladia.salvarPreferencias()"><option value="conciso"${pref.preferenciaMaterial === 'conciso' ? ' selected' : ''}>Enxuto</option><option value="equilibrado"${pref.preferenciaMaterial === 'equilibrado' ? ' selected' : ''}>Equilibrado</option><option value="detalhado"${pref.preferenciaMaterial === 'detalhado' ? ' selected' : ''}>Detalhado</option></select></div><div class="file-note">A duração do arquivo é detectada automaticamente.</div></div>
-    <div class="row3"><div><label for="ad-perfil">Perfil pedagógico</label><select id="ad-perfil" name="perfilPedagogico"><option value="automatico" selected>Inferir pelo conteúdo</option>${perfisPedagogicos.map(p => `<option value="${E(p.id)}">${E(p.nome)}</option>`).join('')}</select></div><div><label for="ad-objetivo">Objetivo de estudo</label><select id="ad-objetivo" name="objetivoEstudo"><option value="automatico" selected>Automático pelo tipo e conteúdo</option><option value="compreender">Compreender</option><option value="prova">Preparar para prova</option><option value="osce">Aplicação prática / OSCE</option><option value="revisar">Revisar conteúdo estudado</option><option value="aprofundar">Aprofundar mecanismos</option></select></div><div class="file-note">O perfil é inferido pela aula ou pode ser fixado manualmente.</div></div>
-    <div class="row"><div><label for="ad-objetivos">Objetivos de aprendizagem (opcional)</label><textarea id="ad-objetivos" name="objetivosAprendizagem" maxlength="1600" placeholder="Um objetivo por linha"></textarea></div><div><label for="ad-enfase">Ênfase desta aula (opcional)</label><input id="ad-enfase" name="enfasePedagogica" maxlength="300" placeholder="Ex.: diferenciar mecanismos e correlações"><div class="file-note">Essas escolhas ficam registradas nesta aula.</div></div></div>
-    <div class="ad-big"><button class="b rec" id="ad-start" onclick="auladia.iniciar()"><i class="ph ph-record" aria-hidden="true"></i> Gravar agora</button><button class="b" type="button"${transcOk ? '' : ' disabled title="Configure um provedor de transcrição no servidor"'} aria-describedby="ad-audio-note" onclick="document.getElementById('ad-audio-file').click()"><i class="ph ph-upload-simple" aria-hidden="true"></i> Enviar áudio</button><input id="ad-audio-file" name="audio" type="file" accept="audio/mpeg,audio/mp4,audio/wav,audio/ogg,audio/webm,audio/flac,audio/x-m4a,.mp3,.m4a,.wav,.ogg,.webm,.flac" hidden onchange="auladia.importarAudio(this)"><span id="ad-audio-meta" class="file-meta" role="status" aria-live="polite" aria-atomic="true"></span>
-    <span class="sub" style="margin:0">${transcOk ? (geminiOk ? 'A gravação é enviada em trechos de ~1,5 min; arquivos selecionados são transcritos antes dos materiais.' : 'A transcrição por áudio está disponível; configure também uma IA de texto para gerar resumo e flashcards.') : (geminiOk ? 'Transcrição de áudio indisponível neste momento; você ainda pode gravar com a legenda ao vivo do navegador.' : 'Sem provedor de IA no servidor: a gravação usa apenas a legenda ao vivo do navegador.')}</span></div>
-    <div id="ad-audio-note" class="file-note">MP3, M4A, WAV, OGG, WebM ou FLAC. ${audioUploadDireto ? 'Até 50 MB e 60 min; uma aula de 1 h costuma caber em MP3 mono a 64–96 kbps. Arquivos acima de 3 MB passam temporariamente pelo bucket privado do Supabase e são removidos após a transcrição; a cópia local fica para reprodução e retry. Áudios acima de ' + bytesAudio(groqAudioMaxBytes) + (audioGrandeGemini ? ' usam a transcrição dedicada do Gemini.' : ' precisam de Gemini configurado. WAV pode passar do limite.') : 'Sem armazenamento de áudio configurado: arquivos de até 3 MB. Para aulas longas, configure SUPABASE_SERVICE_ROLE_KEY. A duração é detectada automaticamente.'}</div>
-    <div class="aviso">Deixe a tela ligada e o navegador aberto durante a aula — no iPhone, bloquear a tela ou trocar de app pausa a gravação. Posicione o aparelho perto de quem fala e use o botão ⭐ quando o professor disser "isso cai na prova". Grave apenas se a faculdade/professor permitirem.</div></div>
-    <div class="card"><b>Aulas gravadas</b> <small class="sub">(por Área › Conteúdo › Parte)</small>${historicoAgrupado()}</div></div>`;
+    r.innerHTML = `<div class="ad"><div class="ad-workspace-head"><div><h2>Começar uma nova aula</h2><div class="sub">Prepare os dados essenciais e escolha como capturar o conteúdo. Os flashcards são gerados somente quando você pedir.</div></div></div>
+    <section class="card ad-setup" aria-label="Preparar aula">
+      <div class="ad-setup-actions"><button class="b pri" id="ad-start" type="button" onclick="auladia.iniciar()"><i class="ph ph-record" aria-hidden="true"></i> Gravar aula</button><button class="b" type="button"${transcOk ? '' : ' disabled title="Configure um provedor de transcrição no servidor"'} aria-describedby="ad-audio-note" onclick="document.getElementById('ad-audio-file').click()"><i class="ph ph-upload-simple" aria-hidden="true"></i> Enviar áudio</button><button class="b" type="button" onclick="document.getElementById('ad-setup-slides').click()"><i class="ph ph-presentation" aria-hidden="true"></i> Adicionar slides</button></div>
+      <input id="ad-audio-file" name="audio" type="file" accept="audio/mpeg,audio/mp4,audio/wav,audio/ogg,audio/webm,audio/flac,audio/x-m4a,.mp3,.m4a,.wav,.ogg,.webm,.flac" hidden onchange="auladia.importarAudio(this)">
+      <input id="ad-setup-slides" type="file" accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx" hidden onchange="auladia.selecionarSlidesSetup(this)">
+      <div id="ad-audio-meta" class="file-meta" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="ad-setup-slides-status" class="ad-setup-slides" role="status" aria-live="polite">${slidesPendente ? `Slides selecionados: ${E(slidesPendente.name)} · serão indexados quando você abrir o índice da aula.` : 'PDF ou PPTX opcional. O texto só será enviado ao índice após sua confirmação.'}</div>
+      <div class="row"><div><label for="ad-disc">Disciplina</label><input id="ad-disc" name="disciplina" autocomplete="off" list="ad-discs" placeholder="Ex.: Cardiologia" value="${E(d0)}" oninput="auladia.parteAuto()"><datalist id="ad-discs">${opts.map(o => `<option value="${E(o)}">`).join('')}</datalist></div>
+      <div><label for="ad-tema">Conteúdo da aula</label><input id="ad-tema" name="conteudo" autocomplete="off" placeholder="Ex.: Insuficiência cardíaca" value="${E(t0)}" oninput="auladia.parteAuto()"></div></div>
+      <div class="row3"><div><label for="ad-parte">Parte ou identificação</label><select id="ad-parte" name="parte" onchange="this.dataset.manual=1">${partes.map(p => `<option${p === sugerirParte(d0, t0) ? ' selected' : ''}>${p}</option>`).join('')}</select></div><div></div><div></div></div>
+      <details class="ad-advanced"><summary>Configurações pedagógicas avançadas</summary>
+        <div class="row3"><div><label for="ad-tipo">Tipo de aula</label><select id="ad-tipo" name="tipoAula" onchange="auladia.salvarPreferencias()"><option value="expositiva"${pref.tipoAula === 'expositiva' ? ' selected' : ''}>Expositiva</option><option value="caso-clinico"${pref.tipoAula === 'caso-clinico' ? ' selected' : ''}>Discussão de caso</option><option value="revisao-prova"${pref.tipoAula === 'revisao-prova' ? ' selected' : ''}>Revisão para prova</option><option value="pratica"${pref.tipoAula === 'pratica' ? ' selected' : ''}>Aula prática ou procedimento</option></select></div><div><label for="ad-detalhe">Tamanho do material</label><select id="ad-detalhe" name="preferenciaMaterial" onchange="auladia.salvarPreferencias()"><option value="conciso"${pref.preferenciaMaterial === 'conciso' ? ' selected' : ''}>Enxuto</option><option value="equilibrado"${pref.preferenciaMaterial === 'equilibrado' ? ' selected' : ''}>Equilibrado</option><option value="detalhado"${pref.preferenciaMaterial === 'detalhado' ? ' selected' : ''}>Detalhado</option></select></div><div class="file-note">A duração é detectada no áudio; não precisa estimar.</div></div>
+        <div class="row3"><div><label for="ad-perfil">Perfil pedagógico</label><select id="ad-perfil" name="perfilPedagogico"><option value="automatico" selected>Inferir pelo conteúdo</option>${perfisPedagogicos.map(p => `<option value="${E(p.id)}">${E(p.nome)}</option>`).join('')}</select></div><div><label for="ad-objetivo">Objetivo de estudo</label><select id="ad-objetivo" name="objetivoEstudo"><option value="automatico" selected>Automático pelo tipo e conteúdo</option><option value="compreender">Compreender</option><option value="prova">Preparar para prova</option><option value="osce">Aplicação prática / OSCE</option><option value="revisar">Revisar conteúdo estudado</option><option value="aprofundar">Aprofundar mecanismos</option></select></div><div class="file-note">O perfil pode ser inferido ou fixado manualmente.</div></div>
+        <div class="row"><div><label for="ad-objetivos">Objetivos de aprendizagem</label><textarea id="ad-objetivos" name="objetivosAprendizagem" maxlength="1600" placeholder="Um objetivo por linha"></textarea></div><div><label for="ad-enfase">Ênfase da aula</label><input id="ad-enfase" name="enfasePedagogica" maxlength="300" placeholder="Ex.: diferenciar mecanismos e correlações"></div></div>
+        <div class="card"><b>Teste de microfone</b><div class="sub" style="margin:4px 0 8px">Meça o nível antes da aula. O teste não grava nem envia áudio.</div><div class="ad-big" style="margin:0"><button class="b" type="button" id="ad-mic-test" onclick="auladia.testarMicrofone()">Testar microfone</button><div class="ad-meter" role="meter" aria-label="Nível de áudio do teste" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="ad-mic-meter"></i></div></div><div id="ad-mic-test-status" class="file-note" role="status" aria-live="polite">Fale por alguns segundos depois de iniciar o teste.</div><label class="ad-mic-toggle"><input id="ad-mic-processing" type="checkbox"${pref.processamentoAudio ? ' checked' : ''} onchange="auladia.salvarPreferencias()"><span>Usar cancelamento de eco, redução de ruído e ganho automático do navegador.</span></label><div class="file-note">Aproxime o microfone da fonte de voz e reduza conversas próximas.</div></div>
+      </details>
+      <details><summary class="file-note" style="cursor:pointer">Formatos e limites de áudio</summary><div id="ad-audio-note" class="file-note">MP3, M4A, WAV, OGG, WebM ou FLAC. ${audioUploadDireto ? 'Até 50 MB e 60 min; para uma aula de 1 h, MP3 mono a 64–96 kbps costuma equilibrar tamanho e inteligibilidade. Arquivos maiores que 3 MB passam temporariamente pelo bucket privado; a cópia local fica para reprodução e retry. Áudios acima de ' + bytesAudio(groqAudioMaxBytes) + (audioGrandeGemini ? ' usam a transcrição dedicada do Gemini.' : ' exigem Gemini configurado.') : 'Sem armazenamento de áudio configurado: arquivos de até 3 MB. A duração é detectada automaticamente.'}</div></details>
+      <div class="file-note" style="margin-top:10px">Mantenha esta tela aberta durante a gravação; no iPhone, bloquear a tela ou trocar de app pode interrompê-la. Grave somente com autorização.</div>
+    </section>
+    <section class="card"><div style="display:flex;justify-content:space-between;gap:14px;align-items:end;flex-wrap:wrap"><div><h3 style="margin:0 0 4px">Aulas anteriores</h3><div class="sub" style="margin:0">Retome uma transcrição, resumo ou material salvo neste dispositivo.</div></div><input id="ad-history-search" class="ad-history-search" type="search" placeholder="Buscar disciplina, conteúdo ou data" aria-label="Buscar aulas anteriores" oninput="auladia.filtrarHistorico(this.value)"></div><div id="ad-history-list">${historicoAgrupado()}</div></section></div>`;
   }
 
   function estadoGrav() { return rec ? (rec.parar ? 'finalizando' : rec.parado ? 'parada' : rec.pausado ? 'pausada' : 'gravando') : null; }
@@ -241,31 +311,53 @@
   function desenharGravando() {
     const r = $('ad-root'); if (!r || !rec) return;
     const est = estadoGrav();
+    const enviados = rec.sess.chunks.filter(chunk => chunk.status === 'ok').length;
+    const pendentes = rec.fila.length + rec.preparando;
     const bPausa = est === 'pausada'
-      ? `<button class="b pri" onclick="auladia.continuar()"><i class="ph ph-play"></i> Continuar</button>`
+      ? `<button class="b pri" onclick="auladia.continuar()"><i class="ph ph-play" aria-hidden="true"></i> Continuar</button>`
       : est === 'gravando' ? `<button class="b" onclick="auladia.pausar()"><i class="ph ph-pause"></i> Pausar</button>` : '';
     const bParada = est === 'parada'
-      ? `<button class="b pri" onclick="auladia.retomar()"><i class="ph ph-microphone"></i> Continuar gravação</button><button class="b pri" onclick="auladia.finalizar()"><i class="ph ph-sparkle"></i> ✅ Finalizar e revisar</button>`
-      : est === 'gravando' || est === 'pausada' ? `<button class="b" onclick="auladia.parar()"><i class="ph ph-stop-circle"></i> ⏹ Parar</button>` : '';
-    const stTxt = est === 'pausada' ? '⏸ Pausado — o microfone ficou em espera; o trecho atual foi guardado junto com o áudio.'
-      : est === 'parada' ? '⏹ Gravação parada — toque em "Continuar gravação" para somar mais um trecho, ou "Finalizar e revisar" para gerar o material de estudo.'
+      ? `<button class="b pri" onclick="auladia.retomar()"><i class="ph ph-microphone" aria-hidden="true"></i> Continuar gravação</button><button class="b pri" onclick="auladia.finalizar()"><i class="ph ph-check-circle" aria-hidden="true"></i> Finalizar e revisar</button>`
+      : est === 'gravando' || est === 'pausada' ? `<button class="b" onclick="auladia.parar()"><i class="ph ph-stop-circle" aria-hidden="true"></i> Parar</button>` : '';
+    const stTxt = est === 'pausada' ? 'Pausado. O microfone ficou em espera; o trecho atual foi guardado junto com o áudio.'
+      : est === 'parada' ? 'Gravação parada. Toque em “Continuar gravação” para somar mais um trecho, ou “Finalizar e revisar” para gerar o material de estudo.'
       : est === 'finalizando' ? 'Finalizando e transcrevendo o último trecho…'
       : (transcOk ? 'Gravando · trechos enviados à IA a cada ~1,5 min' : 'Gravando · legenda ao vivo do navegador');
-    r.innerHTML = `<div class="ad"><h2><span class="ad-dot" style="display:inline-block;margin-right:8px;${est === 'gravando' ? '' : 'animation:none;background:var(--amber)'}"></span>${est === 'gravando' ? 'Gravando' : est === 'pausada' ? 'Pausado' : est === 'parada' ? 'Gravação parada' : 'Finalizando'} — ${E(rec.sess.disciplina || 'aula')}</h2><div class="sub">${E(rec.sess.tema || '')}</div>
-    <div class="card"><div class="ad-big" style="margin-top:0"><span class="ad-timer" id="ad-timer">${mmss(decorridoMs() / 1000)}</span><div class="ad-meter"><i id="ad-meter"></i></div>
-    <button class="b" onclick="auladia.marcar()">⭐ Marcar momento</button><button class="b" onclick="auladia.duvida()" title="Marque o ponto que você não entendeu; ele vira dúvida no resultado">❓ Dúvida</button>${bPausa}${bParada}${est !== 'finalizando' ? `<button class="b pri" onclick="auladia.finalizar()"><i class="ph ph-check-circle"></i> Finalizar</button>` : ''}</div>
-    <div class="sub" id="ad-status" style="margin:8px 0 0">${E(stTxt)}</div></div>
-    <div class="card"><b>Transcrição ao vivo</b><div class="ad-tr" id="ad-tr"></div></div></div>`;
+    r.innerHTML = `<div class="ad ad-recording"><div class="ad-workspace-head"><div><h2><span class="ad-dot" style="display:inline-block;margin-right:8px;${est === 'gravando' ? '' : 'animation:none;background:var(--amber)'}"></span>${est === 'gravando' ? 'Aula em andamento' : est === 'pausada' ? 'Gravação pausada' : est === 'parada' ? 'Gravação parada' : 'Finalizando aula'}</h2><div class="sub">${E(rec.sess.disciplina || 'Sem disciplina definida')}${rec.sess.tema ? ' · ' + E(rec.sess.tema) : ''} · ${E(rec.sess.parte || 'Única')}</div></div><button class="b" type="button" onclick="auladia.voltar()"${est === 'finalizando' ? ' disabled' : ''}>Aulas anteriores</button></div>
+    <section class="card"><div class="ad-big" style="margin-top:0"><span class="ad-timer" id="ad-timer" role="timer" aria-label="Duração da gravação" aria-live="off">${mmss(decorridoMs() / 1000)}</span><div class="ad-meter" role="meter" aria-label="Nível sonoro captado" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="ad-meter"></i></div>
+    <button class="b" type="button" onclick="auladia.marcar()"><i class="ph ph-bookmark-simple" aria-hidden="true"></i> Marcar momento</button><button class="b" type="button" onclick="auladia.duvida()" title="Marque um ponto para rever depois"><i class="ph ph-question" aria-hidden="true"></i> Marcar dúvida</button>${bPausa}${bParada}${est !== 'finalizando' ? `<button class="b pri" type="button" onclick="auladia.finalizar()"><i class="ph ph-check-circle" aria-hidden="true"></i> Finalizar aula</button>` : ''}</div>
+    <div class="sub" id="ad-status" role="status" aria-live="polite" style="margin:8px 0 0">${E(stTxt)}</div>
+    <div class="ad-index-state"><div class="ad-progress-line"><span>Microfone</span><span>${est === 'gravando' ? 'Captando' : est === 'pausada' ? 'Em espera' : 'Parado'}</span></div><div class="ad-progress-line"><span>Trechos transcritos</span><span>${enviados}${pendentes ? ` · ${pendentes} na fila` : ''}</span></div>${slidesPendente ? `<div class="ad-progress-line"><span>Slides</span><span>Selecionados; indexar após a gravação</span></div>` : ''}</div></section>
+    <section class="card"><b>Transcrição ao vivo</b><div class="ad-tr" id="ad-tr" aria-live="polite" aria-atomic="false"></div></section>
+    <p class="file-note">Mantenha o navegador aberto. A gravação em segundo plano depende do navegador e do sistema operacional.</p></div>`;
   }
 
   function textoHtml(s) {
     const partes = (s.chunks || []).slice().sort((a, b) => a.i - b.i).map(c => c.status === 'ok' ? E(c.texto) : c.status === 'erro' ? '<span class="pend">[trecho ' + (c.i + 1) + ' sem transcrição — toque em "Tentar novamente"]</span>' : '<span class="pend">[transcrevendo trecho ' + (c.i + 1) + '…]</span>');
     const live = s.live ? E(s.live) : '';
-    return (partes.join('\n\n') + (live ? (partes.length ? '\n\n' : '') + live : '')).replace(/([⭐❓]) \[(\d\d:\d\d)\]/g, '<span class="mk">$1 [$2]</span>') || '<span class="pend">A transcrição aparecerá aqui…</span>';
+    return (partes.join('\n\n') + (live ? (partes.length ? '\n\n' : '') + live : '')).replace(/([\u2B50\u2753]) \[(\d\d:\d\d)\]/g, '<span class="mk">$1 [$2]</span>') || '<span class="pend">A transcrição aparecerá aqui…</span>';
   }
   function textoPuro(s) {
     const t = (s.chunks || []).slice().sort((a, b) => a.i - b.i).filter(c => c.status === 'ok').map(c => c.texto).join('\n\n');
     return (t + (s.live ? '\n\n' + s.live : '')).trim();
+  }
+  const tokensASR = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(/\s+/).filter(Boolean);
+  function repeticaoNaEmenda(anterior, atual) {
+    const a = tokensASR(anterior), b = tokensASR(atual), max = Math.min(10, a.length, b.length);
+    for (let n = max; n >= 4; n--) if (a.slice(-n).join(' ') === b.slice(0, n).join(' ')) return n;
+    return 0;
+  }
+  function alertasCaptura(s) {
+    const chunks = (s.chunks || []).filter(c => Number.isInteger(c.i)).sort((a, b) => a.i - b.i), avisos = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const c = chunks[i], anterior = chunks[i - 1];
+      if (c.avisoCaptura) avisos.push({ i: c.i, texto: c.avisoCaptura });
+      if (c.erroRetranscricao) avisos.push({ i: c.i, texto: 'A retranscrição falhou; a versão anterior foi mantida. ' + c.erroRetranscricao });
+      if (anterior && c.status === 'ok' && anterior.status === 'ok' && repeticaoNaEmenda(anterior.texto, c.texto)) avisos.push({ i: c.i, texto: 'Possível repetição na emenda entre os trechos ' + (anterior.i + 1) + ' e ' + (c.i + 1) + '; confira antes de remover.' });
+      if ((c.segs || []).some((g, n, all) => !Number.isFinite(g.a) || !Number.isFinite(g.b) || g.a < 0 || g.b <= g.a || n > 0 && g.a < all[n - 1].a)) avisos.push({ i: c.i, texto: 'Os tempos retornados pelo provedor têm uma inconsistência neste trecho.' });
+      if (c.captura && c.captura.audioLocalSalvo === false) avisos.push({ i: c.i, texto: c.avisoAudio || 'O áudio deste trecho não está disponível para reprodução/retry neste navegador.' });
+    }
+    return avisos;
   }
   function atualizarTexto() {
     const s = rec ? rec.sess : sessAtual; if (!s) return;
@@ -280,11 +372,12 @@
     return c.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
   }
 
-  async function pedirMicrofone() {
+  async function pedirMicrofone(processarAudio = true) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { toast('Este navegador não permite gravar áudio. Use Safari (iOS 14.3+) ou Chrome.', 'error'); return null; }
-    try { return await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
+    const audio = { echoCancellation: !!processarAudio, noiseSuppression: !!processarAudio, autoGainControl: !!processarAudio };
+    try { return await navigator.mediaDevices.getUserMedia({ audio }); }
     catch (e) {
-      try { return await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e2) { e = e2; }
+      try { return await navigator.mediaDevices.getUserMedia({ audio: processarAudio ? true : audio }); } catch (e2) { e = e2; }
       const n = (e && e.name) || '';
       if (n === 'NotAllowedError' || n === 'SecurityError') toast('O navegador bloqueou o microfone para este site. No iPhone: Ajustes › Safari › Microfone › Permitir (ou toque em "aA" na barra do Safari › Ajustes do Site › Microfone › Permitir) e recarregue a página.', 'error');
       else if (n === 'NotReadableError' || n === 'AbortError') toast('O microfone está ocupado por outro app/aba (ligação, Jarvis, outra gravação). Feche e tente de novo.', 'error');
@@ -292,6 +385,58 @@
       else toast('Não consegui acessar o microfone (' + (n || 'erro') + ').', 'error');
       return null;
     }
+  }
+
+  async function testarMicrofone() {
+    const status = $('ad-mic-test-status'), meter = $('ad-mic-meter'), meterBox = meter && meter.parentElement, button = $('ad-mic-test');
+    if (!status || !meter) return;
+    if (button) button.disabled = true;
+    status.dataset.state = 'info'; status.textContent = 'Aguardando permissão do microfone…';
+    if (meterBox) meterBox.setAttribute('aria-valuenow', '0'); meter.style.width = '0%';
+    let stream = null, ctx = null, raf = 0, timeout = 0;
+    try {
+      const processar = ($('ad-mic-processing') || {}).checked !== false;
+      stream = await pedirMicrofone(processar);
+      if (!stream) { status.dataset.state = 'warning'; status.textContent = 'Não foi possível abrir o microfone. Verifique a permissão do navegador.'; return; }
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) throw new Error('Este navegador não oferece medição de áudio. A gravação ainda pode funcionar.');
+      ctx = new AC(); await ctx.resume();
+      const source = ctx.createMediaStreamSource(stream), analyser = ctx.createAnalyser(); analyser.fftSize = 1024; source.connect(analyser);
+      const data = new Float32Array(analyser.fftSize); let count = 0, sumSquares = 0, peak = 0, clipped = 0;
+      const inicio = Date.now(), duracaoMs = 3500;
+      status.textContent = 'Fale normalmente por 3 segundos…';
+      const finalizar = () => {
+        if (!stream) return;
+        cancelAnimationFrame(raf); clearTimeout(timeout);
+        const track = stream.getAudioTracks()[0], config = track && track.getSettings ? track.getSettings() : {};
+        try { stream.getTracks().forEach(track => track.stop()); } catch (_) {}
+        try { ctx && ctx.close(); } catch (_) {}
+        const rms = count ? Math.sqrt(sumSquares / count) : 0;
+        const detalhes = [config.sampleRate ? (config.sampleRate / 1000).toFixed(config.sampleRate % 1000 ? 1 : 0) + ' kHz' : '', config.channelCount ? config.channelCount + (config.channelCount === 1 ? ' canal' : ' canais') : '', typeof config.noiseSuppression === 'boolean' ? 'redução de ruído ' + (config.noiseSuppression ? 'ativa' : 'inativa') : ''].filter(Boolean).join(' · ');
+        const descricao = detalhes ? ' Captura: ' + detalhes + '.' : '';
+        if (!count || peak < 0.005) { status.dataset.state = 'warning'; status.textContent = 'Quase nenhum som detectado. Confira a entrada selecionada e aproxime o microfone da fonte de voz.' + descricao; }
+        else if (peak >= 0.995 || clipped / Math.max(1, count) > 0.005) { status.dataset.state = 'warning'; status.textContent = 'Sinal muito alto, com risco de clipping. Afaste o microfone ou reduza o volume de entrada.' + descricao; }
+        else if (rms < 0.012) { status.dataset.state = 'warning'; status.textContent = 'Sinal baixo. Aproxime o aparelho (cerca de 20–50 cm) e faça outro teste.' + descricao; }
+        else { status.dataset.state = 'success'; status.textContent = 'Nível detectado. Faça um teste curto e confira a reprodução antes de uma aula longa.' + descricao; }
+        stream = null; if (button) button.disabled = false;
+      };
+      const medir = () => {
+        if (!stream) return;
+        analyser.getFloatTimeDomainData(data);
+        let quadroPico = 0;
+        for (const valor of data) { const abs = Math.abs(valor); quadroPico = Math.max(quadroPico, abs); sumSquares += valor * valor; count++; if (abs >= 0.995) clipped++; }
+        peak = Math.max(peak, quadroPico);
+        const nivel = Math.min(100, Math.round(quadroPico * 100)); meter.style.width = nivel + '%'; if (meterBox) meterBox.setAttribute('aria-valuenow', String(nivel));
+        if (Date.now() - inicio >= duracaoMs) finalizar(); else raf = requestAnimationFrame(medir);
+      };
+      timeout = setTimeout(finalizar, duracaoMs + 300);
+      raf = requestAnimationFrame(medir);
+    } catch (error) {
+      status.dataset.state = 'warning'; status.textContent = error.message || 'Falha ao medir o microfone.';
+      try { stream && stream.getTracks().forEach(track => track.stop()); } catch (_) {}
+      try { ctx && ctx.close(); } catch (_) {}
+      stream = null;
+    } finally { if (!stream && button) button.disabled = false; }
   }
 
   async function iniciar() {
@@ -303,7 +448,7 @@
       salvarPreferencias();
       const pref = preferenciasAula();
       const pedagogia = preferenciasPedagogicasFormulario();
-      const stream = await pedirMicrofone();
+      const stream = await pedirMicrofone(pref.processamentoAudio);
       if (!stream) return;
       garantirView(); css();
       await carregarStatus();
@@ -315,7 +460,7 @@
   async function comecar(stream, disc, tema, parte, cor, tipoAula = 'expositiva', preferenciaMaterial = 'equilibrado', preferenciasPedagogicas = {}) {
     const sess = { id: 'a' + Date.now(), data: hojeISO(), inicio: Date.now(), disciplina: disc.trim(), tema: tema.trim(), parte, cor, tipoAula, preferenciaMaterial, perfilPedagogico: preferenciasPedagogicas.perfilPedagogico || 'automatico', objetivoEstudo: preferenciasPedagogicas.objetivoEstudo || 'automatico', objetivosAprendizagem: preferenciasPedagogicas.objetivosAprendizagem || '', enfasePedagogica: preferenciasPedagogicas.enfasePedagogica || '', duracao: 0, chunks: [], marcas: [], texto: '', live: '', resultado: null };
     const mime = escolherMime();
-    rec = { sess, stream, mime, mr: null, t0: Date.now(), parar: false, pausado: false, parado: false, ganho: 0, refer: Date.now(), fila: [], enviando: false, chunkIdx: 0, silencio: 0, timers: [], ctx: null, wake: null, sr: null };
+    rec = { sess, stream, mime, mr: null, t0: Date.now(), parar: false, pausado: false, parado: false, ganho: 0, refer: Date.now(), fila: [], enviando: false, preparando: 0, chunkIdx: 0, silencio: 0, timers: [], ctx: null, wake: null, sr: null };
     sessAtual = sess; salvarSess(sess);
     // medidor de nível
     try {
@@ -325,12 +470,13 @@
       rec.timers.push(setInterval(() => {
         an.getByteTimeDomainData(buf); let m = 0; for (const v of buf) m = Math.max(m, Math.abs(v - 128));
         const nv = Math.min(100, m * 1.6); const el = $('ad-meter'); if (el) el.style.width = nv + '%';
+        if (el?.parentElement?.getAttribute('role') === 'meter') el.parentElement.setAttribute('aria-valuenow', String(Math.round(nv)));
         rec.silencio = nv < 3 ? rec.silencio + 0.1 : 0;
         // pausa de fala = nível bem abaixo do pico recente (funciona com ruído de sala, onde o silêncio absoluto nunca acontece)
         rec.pico = Math.max(nv, (rec.pico || 0) * 0.997);
         rec.pausaFala = nv < Math.max(4, rec.pico * 0.25) ? (rec.pausaFala || 0) + 0.1 : 0;
         if (estadoGrav() === 'gravando') {
-          const st = $('ad-status'); if (st) st.textContent = rec.silencio > 20 ? '⚠ Sem som há mais de 20 s — verifique o microfone e a distância do professor.' : 'Gravando · trechos enviados à IA a cada ~1,5 min';
+          const st = $('ad-status'); if (st) st.textContent = rec.silencio > 20 ? 'Sem som há mais de 20 s. Verifique o microfone e a distância do professor.' : 'Gravando · trechos enviados à IA a cada ~1,5 min';
         }
       }, 100));
     } catch (_) {}
@@ -358,16 +504,54 @@
     const idx = rec.chunkIdx++;
     const parts = [];
     let mr;
-    try { mr = new MediaRecorder(rec.stream, rec.mime ? { mimeType: rec.mime, audioBitsPerSecond: 32000 } : undefined); }
+    try { mr = new MediaRecorder(rec.stream, rec.mime ? { mimeType: rec.mime, audioBitsPerSecond: 64000 } : { audioBitsPerSecond: 64000 }); }
     catch (e) { try { mr = new MediaRecorder(rec.stream); } catch (e2) { toast('Não foi possível iniciar a gravação neste navegador.', 'error'); return; } }
-    rec.mr = mr; rec.tChunkStart = Date.now();
+    rec.mr = mr; rec.tChunkStart = Date.now(); mr._startedAt = rec.tChunkStart; mr._elapsedStart = decorridoMs();
     mr.ondataavailable = ev => { if (ev.data && ev.data.size) parts.push(ev.data); };
     mr.onstop = () => {
       const blob = new Blob(parts, { type: mr.mimeType || rec.mime || 'audio/webm' });
-      if (blob.size > 2000) { const sess = sessAtual; sess.chunks.push({ i: idx, status: 'pendente', texto: '', mime: blob.type, dur: Math.max(0, (Date.now() - rec.tChunkStart) / 1000) }); salvarSess(sess); idbPut(sess.id + ':' + idx, blob).catch(() => {}); if (transcOk) { rec.fila.push({ sess, idx, blob }); bombear(); } }
-      // a bola volta a rolar só se a gravação segue ativa (pausa/parada mantêm tudo congelado até a retomada)
-      if (rec && rec.parar) finalizarDepois();
-      else if (rec && !rec.pausado && !rec.parado) iniciarTrecho();
+      const r0 = rec, terminouEm = Date.now();
+      if (r0 && blob.size > 2000) {
+        const sess = r0.sess, anterior = sess.chunks.filter(c => Number.isInteger(c.i)).sort((a, b) => b.i - a.i)[0];
+        const trackSettings = r0.stream.getAudioTracks()[0]?.getSettings?.() || {};
+        const captura = { inicioUnixMs: mr._startedAt, fimUnixMs: terminouEm, inicioSessaoMs: mr._elapsedStart, fimSessaoMs: decorridoMs(), bytes: blob.size, mime: blob.type, sampleRate: Number(trackSettings.sampleRate) || null, canais: Number(trackSettings.channelCount) || null, echoCancellation: typeof trackSettings.echoCancellation === 'boolean' ? trackSettings.echoCancellation : null, noiseSuppression: typeof trackSettings.noiseSuppression === 'boolean' ? trackSettings.noiseSuppression : null, autoGainControl: typeof trackSettings.autoGainControl === 'boolean' ? trackSettings.autoGainControl : null, bitrateSolicitado: 64000, bitrateReportado: Number(mr.audioBitsPerSecond) || null, gapAnteriorMs: null, duracaoAudioS: null, audioLocalSalvo: null };
+        const chunk = { i: idx, status: 'pendente', texto: '', mime: blob.type, dur: null, duracao: null, captura };
+        sess.chunks.push(chunk); r0.preparando = (r0.preparando || 0) + 1; salvarSess(sess);
+        // Reabre o gravador antes de qualquer operação assíncrona (IndexedDB/metadata), reduzindo a janela entre trechos.
+        if (rec === r0 && !r0.parar && !r0.pausado && !r0.parado) iniciarTrecho();
+        (async () => {
+          try {
+            try { await idbPut(sess.id + ':' + idx, blob); captura.audioLocalSalvo = true; }
+            catch (_) { captura.audioLocalSalvo = false; chunk.avisoAudio = 'O áudio foi transcrito, mas não foi possível guardá-lo neste navegador para reprodução/retry.'; }
+            try {
+              const duracaoReal = await obterDuracaoAudio(blob);
+              if (Number.isFinite(duracaoReal) && duracaoReal > 0) {
+                chunk.dur = duracaoReal; chunk.duracao = duracaoReal; captura.duracaoAudioS = duracaoReal; captura.integridade = 'metadata_lida';
+                const inicioAnteriorMs = anterior && anterior.captura && anterior.captura.inicioSessaoMs != null ? Number(anterior.captura.inicioSessaoMs) : NaN;
+                const duracaoAnteriorMs = anterior && anterior.captura && anterior.captura.duracaoAudioS != null ? Number(anterior.captura.duracaoAudioS) * 1000 : NaN;
+                if (Number.isFinite(inicioAnteriorMs) && Number.isFinite(duracaoAnteriorMs) && duracaoAnteriorMs > 0) captura.gapAnteriorMs = Math.max(0, mr._elapsedStart - inicioAnteriorMs - duracaoAnteriorMs);
+              }
+              else captura.integridade = 'duracao_indisponivel';
+            } catch (_) { captura.integridade = 'duracao_indisponivel'; }
+            if (captura.gapAnteriorMs > 750) chunk.avisoCaptura = 'Possível lacuna de ' + Math.round(captura.gapAnteriorMs) + ' ms entre trechos; confira a emenda no áudio.';
+            salvarSess(sess);
+            if (transcOk) { r0.fila.push({ sess, idx, blob }); bombear(); }
+          } catch (error) {
+            chunk.status = 'erro'; chunk.erro = 'Não foi possível preparar o trecho salvo: ' + String(error.message || error).slice(0, 180); salvarSess(sess);
+          } finally {
+            r0.preparando = Math.max(0, (r0.preparando || 1) - 1);
+            if (r0.parar) finalizarDepois();
+          }
+        })();
+      } else if (r0 && blob.size) {
+        const sess = r0.sess; sess.chunks.push({ i: idx, status: 'ignorado', texto: '', mime: blob.type, dur: null, captura: { inicioUnixMs: mr._startedAt, fimUnixMs: terminouEm, bytes: blob.size, integridade: 'trecho_muito_pequeno' } }); salvarSess(sess);
+        if (rec === r0 && !r0.parar && !r0.pausado && !r0.parado) iniciarTrecho();
+      } else if (r0 && !r0.parar && !r0.pausado && !r0.parado && rec === r0) {
+        iniciarTrecho();
+      }
+      // Pausa/parada intencional congela o capturador. Finalizar espera a persistência e a fila.
+      if (r0 && r0.parar) finalizarDepois();
+      else if (r0 && !r0.pausado && !r0.parado && rec === r0 && mr === r0.mr) iniciarTrecho();
     };
     mr.start();
     clearTimeout(rec.tChunk);
@@ -411,7 +595,7 @@
     atualizarTexto(); toast((emoji === '⭐' ? 'Momento marcado em ' : 'Dúvida marcada em ') + t, 'success');
   }
   const marcar = () => marcarTipo('⭐');
-  const duvida = () => marcarTipo('❓');
+  const duvida = () => marcarTipo('\u2753');
 
   function pausar() {
     if (!rec || rec.pausado || rec.parado || rec.parar) return;
@@ -464,12 +648,13 @@
     toast('Gravação retomada — o novo trecho entra no fim da aula.', 'success');
   }
 
-  function finalizar() { // ✅ Encerra a gravação e dispara o processo secundário (revisão → resumo → flashcards)
+  function finalizar() { // Encerra a gravação e inicia a revisão e geração dos materiais.
     if (!rec || rec.parar) return;
+    const duracaoFinal = Math.round(decorridoMs() / 1000);
     rec.parar = true; rec.pausado = false; rec.parado = false;
     rec.timers.forEach(clearInterval); clearTimeout(rec.tChunk); clearInterval(rec.vad);
     try { rec.sr && rec.sr.stop(); } catch (_) {}
-    sessAtual.duracao = Math.round(decorridoMs() / 1000);
+    sessAtual.duracao = duracaoFinal;
     try { if (rec.mr && rec.mr.state !== 'inactive') rec.mr.stop(); else finalizarDepois(); } catch (_) { finalizarDepois(); }
     desenharGravando();
   }
@@ -477,13 +662,17 @@
   function finalizarDepois() {
     if (!rec) return;
     const r0 = rec;
+    if (r0.finalizando) return;
+    r0.finalizando = true;
     try { r0.stream.getTracks().forEach(t => t.stop()); } catch (_) {}
     try { r0.ctx && r0.ctx.close(); } catch (_) {}
     try { r0.wake && r0.wake.release(); } catch (_) {}
     document.removeEventListener('visibilitychange', aoMudarVisibilidade);
     const esperar = async () => {
-      while (r0.fila.length || r0.enviando) await new Promise(r => setTimeout(r, 400));
+      while (r0.fila.length || r0.enviando || r0.preparando) await new Promise(r => setTimeout(r, 400));
       rec = null;
+      const audioCapturado = r0.sess.chunks.reduce((total, c) => total + Math.max(0, Number(c.captura && c.captura.duracaoAudioS) || 0), 0);
+      if (audioCapturado > 0) r0.sess.duracao = Math.round(audioCapturado);
       atualizarTexto(); sessAtual.texto = textoPuro(sessAtual); await salvarAgora(sessAtual);
       abaRes = 'transcricao'; desenharResultado();
       if (geminiOk && sessAtual.texto.length > 200) pipeline(sessAtual);
@@ -528,7 +717,8 @@
   function obterDuracaoAudio(file) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file), el = new Audio(); let terminou = false;
-      const limpar = () => { URL.revokeObjectURL(url); el.removeAttribute('src'); };
+      const timer = setTimeout(() => { if (terminou) return; terminou = true; limpar(); reject(new Error('O navegador demorou para ler os metadados de duração.')); }, 8000);
+      const limpar = () => { clearTimeout(timer); URL.revokeObjectURL(url); el.onloadedmetadata = null; el.onerror = null; el.removeAttribute('src'); };
       el.preload = 'metadata';
       el.onloadedmetadata = () => { if (terminou) return; terminou = true; const d = el.duration; limpar(); Number.isFinite(d) && d > 0 ? resolve(d) : reject(new Error('Duração do áudio indisponível.')); };
       el.onerror = () => { if (terminou) return; terminou = true; limpar(); reject(new Error('O navegador não reconheceu este arquivo de áudio.')); };
@@ -573,12 +763,29 @@
     finally { uploadRodando = false; }
   }
 
+  async function obterGlossarioASR(sess) {
+    const slides = Array.isArray(sess.iscSlideResourceKeys) ? sess.iscSlideResourceKeys.slice(0, 12) : [];
+    let topicos = Array.isArray(sess.iscGlossarioASR) ? sess.iscGlossarioASR : null;
+    if (slides.length && !topicos) {
+      try {
+        const result = await post('/api/isc/lesson-index', { resourceKeys: slides }, 1);
+        topicos = (result.index?.topics || []).map(topic => ({ id: String(topic.topicId || ''), nome: String(topic.name || '').trim() })).filter(topic => topic.nome);
+      } catch (_) { topicos = []; }
+      sess.iscGlossarioASR = topicos;
+      await salvarAgora(sess);
+    }
+    const selecionados = new Set(sess.iscSelectedTopicIds || []);
+    const ordenados = (topicos || []).slice().sort((a, b) => Number(selecionados.has(b.id)) - Number(selecionados.has(a.id)));
+    return [...new Set([...ordenados.map(topic => topic.nome), ...assuntosPlano(sess.disciplina)])]
+      .map(termo => String(termo || '').trim().slice(0, 120)).filter(Boolean).slice(0, 80);
+  }
+
   async function enviarAudioParaTranscricao(blob, sess, chunk, anterior) {
     let mime = blob.type || chunk.mime || 'audio/webm';
     if (mime === 'audio/x-wav') mime = 'audio/wav';
     if (mime === 'audio/x-m4a') mime = 'audio/mp4';
     if (mime === 'audio/x-flac') mime = 'audio/flac';
-    const contexto = { mime, disciplina: sess.disciplina, tema: (sess.tema + (sess.parte && sess.parte !== 'Única' ? ' — ' + sess.parte : '')).trim(), anterior, glossario: assuntosPlano(sess.disciplina).slice(0, 60), tipoAula: sess.tipoAula || 'expositiva' };
+    const contexto = { mime, disciplina: sess.disciplina, tema: (sess.tema + (sess.parte && sess.parte !== 'Única' ? ' — ' + sess.parte : '')).trim(), anterior, glossario: await obterGlossarioASR(sess), tipoAula: sess.tipoAula || 'expositiva' };
     if (blob.size <= audioInlineMaxBytes) {
       return fetch('/api/aula/transcrever', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audio: await blobParaB64(blob), ...contexto }) });
     }
@@ -593,7 +800,7 @@
       const uploaded = await client.storage.from(init.bucket).uploadToSignedUrl(init.path, init.token, blob, { contentType: blob.type, cacheControl: '60' });
       if (uploaded.error) throw uploaded.error;
       if (sess.audioImportado) statusArquivo(sess.audioImportado + ' · enviado · transcrevendo aula…', 'info');
-      return await fetch('/api/aula/audio/transcrever', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...contexto, path: init.path, duracao: Number(chunk.duracao || chunk.dur) || 0 }) });
+      return await fetch('/api/aula/audio/transcrever', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...contexto, path: init.path, bytes: blob.size, duracao: Number(chunk.duracao || chunk.dur) || 0 }) });
     } catch (error) {
       fetch('/api/aula/audio/remover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: init.path }) }).catch(() => {});
       throw error;
@@ -607,6 +814,7 @@
     const anterior = textoPuro(sess).slice(-300);
     let usarWav = false, ultimoErro = '';
     for (let tent = 0; tent < 4; tent++) {
+      let esperaMs = 1500 * (tent + 1);
       try {
         if (usarWav && Number(c.duracao || c.dur) > 600) {
           ultimoErro = 'Não converto automaticamente aulas longas para WAV para evitar uso excessivo de memória. Exporte em MP3 ou M4A e tente novamente.';
@@ -621,19 +829,26 @@
         const r = await enviarAudioParaTranscricao(b, sess, c, anterior);
         const j = await r.json().catch(() => ({}));
         if (r.ok && j.success) {
-          c.status = 'ok'; c.texto = j.texto || ''; delete c.erro;
+          const novoTexto = j.texto || '';
+          if (c.texto && c.texto !== novoTexto) {
+            const historico = c.historicoTranscricoes || (c.historicoTranscricoes = []);
+            historico.push({ em: new Date().toISOString(), texto: c.texto });
+            c.historicoTranscricoes = historico.slice(-5);
+          }
+          c.status = 'ok'; c.texto = novoTexto; delete c.erro;
           // segmentos com marca de tempo (Whisper verbose_json) — entram no timeline do karaoke
           c.segs = (Array.isArray(j.segmentos) && j.segmentos.length) ? j.segmentos.map(x => {
             const avg = x.avgLogprob == null ? null : Number(x.avgLogprob), semFala = x.noSpeechProb == null ? null : Number(x.noSpeechProb);
             return { a: Number(x.ini) || 0, b: Number(x.fim) || 0, t: String(x.text || ''), avgLogprob: Number.isFinite(avg) ? avg : null, noSpeechProb: Number.isFinite(semFala) ? semFala : null, baixaConfianca: Number.isFinite(avg) && avg <= -1 || Number.isFinite(semFala) && semFala >= 0.6 };
           }) : null;
-          c.dur = null; salvarSess(sess); return; // ⚠ o áudio (blob) PERMANECE no IndexedDB — é o que alimenta o modo karaoke
+          c.dur = null; salvarSess(sess); return; // O áudio (blob) permanece no IndexedDB e alimenta o modo karaoke.
         }
         if (j.formato && !usarWav) { usarWav = true; continue; }
         ultimoErro = String(j.msg || j.error || ('Falha na transcrição (HTTP ' + r.status + ').')).slice(0, 240);
-        if (r.status === 503) break;
+        if (r.status === 429) esperaMs = Math.max(esperaMs, Number(j.retryAfterMs) || Number(r.headers.get('retry-after')) * 1000 || 0);
+        else if ([400, 413, 415, 422, 503].includes(r.status)) break;
       } catch (e) { ultimoErro = e && e.message ? String(e.message).slice(0, 240) : 'Falha de conexão ao transcrever.'; }
-      await new Promise(r => setTimeout(r, 1500 * (tent + 1)));
+      if (tent < 3) await new Promise(r => setTimeout(r, Math.min(60000, esperaMs)));
     }
     c.status = 'erro'; c.erro = ultimoErro || 'Não foi possível transcrever após 4 tentativas.'; salvarSess(sess);
   }
@@ -650,6 +865,28 @@
     }
     s.texto = textoPuro(s); salvarSess(s); desenharResultado();
     toast('Pronto.', 'success');
+  }
+
+  async function retranscreverTrechoSelecionado(idx) {
+    const s = sessAtual, c = s && (s.chunks || []).find(x => x.i === idx);
+    if (!s || !c || pipelineRodando || uploadRodando) return;
+    const blob = await idbGet(s.id + ':' + idx);
+    if (!blob) return toast('O áudio original deste trecho não está salvo neste navegador.', 'error');
+    const textoAnterior = c.texto || '', statusAnterior = c.status;
+    s.texto = textoPuro(s);
+    if (textoAnterior) arquivarMateriais(s, 'Antes da retranscrição do trecho ' + (idx + 1));
+    c.status = 'pendente'; await salvarAgora(s); desenharResultado();
+    await transcreverTrecho(s, idx, blob);
+    if (c.status === 'erro' && textoAnterior) {
+      c.erroRetranscricao = c.erro; c.erro = null; c.status = statusAnterior === 'ok' ? 'ok' : statusAnterior; c.texto = textoAnterior;
+      toast('A nova tentativa falhou; a transcrição anterior foi mantida.', 'warning');
+    } else if (c.texto !== textoAnterior) {
+      delete c.erroRetranscricao;
+      s.revisaoDesatualizada = !!s.textoRevisado;
+      s.materiaisAguardamAtualizacao = true;
+    }
+    s.texto = textoPuro(s); await salvarAgora(s); desenharResultado();
+    if (c.status === 'ok' && c.texto !== textoAnterior) toast('Trecho retranscrito. A versão anterior foi preservada no histórico.', 'success');
   }
 
   /* ───────────── pipeline: revisão → resumo → flashcards → material ───────────── */
@@ -698,7 +935,7 @@
 
   function passos(s, estado) {
     const L = [['rev', 'Revisando a transcrição (termos médicos, emendas, parágrafos)'], ['res', 'Escrevendo o resumo completo'], ['fc', 'Flashcards (sob demanda)'], ['mat', 'Montando "cai na prova" e assuntos do plano']];
-    const html = L.map(([k, n]) => { const e = estado[k] || ''; return `<div class="ad-step ${e === 'ok' ? 'ok' : e === 'go' ? 'go' : e === 'er' ? 'er' : ''}">${e === 'ok' ? '✔' : e === 'go' ? '⏳' : e === 'er' ? '✖' : '○'} ${n}${estado[k + 'Info'] ? ' — ' + E(estado[k + 'Info']) : ''}</div>`; }).join('');
+    const html = L.map(([k, n]) => { const e = estado[k] || ''; const icon = e === 'ok' ? 'ph-check-circle' : e === 'go' ? 'ph-circle-notch' : e === 'er' ? 'ph-x-circle' : 'ph-circle'; return `<div class="ad-step ${e === 'ok' ? 'ok' : e === 'go' ? 'go' : e === 'er' ? 'er' : ''}"><i class="ph ${icon}" aria-hidden="true"></i> ${n}${estado[k + 'Info'] ? ' — ' + E(estado[k + 'Info']) : ''}</div>`; }).join('');
     htmlPassos = html; const el = $('ad-proc'); if (el && sessAtual === s) el.innerHTML = html;
   }
 
@@ -903,6 +1140,20 @@
     au.play().catch(() => {});
   }
 
+  async function ouvirTrecho(chunkId, segundo = 0) {
+    if (abaRes !== 'audio') { abaRes = 'audio'; desenharResultado(); await new Promise(resolve => setTimeout(resolve, 80)); }
+    const i = ak.pars.findIndex(it => it.c.i === chunkId);
+    if (i < 0) return toast('O áudio deste trecho não está disponível neste navegador.', 'warning');
+    const segs = ak.pars[i].c.segs || [];
+    let j = 0;
+    if (segs.length) {
+      const alvo = Number(segundo) || 0;
+      const dentro = segs.findIndex(seg => Number(seg.a) <= alvo && Number(seg.b) >= alvo);
+      j = dentro >= 0 ? dentro : segs.reduce((best, seg, n) => Number(seg.a) <= alvo ? n : best, 0);
+    }
+    await kVai(i, j);
+  }
+
   async function desenharKaraoke() {
     const s = sessAtual, box = $('ak-box');
     if (!box || !s || ak.montando) return;
@@ -914,7 +1165,7 @@
       const plavs = [];
       for (const c of itens) { const blob = await idbGet(s.id + ':' + c.i); if (blob) plavs.push({ c, blob, dur: 0, off: 0 }); }
       if (!plavs.length) {
-        box.innerHTML = '<div class="sub">🎙 Os áudios desta aula não estão guardados neste navegador (gravados numa versão anterior ou limpos do armazenamento). Grave uma aula nova para acompanhar no modo karaoke.</div>';
+         box.innerHTML = '<div class="sub"><i class="ph ph-microphone" aria-hidden="true"></i> Os áudios desta aula não estão guardados neste navegador (gravados numa versão anterior ou limpos do armazenamento). Grave uma aula nova para acompanhar no modo karaoke.</div>';
         ak.montando = false; return;
       }
       let off = 0;
@@ -922,14 +1173,14 @@
       ak.pars = plavs; ak.cur = -1; ak.j = 0; ak.chave = ''; ak.el = null;
       let corpo = '';
       plavs.forEach((it, i) => {
-        const marc = `Trecho ${it.c.i + 1} · 🎵 de ${mmss(it.off)} a ${mmss(it.off + it.dur)}`;
+         const marc = `Trecho ${it.c.i + 1} · Áudio de ${mmss(it.off)} a ${mmss(it.off + it.dur)}`;
         const linhas = (it.c.segs && it.c.segs.length)
           ? it.c.segs.map((g, j) => `<div class="ak-line" id="ak-${i}-${j}" onclick="auladia.kVai(${i},${j})"><span class="t">${mmss(it.off + Math.max(0, g.a))}</span>${E(g.t || '—')}</div>`).join('')
           : `<div class="ak-line" id="ak-${i}-0" onclick="auladia.kVai(${i},0)"><span class="t">${mmss(it.off)}</span>${it.c.status === 'ok' ? E(it.c.texto || '') : '<span class="pend">[trecho sem transcrição]</span>'}</div>`;
         corpo += `<div class="ak-chunk"><h5>${E(marc)}</h5>${linhas}</div>`;
       });
       box.innerHTML = `<div class="ak-bar"><audio id="ak-au" controls preload="metadata" style="width:100%"></audio></div>
-        <div class="ak-info">${plavs.length} trecho(s) · ${hms(off)} no total · a linha acende conforme o professor fala; toque em qualquer linha para pular para ela 🎤</div>
+         <div class="ak-info">${plavs.length} trecho(s) · ${hms(off)} no total · a linha acende conforme o professor fala; toque em qualquer linha para pular para ela.</div>
         <div class="ak-max" id="ak-max">${corpo}</div>`;
       const au = $('ak-au');
       au.ontimeupdate = karaokeTick;
@@ -1032,7 +1283,7 @@
       return `<g class="mm-node" data-p="${n.p}" onclick="auladia.mmToggle('${n.p}')"><rect x="${n.x}" y="${n.y - h / 2}" width="${n.w}" height="${h}" rx="10" fill="${fundo}"/><text x="${n.x + 12}" y="${n.y + 4.5}" font-size="${fs}" font-weight="${fw}" fill="#e9fbf7">${E(trunc(n.t, n.d === 0 ? 28 : 52))}</text>${n.temFilhos ? `<text x="${n.x + n.w - 14}" y="${n.y + 4}" font-size="11" fill="#9fd8cf">${n.aberto ? '−' : '+'}</text>` : ''}</g>`;
     }).join('');
     const tools = `<div class="mm-tools"><button class="b" onclick="auladia.mmZoom(0.75)">−</button><button class="b" onclick="auladia.mmZoom(1.3)">+</button><button class="b" onclick="auladia.mmFit()">⌂ Ajustar</button><button class="b" onclick="auladia.mmTudo(true)">⇲ Fechar ramos</button><button class="b" onclick="auladia.mmTudo(false)">⇱ Abrir tudo</button><button class="b" onclick="auladia.mmPNG()">⬇ PNG</button><button class="b" onclick="auladia.mmMermaid()" title="Baixar diagrama editável em Mermaid">⬇ Mermaid (.mmd)</button><button class="b pri" onclick="auladia.mmGerar()"><i class="ph ph-tree-structure"></i> ${s.mindmap ? 'Regenerar (IA)' : 'Gerar (IA)'}</button></div>`;
-    box.innerHTML = tools + `<div class="mm-sc"><div class="mm-inner" style="transform:scale(${mm.zoom})"><svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${svg}</svg></div></div><div class="sub" style="margin-top:6px">🗺 Toque num nó para fechar/abrir os ramos dele · arraste as barras de rolagem para navegar · ⬇ PNG para imprimir ou colar no caderno.</div>`;
+    box.innerHTML = tools + `<div class="mm-sc"><div class="mm-inner" style="transform:scale(${mm.zoom})"><svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${svg}</svg></div></div><div class="sub" style="margin-top:6px">Toque num nó para fechar ou abrir os ramos. Use as barras de rolagem para navegar. Exporte o PNG para imprimir ou guardar.</div>`;
   }
 
   function mmAceitar(raiz, salvar) { mm.raiz = mmEnxugia(raiz || {}); mm.fech.clear(); mm.zoom = 1; }
@@ -1201,7 +1452,8 @@
         tipoAula: s.tipoAula || 'expositiva', preferenciaMaterial: s.preferenciaMaterial || 'equilibrado',
         perfilPedagogico: s.perfilPedagogico || 'automatico', objetivoEstudo: s.objetivoEstudo || 'automatico',
         objetivosAprendizagem: s.objetivosAprendizagem || '', enfasePedagogica: s.enfasePedagogica || '',
-        planoPedagogico: s.planoPedagogico || null, objetivosRevisados: s.objetivosRevisados || []
+        planoPedagogico: s.planoPedagogico || null, objetivosRevisados: s.objetivosRevisados || [],
+        iscResourceKey: s.iscResourceKey || '', iscResourceKeys: chavesIscDaSessao(s)
       }, 1);
       s.tutorHistory = (Array.isArray(s.tutorHistory) ? s.tutorHistory : []).concat([{ role: 'assistant', content: resultado.reply, sources: resultado.sources || [] }]).slice(-12);
       if (/\b(n[aã]o entendi|n[aã]o compreendi|tenho dificuldade|me confundi)\b/i.test(pergunta)) {
@@ -1223,6 +1475,465 @@
     return salvarContextoTutor(s, s.tutorPendente, false);
   }
 
+  function iscControlsHtml(s) {
+    const indexed = chavesIscDaSessao(s).length;
+    const slides = Array.isArray(s?.iscSlideResourceKeys) ? s.iscSlideResourceKeys.length : 0;
+    return `<div class="card" style="border-color:var(--border-muted)"><b>Índice curricular privado</b>
+      <div class="sub" style="margin:5px 0 9px">Slides e fala do professor são indexados separadamente e consolidados para revisão. PDF/PPTX são extraídos neste navegador; somente o texto extraído segue ao provedor de embeddings após sua confirmação. A busca do acervo usa os tópicos disponíveis e identifica quando só há metadados de título/pasta.</div>
+      <input id="ad-isc-slides" type="file" accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx" onchange="auladia.indexarSlides(this)" style="display:none">
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="b pri" type="button" onclick="auladia.indexarAtual()">${s.iscTranscriptResourceKey ? 'Atualizar índice da fala' : 'Indexar fala do professor'}</button><button class="b" type="button" onclick="auladia.processarSlidesPendentes()"${slidesPendente ? '' : ' hidden'}>Indexar slides selecionados</button><button class="b" type="button" onclick="document.getElementById('ad-isc-slides')?.click()">${slides ? `Adicionar slides (${slides})` : 'Adicionar slides (PDF/PPTX)'}</button>
+      ${indexed ? `<button class="b" type="button" onclick="auladia.revisarIndice()">Revisar índice consolidado</button><button class="b" type="button" onclick="auladia.removerDoIndice()">Remover índices desta aula</button>` : ''}</div>
+      ${slidesPendente ? `<div class="file-note">Selecionado antes da aula: ${E(slidesPendente.name)} · ainda não enviado para indexação.</div>` : ''}
+      <div id="ad-isc-status" class="file-note" role="status" aria-live="polite" style="margin-top:7px"></div></div>`;
+  }
+
+  function indiceWorkspaceHtml(s) {
+    const sources = chavesIscDaSessao(s);
+    const slideCount = (s.iscSlideResourceKeys || []).length;
+    return `<div class="ad-panel"><p class="sub">Índice privado da transcrição e dos slides. Cada tópico mantém origem e evidência; revise as associações antes de usar recomendações.</p>${iscControlsHtml(s)}
+      <div class="ad-index-state"><div class="ad-progress-line"><span>Transcrição</span><span>${s.iscTranscriptResourceKey ? 'Indexada' : fonteGeracao(s).trim().length >= 50 ? 'Disponível para indexar' : 'Sem texto revisado'}</span></div>
+      <div class="ad-progress-line"><span>Slides</span><span>${slideCount ? `${slideCount} fonte(s) indexada(s)` : slidesPendente ? 'Selecionados; aguardam confirmação' : 'Nenhuma fonte indexada'}</span></div>
+      <div class="ad-progress-line"><span>Fontes privadas</span><span>${sources.length}</span></div>
+      <div class="ad-progress-line"><span>Confiança</span><span>Heurística; requer revisão</span></div></div></div>`;
+  }
+
+  function comparadorWorkspaceHtml(s) {
+    const indexed = chavesIscDaSessao(s).length > 0;
+    return `<div class="ad-panel"><h3 style="margin:4px 0">Aulas relacionadas</h3><p class="sub">A busca usa tópicos revisados no índice da aula. O catálogo distingue pistas de título/pasta de transcrições de vídeo realmente indexadas.</p>
+      ${indexed ? `<div class="ad-empty">Selecione os tópicos curriculares que quer complementar e depois escolha videoaulas para comparar.</div><button class="b pri" type="button" onclick="auladia.revisarIndice()">Abrir índice e buscar aulas relacionadas</button>` : `<div class="ad-empty">Indexe a transcrição ou adicione os slides para habilitar busca e comparação curricular.</div><button class="b pri" type="button" onclick="auladia.aba('indice')">Preparar índice curricular</button>`}
+      <p class="file-note">Se o vídeo do acervo ainda não tiver transcrição, ele pode aparecer por metadados; isso não comprova cobertura do conteúdo.</p></div>`;
+  }
+
+  function anexarChaveIsc(s, resourceKey, primary = false) {
+    s.iscResourceKeys = [...new Set(chavesIscDaSessao(s).concat([resourceKey]))].slice(-12);
+    if (primary || !s.iscResourceKey) s.iscResourceKey = resourceKey;
+    delete s.iscGlossarioASR;
+  }
+
+  function iscPodeAdicionarFonte(s, sourceId) {
+    const existing = chavesIscDaSessao(s);
+    if (existing.some(key => key.endsWith(`:${sourceId}`)) || existing.length < 12) return true;
+    toast('Esta aula já tem 12 fontes no índice. Remova uma antes de adicionar outra.', 'warning');
+    return false;
+  }
+
+  async function indexarAtual() {
+    const s = sessAtual; if (!s) return;
+    const text = fonteGeracao(s).trim();
+    if (text.length < 50) return toast('Revise uma transcrição antes de indexá-la.', 'warning');
+    if (!iscPodeAdicionarFonte(s, s.id)) return;
+    if (!confirm('A transcrição revisada será enviada ao provedor de embeddings configurado e armazenada no seu espaço privado. Continuar?')) return;
+    const status = $('ad-isc-status'); if (status) status.textContent = 'Preparando segmentos e embeddings…';
+    try {
+      const result = await post('/api/isc/user-resources', {
+        sourceId: s.id, sourceKind: 'transcript', title: nomeCompleto(s), course: s.disciplina || '', text
+      }, 1);
+      anexarChaveIsc(s, result.resourceKey, true);
+      s.iscTranscriptResourceKey = result.resourceKey;
+      s.iscSelectedTopicIds = [];
+      await salvarAgora(s);
+      desenharResultado();
+      toast(result.unchanged ? 'Esta transcrição já está atualizada no índice privado.' : `Aula indexada em ${result.segments} segmentos, com ${result.topics} tópicos rastreáveis.`, 'success');
+    } catch (error) {
+      const current = $('ad-isc-status'); if (current) current.textContent = error.message || 'Não foi possível indexar a aula.';
+      toast(error.message || 'Não foi possível indexar a aula.', 'error');
+    }
+  }
+
+  async function extrairTextoPptx(buffer, status) {
+    if (typeof DecompressionStream !== 'function') throw new Error('Este navegador não consegue descompactar PPTX. Exporte a apresentação como PDF e tente novamente.');
+    const view = new DataView(buffer), bytes = new Uint8Array(buffer);
+    const minEocd = Math.max(0, bytes.length - 22 - 65_535);
+    let eocd = -1;
+    for (let offset = bytes.length - 22; offset >= minEocd; offset--) {
+      if (view.getUint32(offset, true) === 0x06054b50) { eocd = offset; break; }
+    }
+    if (eocd < 0) throw new Error('O arquivo não parece ser uma apresentação PPTX válida.');
+    const entryCount = view.getUint16(eocd + 10, true);
+    let cursor = view.getUint32(eocd + 16, true);
+    let totalUncompressed = 0;
+    if (!entryCount || entryCount > 6000 || cursor >= bytes.length) throw new Error('A estrutura da apresentação não é válida ou excede o limite de itens.');
+    const decoder = new TextDecoder('utf-8');
+    const slideEntries = [];
+    for (let i = 0; i < entryCount; i++) {
+      if (cursor + 46 > bytes.length || view.getUint32(cursor, true) !== 0x02014b50) throw new Error('O índice interno do PPTX está incompleto.');
+      const flags = view.getUint16(cursor + 8, true), method = view.getUint16(cursor + 10, true);
+      const compressedSize = view.getUint32(cursor + 20, true), uncompressedSize = view.getUint32(cursor + 24, true);
+      const nameLength = view.getUint16(cursor + 28, true), extraLength = view.getUint16(cursor + 30, true), commentLength = view.getUint16(cursor + 32, true);
+      const localOffset = view.getUint32(cursor + 42, true);
+      const nameStart = cursor + 46, next = nameStart + nameLength + extraLength + commentLength;
+      if (next > bytes.length) throw new Error('A estrutura interna do PPTX ultrapassa o tamanho do arquivo.');
+      const name = decoder.decode(bytes.subarray(nameStart, nameStart + nameLength));
+      const match = name.match(/^ppt\/slides\/slide(\d+)\.xml$/i);
+      if (match) {
+        totalUncompressed += uncompressedSize;
+        if (totalUncompressed > 80 * 1024 * 1024) throw new Error('A apresentação descompactada excede 80 MB. Divida o arquivo antes de indexar.');
+        slideEntries.push({ number: Number(match[1]), flags, method, compressedSize, uncompressedSize, localOffset });
+      }
+      cursor = next;
+    }
+    slideEntries.sort((a, b) => a.number - b.number);
+    if (!slideEntries.length || slideEntries.length > 500) throw new Error('A apresentação precisa ter entre 1 e 500 slides.');
+    const presentationNs = 'http://schemas.openxmlformats.org/presentationml/2006/main';
+    const drawingNs = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+    const slidesWithFigures = [];
+    let text = '';
+    const sourcePages = [];
+    for (let index = 0; index < slideEntries.length; index++) {
+      const entry = slideEntries[index];
+      if (status) status.textContent = `Extraindo texto do PPTX… slide ${index + 1}/${slideEntries.length}`;
+      if (entry.flags & 1) throw new Error('PPTX protegido por senha não pode ser indexado.');
+      if (![0, 8].includes(entry.method) || entry.uncompressedSize > 4 * 1024 * 1024) throw new Error('O PPTX usa um formato de compactação ou slide fora do limite suportado.');
+      if (entry.localOffset + 30 > bytes.length || view.getUint32(entry.localOffset, true) !== 0x04034b50) throw new Error('Um slide PPTX está truncado.');
+      const localNameLength = view.getUint16(entry.localOffset + 26, true), localExtraLength = view.getUint16(entry.localOffset + 28, true);
+      const start = entry.localOffset + 30 + localNameLength + localExtraLength, end = start + entry.compressedSize;
+      if (end > bytes.length) throw new Error('O conteúdo de um slide ultrapassa o arquivo.');
+      let slideBuffer = bytes.slice(start, end);
+      if (entry.method === 8) {
+        try { slideBuffer = new Uint8Array(await new Response(new Blob([slideBuffer]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer()); }
+        catch { throw new Error('Não foi possível descompactar um slide. Exporte a apresentação como PDF e tente novamente.'); }
+      }
+      if (slideBuffer.length !== entry.uncompressedSize) throw new Error('O conteúdo descompactado de um slide está incompleto.');
+      const xml = new DOMParser().parseFromString(decoder.decode(slideBuffer), 'application/xml');
+      if (xml.getElementsByTagName('parsererror').length) throw new Error(`O slide ${entry.number} contém XML inválido.`);
+      const paragraphs = [...xml.getElementsByTagNameNS(drawingNs, 'p')];
+      const lines = paragraphs.map(paragraph => {
+        const value = [...paragraph.getElementsByTagNameNS(drawingNs, 't')].map(node => node.textContent || '').join('').trim();
+        if (!value) return '';
+        const properties = [...paragraph.children].find(child => child.localName === 'pPr');
+        const level = Math.min(5, Math.max(0, Number.parseInt(properties?.getAttribute('lvl') || '0', 10) || 0));
+        return `${level ? '  '.repeat(level) + '• ' : ''}${value}`;
+      }).filter(Boolean);
+      const slideText = lines.join('\n').trim();
+      const hasFigure = xml.getElementsByTagNameNS(presentationNs, 'pic').length > 0;
+      if (hasFigure) slidesWithFigures.push(entry.number);
+      if (!slideText) continue;
+      const separator = text ? '\n\n' : '';
+      const heading = `## Slide ${entry.number}\n`;
+      const startOffset = text.length + separator.length;
+      const section = heading + slideText;
+      const endOffset = startOffset + section.length;
+      if (endOffset > 200_000) throw new Error('A apresentação ultrapassa 200 mil caracteres extraíveis. Divida-a antes de indexar.');
+      text += separator + section;
+      sourcePages.push({ page: entry.number, start: startOffset, end: endOffset });
+    }
+    return { text, sourcePages, sourceMeta: { slideCount: slideEntries.length, slidesWithFigures } };
+  }
+
+  function selecionarSlidesSetup(input) {
+    const file = input?.files?.[0]; if (input) input.value = '';
+    if (!file) return;
+    const valid = /\.pdf$/i.test(file.name) || file.type === 'application/pdf' || /\.pptx$/i.test(file.name) || file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+    if (!valid) return toast('Selecione um PDF ou PPTX para os slides.', 'warning');
+    if (file.size > 18 * 1024 * 1024) return toast('O limite é 18 MB por arquivo de slides. Divida arquivos maiores.', 'warning');
+    slidesPendente = file;
+    const status = $('ad-setup-slides-status');
+    if (status) status.textContent = `Selecionado: ${file.name} · ${bytesAudio(file.size)}. Os slides ainda não foram enviados; a confirmação aparece ao indexar.`;
+  }
+
+  async function processarSlidesPendentes() {
+    if (!sessAtual || !slidesPendente) return toast('Selecione um PDF ou PPTX na preparação da aula primeiro.', 'info');
+    const file = slidesPendente;
+    const success = await indexarSlides({ files: [file] });
+    if (!success) return false;
+    slidesPendente = null;
+    desenharResultado();
+    return true;
+  }
+
+  async function indexarSlides(input) {
+    const s = sessAtual, file = input?.files?.[0]; if (!s || !file) return false;
+    const status = $('ad-isc-status');
+    try {
+      const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
+      const isPptx = /\.pptx$/i.test(file.name) || file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      if (!isPdf && !isPptx) throw new Error('Selecione um PDF ou PPTX.');
+      if (file.size > 18 * 1024 * 1024) throw new Error('O limite é 18 MB por arquivo de slides. Divida arquivos maiores.');
+      if (!confirm(`“${file.name}” será extraído neste navegador. O arquivo original não será enviado; somente o texto extraído, as referências de página/slide e os embeddings serão armazenados no seu índice privado. ${isPptx ? 'Figuras sem texto serão sinalizadas, não interpretadas visualmente nesta versão. ' : ''}Continuar?`)) return false;
+      if (status) status.textContent = 'Lendo arquivo de slides…';
+      const buffer = await file.arrayBuffer();
+      let extracted;
+      if (isPdf) {
+        if (!window.pdfjsLib && typeof window.plCarregarPdfJs === 'function') await window.plCarregarPdfJs();
+        const pdfjs = window.pdfjsLib;
+        if (!pdfjs?.getDocument) throw new Error('O leitor de PDF não ficou disponível. Recarregue a página e tente novamente.');
+        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+        if (pdf.numPages > 500) { await pdf.destroy(); throw new Error('O limite é 500 páginas por PDF. Divida o arquivo em partes menores.'); }
+        let text = ''; const sourcePages = [];
+        try {
+          for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+            if (status) status.textContent = `Extraindo texto do PDF… ${pageNumber}/${pdf.numPages} páginas`;
+            const page = await pdf.getPage(pageNumber), content = await page.getTextContent();
+            const pageText = (content.items || []).map(item => `${item.str || ''}${item.hasEOL ? '\n' : ' '}`).join('').trim();
+            if (!pageText) continue;
+            const separator = text ? '\n\n' : '', start = text.length + separator.length;
+            const section = `## Página ${pageNumber}\n${pageText}`, end = start + section.length;
+            if (end > 200_000) throw new Error('O PDF ultrapassa 200 mil caracteres extraíveis. Divida-o antes de indexar.');
+            text += separator + section;
+            sourcePages.push({ page: pageNumber, start, end });
+          }
+        } finally { await pdf.destroy().catch(() => {}); }
+        extracted = { text, sourcePages, sourceMeta: { pageCount: pdf.numPages, slidesWithFigures: [] } };
+      } else extracted = await extrairTextoPptx(buffer, status);
+      if (extracted.text.trim().length < 50) throw new Error(`Não encontrei texto selecionável neste ${isPdf ? 'PDF' : 'PPTX'}. ${isPdf ? 'Se for escaneado, precisa de OCR.' : 'Se os slides forem imagens, exporte para PDF e aguarde o suporte a OCR.'}`);
+      if (!window.crypto?.subtle) throw new Error('A identificação segura do arquivo não está disponível neste navegador. Abra a plataforma em HTTPS e tente novamente.');
+      const hashBuffer = await window.crypto.subtle.digest('SHA-256', buffer);
+      const fileHash = [...new Uint8Array(hashBuffer)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+      const sourceId = `slides-${fileHash}`;
+      if (!iscPodeAdicionarFonte(s, sourceId)) return false;
+      const result = await post('/api/isc/user-resources', {
+        sourceId, sourceKind: 'slides', title: file.name,
+        course: s.disciplina || '', text: extracted.text, sourcePages: extracted.sourcePages,
+        sourceMeta: extracted.sourceMeta
+      }, 1);
+      anexarChaveIsc(s, result.resourceKey, false);
+      s.iscSlideResourceKeys = [...new Set([...(s.iscSlideResourceKeys || []), result.resourceKey])].slice(-12);
+      s.iscSelectedTopicIds = [];
+      await salvarAgora(s); desenharResultado();
+      const figures = extracted.sourceMeta.slidesWithFigures?.length || 0;
+      const message = result.unchanged ? 'Estes slides já estão atualizados no índice privado.'
+        : `Índice dos slides pronto: ${result.segments} segmentos e ${result.topics} tópicos. ${figures ? `${figures} slide(s) têm figuras ainda sem leitura visual.` : ''}`;
+      toast(message, 'success');
+      return true;
+    } catch (error) {
+      if (status) status.textContent = error.message || 'Não foi possível indexar os slides.';
+      toast(error.message || 'Não foi possível indexar os slides.', 'error');
+      return false;
+    } finally { if (input) input.value = ''; }
+  }
+
+  async function removerDoIndice() {
+    const s = sessAtual, keys = chavesIscDaSessao(s); if (!s || !keys.length) return;
+    if (!confirm('Remover os materiais indexados desta aula? As cópias locais da Aula do Dia serão mantidas.')) return;
+    try {
+      const settled = await Promise.allSettled(keys.map(async key => {
+        const response = await fetch('/api/isc/my-resources/' + encodeURIComponent(key), { method: 'DELETE' });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.success) throw new Error(result.msg || `Não foi possível remover ${key}.`);
+        return key;
+      }));
+      const removed = settled.filter(item => item.status === 'fulfilled').map(item => item.value);
+      const failed = settled.filter(item => item.status === 'rejected');
+      s.iscResourceKeys = chavesIscDaSessao(s).filter(key => !removed.includes(key));
+      s.iscSlideResourceKeys = (s.iscSlideResourceKeys || []).filter(key => !removed.includes(key));
+      if (removed.includes(s.iscTranscriptResourceKey)) s.iscTranscriptResourceKey = '';
+      s.iscSelectedTopicIds = [];
+      if (removed.includes(s.iscResourceKey)) s.iscResourceKey = s.iscResourceKeys[0] || '';
+      delete s.iscGlossarioASR;
+      await salvarAgora(s); desenharResultado();
+      if (failed.length) toast(`${removed.length} material(is) removido(s); ${failed.length} não puderam ser removidos. Tente novamente.`, 'warning');
+      else toast('Materiais desta aula removidos do índice privado.', 'success');
+    } catch (error) { toast(error.message || 'Não foi possível remover o material.', 'error'); }
+  }
+
+  async function compararAulas() {
+    const s = sessAtual; if (!s || !chavesIscDaSessao(s).length) return toast('Indexe uma transcrição ou PDF primeiro.', 'info');
+    try {
+      const response = await fetch('/api/isc/my-resources', { cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) throw new Error(data.msg || 'Não foi possível carregar suas aulas indexadas.');
+      const resources = data.items || [];
+      if (resources.length < 2) return toast('Indexe mais um material para comparar conteúdos.', 'info');
+      const modal = document.createElement('div'); modal.id = 'ad-isc-compare-modal';
+      modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true'); modal.setAttribute('aria-labelledby', 'ad-isc-compare-title');
+      modal.style.cssText = 'position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.68);display:grid;place-items:center;padding:18px';
+      const checkedByDefault = new Set(chavesIscDaSessao(s).slice(0, 4));
+      modal.innerHTML = `<section style="width:min(740px,100%);max-height:85vh;overflow:auto;background:var(--bg-surface);color:var(--text);border:1px solid var(--border-default);border-radius:16px;padding:18px;box-shadow:var(--shadow-lg)">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><h3 id="ad-isc-compare-title" style="margin:0">Comparar aulas indexadas</h3><button class="b" type="button" onclick="document.getElementById('ad-isc-compare-modal')?.remove()" aria-label="Fechar comparador">Fechar</button></div>
+        <p class="sub">Escolha de dois a quatro materiais do seu espaço privado. Materiais desta aula aparecem marcados por padrão.</p>
+        ${resources.map(item => `<label class="hist"><span><b>${E(item.title)}</b><small class="sub">${E(item.course || 'Aula do Dia')} · ${E(item.sourceKind === 'pdf_text' ? 'PDF' : 'Transcrição')}</small></span><input type="checkbox" data-isc-resource="${E(item.resourceKey)}"${checkedByDefault.has(item.resourceKey) ? ' checked' : ''}></label>`).join('')}
+        <button class="b pri" type="button" onclick="auladia.compararSelecionadas()" style="margin-top:12px">Comparar selecionadas</button><div id="ad-isc-compare-results" aria-live="polite"></div>
+      </section>`;
+      document.body.appendChild(modal);
+      modal.addEventListener('change', event => {
+        const selected = [...modal.querySelectorAll('[data-isc-resource]:checked')];
+        if (selected.length > 4) { event.target.checked = false; toast('Compare até quatro materiais por vez.', 'info'); }
+      });
+    } catch (error) { toast(error.message || 'Não foi possível abrir o comparador.', 'error'); }
+  }
+
+  async function compararSelecionadas() {
+    const modal = $('ad-isc-compare-modal'); if (!modal) return;
+    const resourceKeys = [...modal.querySelectorAll('[data-isc-resource]:checked')].map(input => input.dataset.iscResource);
+    if (resourceKeys.length < 2 || resourceKeys.length > 4) return toast('Selecione de duas a quatro aulas.', 'warning');
+    const output = $('ad-isc-compare-results'); if (output) output.innerHTML = '<div class="sub" role="status">Comparando evidências…</div>';
+    try {
+      const result = await post('/api/isc/compare', { resourceKeys }, 1);
+      const names = new Map((result.resources || []).map(resource => [resource.resourceKey, resource.title]));
+      const percent = (entry, fallback = 'Dados insuficientes') => entry && Number.isFinite(entry.score)
+        ? `${Math.round(entry.score * 100)}%${entry.status === 'preliminary' || entry.status === 'metadata_match_only' ? ' · preliminar' : ''}` : fallback;
+      const relation = { equivalent: 'Possivelmente equivalentes', redundant: 'Sobreposição alta', complementary: 'Conteúdos complementares', distinct: 'Temas distintos' };
+      const pairs = (result.pairs || []).map(pair => {
+        const metrics = pair.metrics || {}, coverage = metrics.curriculumCoverage?.resources || [];
+        const gain = metrics.complementaryGain || {};
+        const topics = (pair.topicNames?.exclusiveLeft || []).slice(0, 6).map(E).join(' · ') || '—';
+        const otherTopics = (pair.topicNames?.exclusiveRight || []).slice(0, 6).map(E).join(' · ') || '—';
+        return `<div class="card"><b>${E(names.get(pair.left) || pair.left)} ↔ ${E(names.get(pair.right) || pair.right)}</b>
+          <div class="sub" style="margin-top:5px">${E(relation[pair.relation] || 'Relação não classificada')} · ${pair.classificationStatus === 'assessed' ? 'com evidência de conteúdo' : pair.classificationStatus === 'preliminary' ? 'classificação preliminar por metadados' : 'evidência insuficiente'}</div>
+          <div class="sub">Similaridade temática: <b>${percent(metrics.thematicSimilarity)}</b></div>
+          <div class="sub">Cobertura curricular: <b>${percent(coverage[0])}</b> / <b>${percent(coverage[1])}</b></div>
+          <div class="sub">Ganho complementar: <b>${percent(gain.leftToRight)}</b> / <b>${percent(gain.rightToLeft)}</b></div>
+          <div class="sub">Tópicos exclusivos: ${topics} · ${otherTopics}</div></div>`;
+      }).join('');
+      if (output) output.innerHTML = `<p class="file-note">As métricas dependem do material indexado e não avaliam correção clínica. ${result.pairs?.length || 0} par(es) comparado(s).</p>${pairs}`;
+    } catch (error) { if (output) output.innerHTML = `<div class="sub" role="alert">${E(error.message || 'Não foi possível comparar as aulas.')}</div>`; }
+  }
+
+  function fecharIndiceAula() { $('ad-isc-index-modal')?.remove(); }
+
+  async function revisarIndice() {
+    const s = sessAtual, keys = chavesIscDaSessao(s); if (!s || !keys.length) return toast('Indexe os slides ou a fala antes de revisar o índice.', 'info');
+    const previous = $('ad-isc-index-modal'); if (previous) previous.remove();
+    const modal = document.createElement('div'); modal.id = 'ad-isc-index-modal';
+    modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true'); modal.setAttribute('aria-labelledby', 'ad-isc-index-title');
+    modal.style.cssText = 'position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.72);display:grid;place-items:center;padding:18px';
+    modal.innerHTML = '<section style="width:min(900px,100%);max-height:88vh;overflow:auto;background:var(--bg-surface);color:var(--text);border:1px solid var(--border-default);border-radius:16px;padding:18px;box-shadow:var(--shadow-lg)"><div role="status">Carregando os índices desta aula…</div></section>';
+    document.body.appendChild(modal);
+    try {
+      const result = await post('/api/isc/lesson-index', { resourceKeys: keys }, 1);
+      const index = result.index || {}, topics = index.topics || [], topicOptions = result.topicOptions || [];
+      const selected = new Set((s.iscSelectedTopicIds || []).filter(id =>
+        topics.some(topic => topic.topicId === id) || topicOptions.some(topic => topic.topicId === id)));
+      const initialSelection = selected.size ? selected : new Set(topics.map(topic => topic.topicId));
+      const originLabels = { slides_only: 'Apenas nos slides', oral_only: 'Apenas na fala', both: 'Nos dois', uncertain: 'Incerto' };
+      const roleLabel = role => role === 'slides' ? 'Slides' : 'Explicação oral';
+      const displayedTopics = [...topics, ...topicOptions.filter(option => initialSelection.has(option.topicId) && !topics.some(topic => topic.topicId === option.topicId))
+        .map(option => ({ topicId: option.topicId, name: option.name, origin: 'uncertain', confidence: null, evidence: [], manuallySelected: true }))];
+      const topicRows = displayedTopics.map(topic => {
+        const evidence = (topic.evidence || []).slice(0, 4).map(item => {
+          const origin = item.page ? `página/slide ${item.page}` : Number.isFinite(item.timestampStart) ? `${mmss(item.timestampStart)}${Number.isFinite(item.timestampEnd) ? '–' + mmss(item.timestampEnd) : ''}` : item.sourceRef || 'origem não marcada';
+          return `<div class="file-note">${E(roleLabel(item.role))} · ${E(item.title)} · ${E(origin)}${item.excerpt ? `<blockquote style="margin:4px 0 8px">${E(item.excerpt)}</blockquote>` : ''}</div>`;
+        }).join('');
+        const topicOrigin = topic.manuallySelected ? 'Objetivo selecionado manualmente; sem evidência nos materiais' : originLabels[topic.origin] || 'Origem não identificada';
+        return `<div class="hist" style="align-items:flex-start"><label style="display:flex;gap:9px;align-items:flex-start;flex:1"><input type="checkbox" data-isc-topic="${E(topic.topicId)}"${initialSelection.has(topic.topicId) ? ' checked' : ''}><span><b>${E(topic.name)}</b><small class="sub" style="display:block">${E(topicOrigin)}${Number.isFinite(topic.confidence) ? ` · confiança heurística ${Math.round(topic.confidence * 100)}%` : ''}</small></span></label><div style="flex:1;min-width:240px">${evidence || (topic.manuallySelected ? '<small class="file-note">Este tópico foi incluído por você como objetivo de busca. Nenhuma evidência foi adicionada ao índice original.</small>' : '')}</div></div>`;
+      }).join('');
+      const topicOptionsHtml = topicOptions.map(option => `<option value="${E([option.name, option.parentName].filter(Boolean).join(' — '))}" data-topic-id="${E(option.topicId)}"></option>`).join('');
+      const sources = (index.sources || []).map(source => `<span class="tag">${E(roleLabel(source.role))}: ${E(source.title)} · ${E(source.indexStatus)}</span>`).join(' ');
+      const unknown = (index.unclassifiedSegments || []).slice(0, 10).map(item => {
+        const origin = item.page ? `página/slide ${item.page}` : Number.isFinite(item.timestampStart) ? mmss(item.timestampStart) : item.sourceRef || 'origem não marcada';
+        return `<li><b>${E(roleLabel(item.role))} · ${E(origin)}:</b> ${E(item.excerpt)}</li>`;
+      }).join('');
+      modal.querySelector('section').innerHTML = `<div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><h3 id="ad-isc-index-title" style="margin:0">Índice curricular consolidado</h3><button class="b" type="button" onclick="auladia.fecharIndiceAula()" aria-label="Fechar índice">Fechar</button></div>
+        <p class="sub">Slides: ${index.counts?.slides || 0} · fala: ${index.counts?.oral || 0} · tópicos reconhecidos: ${topics.length}. Marque os tópicos que representam os objetivos desta aula; isso altera a busca, sem apagar a evidência original.</p>
+        <div style="margin-bottom:10px">${sources}</div>
+        <div class="aviso" role="note">A associação automática usa nomes e sinônimos da taxonomia. “Não identificado” significa que o índice não reconheceu um tópico, não que o conteúdo esteja ausente. Confirme conceitos clínicos antes de usar recomendações.</div>
+        <div id="ad-isc-index-topics" style="display:grid;gap:6px;margin:12px 0">${topicRows || '<div class="sub">Nenhum tópico canônico foi reconhecido. Verifique se o texto extraído está legível ou revise a transcrição.</div>'}</div>
+        <div class="card"><b>Adicionar um objetivo não reconhecido</b><div class="sub" style="margin:4px 0 8px">A seleção manual orienta a busca, mas não altera nem cria evidência na transcrição ou nos slides.</div><div style="display:flex;gap:8px;flex-wrap:wrap"><input id="ad-isc-add-topic" list="ad-isc-topic-options" placeholder="Buscar assunto ou objetivo curricular" aria-label="Buscar assunto ou objetivo curricular"><datalist id="ad-isc-topic-options">${topicOptionsHtml}</datalist><button class="b" type="button" onclick="auladia.adicionarTopicoManual()">Adicionar objetivo</button></div></div>
+        ${unknown ? `<details><summary>Trechos sem tópico canônico (${index.counts?.unclassifiedSegments || 0})</summary><ul>${unknown}</ul><p class="file-note">A lista é uma amostra dos segmentos sem classificação e não substitui a revisão do material original.</p></details>` : ''}
+        <button class="b pri" type="button" onclick="auladia.buscarAulasRelacionadas()"${topicOptions.length ? '' : ' disabled'}>Buscar aulas relacionadas no acervo</button><div id="ad-isc-related-results" aria-live="polite"></div>`;
+    } catch (error) {
+      modal.querySelector('section').innerHTML = `<div role="alert" class="sub">${E(error.message || 'Não foi possível carregar o índice.')}</div><button class="b" type="button" onclick="auladia.fecharIndiceAula()">Fechar</button>`;
+    }
+  }
+
+  function adicionarTopicoManual() {
+    const modal = $('ad-isc-index-modal'), input = $('ad-isc-add-topic'), list = $('ad-isc-topic-options'), container = $('ad-isc-index-topics');
+    const value = String(input?.value || '').trim();
+    const option = [...(list?.options || [])].find(item => item.value === value);
+    if (!modal || !container || !option?.dataset.topicId) return toast('Escolha um assunto ou objetivo da lista curricular.', 'warning');
+    const existing = [...modal.querySelectorAll('[data-isc-topic]')].find(item => item.dataset.iscTopic === option.dataset.topicId);
+    if (existing) existing.checked = true;
+    else {
+      const row = document.createElement('div'); row.className = 'hist'; row.style.alignItems = 'flex-start';
+      row.innerHTML = `<label style="display:flex;gap:9px;align-items:flex-start;flex:1"><input type="checkbox" data-isc-topic="${E(option.dataset.topicId)}" checked><span><b>${E(value.split(' — ')[0])}</b><small class="sub" style="display:block">Objetivo selecionado manualmente; sem evidência nos materiais</small></span></label><div style="flex:1;min-width:240px"><small class="file-note">Este tópico foi incluído por você como objetivo de busca. Nenhuma evidência foi adicionada ao índice original.</small></div>`;
+      container.appendChild(row);
+    }
+    input.value = '';
+  }
+
+  async function buscarAulasRelacionadas() {
+    const s = sessAtual, modal = $('ad-isc-index-modal'); if (!s || !modal) return;
+    const topicIds = [...modal.querySelectorAll('[data-isc-topic]:checked')].map(input => input.dataset.iscTopic);
+    if (!topicIds.length) return toast('Marque ao menos um tópico para buscar aulas relacionadas.', 'warning');
+    if (topicIds.length > 100) return toast('Selecione até 100 objetivos por busca para manter as recomendações rápidas.', 'warning');
+    s.iscSelectedTopicIds = topicIds; await salvarAgora(s);
+    const output = $('ad-isc-related-results'); if (output) output.innerHTML = '<div class="sub" role="status">Buscando relações curriculares no catálogo…</div>';
+    try {
+      const result = await post('/api/isc/recommendations', { resourceKeys: chavesIscDaSessao(s), topicIds }, 1);
+      const items = result.items || [];
+      if (!items.length) {
+        if (output) output.innerHTML = '<div class="sub" role="status">O catálogo atual não tem aula vinculada a esses tópicos por título ou caminho. Isso não confirma que as aulas sejam irrelevantes; elas podem ainda não ter transcrição indexada.</div>';
+        return;
+      }
+      const cards = items.map(item => {
+        const topics = (item.matchedTopics || []).map(topic => `<li><b>${E(topic.name)}</b> · ${E(topic.sourceKind || 'origem')} — ${E(topic.excerpt || 'sem trecho de evidência')}</li>`).join('');
+        const metadataOnly = item.evidenceMode === 'catalog_metadata';
+        const similarity = Number.isFinite(item.semanticSimilarity)
+          ? `<small class="sub" style="display:block">Similaridade ${item.semanticEvidenceKind === 'catalog_metadata' ? 'de metadados' : 'semântica'}: ${Math.round(item.semanticSimilarity * 100)}%</small>` : '';
+        return `<div class="hist" style="align-items:flex-start"><label style="display:flex;gap:9px;align-items:flex-start;flex:1"><input type="checkbox" data-isc-video="${E(item.resourceKey)}"><span><b>${E(item.title)}</b><small class="sub" style="display:block">${E(item.course || 'Curso não informado')} · ${E(item.sourcePath || 'caminho não informado')} · ${item.matchedTopicCount}/${item.targetTopicCount} tópicos vinculados</small>
+          <small class="sub" style="display:block">${metadataOnly ? 'Pista de título/pasta; a fala da videoaula ainda não está indexada.' : 'Há evidência textual indexada nesta videoaula.'}</small>${similarity}${topics ? `<ul style="margin:5px 0">${topics}</ul>` : ''}</span></label><button class="b" type="button" onclick="auladia.abrirAulaCatalogo(${E(JSON.stringify(String(item.resourceId || '')))})">Abrir no player</button></div>`;
+      }).join('');
+      const section = modal.querySelector('section');
+      section.innerHTML = `<div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><h3 id="ad-isc-index-title" style="margin:0">Aulas relacionadas</h3><button class="b" type="button" onclick="auladia.fecharIndiceAula()">Fechar</button></div>
+        <p class="sub">Selecione de duas a quatro aulas para comparar. A ordem inicial prioriza a quantidade de tópicos relacionados; pistas de título/pasta não medem cobertura do conteúdo.</p>${cards}
+        <button class="b pri" type="button" onclick="auladia.compararVideoAulas()">Comparar aulas selecionadas</button><div id="ad-isc-compare-video-results" aria-live="polite"></div>
+        <button class="b" type="button" onclick="auladia.revisarIndice()">Voltar ao índice consolidado</button>`;
+      section.addEventListener('change', event => {
+        if (!event.target.matches('[data-isc-video]')) return;
+        const checked = section.querySelectorAll('[data-isc-video]:checked');
+        if (checked.length > 4) { event.target.checked = false; toast('Compare até quatro aulas por vez.', 'info'); }
+      });
+    } catch (error) { if (output) output.innerHTML = `<div role="alert" class="sub">${E(error.message || 'Não foi possível buscar aulas relacionadas.')}</div>`; }
+  }
+
+  async function compararVideoAulas() {
+    const s = sessAtual, modal = $('ad-isc-index-modal'); if (!s || !modal) return;
+    const videoKeys = [...modal.querySelectorAll('[data-isc-video]:checked')].map(input => input.dataset.iscVideo);
+    if (videoKeys.length < 2 || videoKeys.length > 4) return toast('Selecione de duas a quatro videoaulas.', 'warning');
+    const output = $('ad-isc-compare-video-results'); if (output) output.innerHTML = '<div class="sub" role="status">Comparando índices e evidências…</div>';
+    try {
+      const result = await post('/api/isc/lesson-compare', {
+        sourceKeys: chavesIscDaSessao(s), videoKeys, topicIds: s.iscSelectedTopicIds || []
+      }, 1);
+      const showMetric = metric => {
+        const matched = metric?.matchedTopicIds?.length || 0, total = metric?.targetCount || 0;
+        if (metric?.status === 'indexed_topic_match') return `${matched}/${total} tópicos reconhecidos no índice de conteúdo`;
+        if (metric?.status === 'metadata_match_only') return `${matched}/${total} pistas no título/pasta; cobertura da aula não avaliada`;
+        return 'Sem dados suficientes';
+      };
+      const rows = (result.comparisons || []).map(item => {
+        const gaps = item.topicNames?.notLinkedInCatalogIndex || [];
+        const linked = item.topicNames?.shared || [];
+        const evidence = (item.matchedTopicEvidence || []).map(topic => {
+          const origin = topic.page != null ? `página/slide ${topic.page}` : Number.isFinite(topic.timestampStart) ? `${mmss(topic.timestampStart)}${Number.isFinite(topic.timestampEnd) ? '–' + mmss(topic.timestampEnd) : ''}` : topic.sourceRef || 'sem referência de origem';
+          return `<li><b>${E(topic.name)}</b> · ${E(topic.sourceKind || 'origem')} · ${E(origin)}${topic.excerpt ? ` — ${E(topic.excerpt)}` : ''}</li>`;
+        }).join('');
+        const segments = (item.recommendedSegments || []).map(segment => `<li><button class="b" type="button" onclick="auladia.abrirTrechoVideo(${E(JSON.stringify(String(item.resourceKey.slice(6))) )},${Number(segment.timestampStart)})">Assistir ${E(mmss(segment.timestampStart))}</button> ${E(segment.excerpt || '')}</li>`).join('');
+        return `<tr><th scope="row">${E(item.title)}</th><td>${E(showMetric(item.coverage?.slides))}</td><td>${E(showMetric(item.coverage?.oral))}</td><td>${E(showMetric(item.coverage?.consolidated))}</td></tr>
+          <tr><td colspan="4"><small><b>Vínculos encontrados:</b> ${E(linked.slice(0, 12).join(' · ') || 'nenhum')} ${gaps.length ? `<br><b>Sem vínculo no índice do acervo:</b> ${E(gaps.slice(0, 12).join(' · '))}. Isso não prova ausência no vídeo.` : ''}</small>${evidence ? `<ul><b>Evidências:</b>${evidence}</ul>` : ''}${segments ? `<ul>${segments}</ul>` : ''}<small class="sub">Profundidade: ${item.depth?.length ? E([...new Set(item.depth)].join(', ')) : 'não avaliada'} · similaridade: ${item.thematicSimilarity?.score == null ? 'dados insuficientes' : Math.round(item.thematicSimilarity.score * 100) + '%'}</small></td></tr>`;
+      }).join('');
+      const titlesByKey = new Map((result.comparisons || []).map(item => [item.resourceKey, item.title]));
+      const pairs = (result.pairs || []).map(pair => `<li><b>${E(titlesByKey.get(pair.left) || pair.left)} ↔ ${E(titlesByKey.get(pair.right) || pair.right)}</b>: ${E(pair.classificationStatus === 'preliminary' ? 'relação preliminar por metadados' : pair.relation)}${pair.sharedTopicNames?.length ? ` · em comum: ${E(pair.sharedTopicNames.join(' · '))}` : ''}${pair.exclusiveLeft?.length ? ` · exclusivos da primeira: ${E(pair.exclusiveLeft.join(' · '))}` : ''}${pair.exclusiveRight?.length ? ` · exclusivos da segunda: ${E(pair.exclusiveRight.join(' · '))}` : ''}</li>`).join('');
+      const plan = (result.roadmap || []).map(item => `<li>${E(item.order)}. <b>${E(item.title)}</b> — ${E(item.focus)}</li>`).join('');
+      if (output) output.innerHTML = `<div class="aviso" role="note">${result.evidenceMode === 'catalog_metadata' ? 'As videoaulas ainda não têm conteúdo indexado. A matriz mostra vínculos encontrados em título/pasta e não porcentagem de cobertura real.' : 'A matriz usa os segmentos de conteúdo disponíveis. Confira a evidência original; o índice não substitui revisão docente.'}</div>
+        <div style="overflow:auto"><table class="table"><caption>Relação dos índices selecionados com a Aula do Dia</caption><thead><tr><th>Aula</th><th>Slides</th><th>Fala</th><th>Consolidado</th></tr></thead><tbody>${rows}</tbody></table></div>
+        ${pairs ? `<h4>Sobreposição entre candidatas</h4><ul>${pairs}</ul>` : ''}${plan ? `<h4>Roteiro de estudo</h4><ol>${plan}</ol>` : ''}`;
+    } catch (error) { if (output) output.innerHTML = `<div role="alert" class="sub">${E(error.message || 'Não foi possível comparar as aulas.')}</div>`; }
+  }
+
+  async function abrirAulaCatalogo(videoId) {
+    try {
+      if (typeof go === 'function') go('view-acervo');
+      if (typeof ac2Init === 'function') await ac2Init();
+      if (window.AC2?.indice?.has(videoId) && typeof window.ac2Abrir === 'function') window.ac2Abrir(videoId, false, true);
+      else toast('Esta aula ainda não está disponível no índice do player.', 'warning');
+    } catch (error) { toast(error.message || 'Não foi possível abrir a videoaula.', 'error'); }
+  }
+
+  async function abrirTrechoVideo(videoId, seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return toast('O trecho não tem timestamp confiável.', 'warning');
+    try {
+      if (typeof go === 'function') go('view-acervo');
+      if (typeof ac2Init === 'function') await ac2Init();
+      if (!window.AC2?.indice?.has(videoId) || typeof window.ac2Abrir !== 'function') return toast('Esta aula ainda não está disponível no índice do player.', 'warning');
+      if (typeof lsSet === 'function') lsSet('med_pos_' + videoId, seconds);
+      window.ac2Abrir(videoId, false, true);
+      const video = document.getElementById('ac2-native-video');
+      if (video?.readyState >= 1 && window.AC2?.atualId === videoId) video.currentTime = seconds;
+    } catch (error) { toast(error.message || 'Não foi possível abrir o trecho da videoaula.', 'error'); }
+  }
+
   function tutorAtalho(pergunta) {
     return salvarContextoTutor(sessAtual, String(pergunta || '').slice(0, 1600), true);
   }
@@ -1237,21 +1948,27 @@
     const resumoPlano = planoPedagogico ? ` · perfil ${origemPerfil}: ${E(nomesPerfil.join(' + ') || 'Geral')}${objetivoNome ? ' · objetivo: ' + E(objetivoNome) : ''}` : '';
     const temFonte = !!(s.textoRevisado || s.texto || textoPuro(s) || s.resumoMd || s.base);
     const tabs = [['transcricao', s.textoRevisado ? 'Transcrição (revisada)' : 'Transcrição']];
+    tabs.push(['indice', 'Índice curricular'], ['comparar', 'Comparar aulas']);
     if (s.resumoMd) tabs.push(['resumo', 'Resumo']);
     if (temFonte) tabs.push(['flash', s.flashcards ? 'Flashcards (' + s.flashcards.length + ')' : 'Flashcards']);
     if (temFonte) tabs.push(['tutor', 'Tutor IA']);
     tabs.push(['progresso', 'Progresso']);
     if (res) tabs.push(['prova', 'Cai na prova']);
-    if (s.resumoMd || s.flashcards) tabs.push(['qual', '🔎 Qualidade' + (s.qualidade && s.qualidade.flashcards && (s.qualidade.flashcards.comAlerta || (s.qualidade.flashcards.revisaoHumana || []).length) ? ' ⚠' : '')]);
-    if (s.textoRevisado || s.texto) tabs.push(['resumo_g', s.resumoGeral ? '📜 Resumo Geral' : '📜 Resumo Geral ✨']);
-    if ((s.chunks || []).some(c => Number.isInteger(c.i))) tabs.push(['audio', '🎤 Áudio · karaoke']);
-    tabs.push(['mm', '🗺 Mapa mental']);
+    if (s.resumoMd || s.flashcards) tabs.push(['qual', 'Qualidade' + (s.qualidade && s.qualidade.flashcards && (s.qualidade.flashcards.comAlerta || (s.qualidade.flashcards.revisaoHumana || []).length) ? ' · revisão recomendada' : '')]);
+    if (s.textoRevisado || s.texto) tabs.push(['resumo_g', 'Resumo geral']);
+    if ((s.chunks || []).some(c => Number.isInteger(c.i))) tabs.push(['audio', 'Áudio · karaoke']);
+    tabs.push(['mm', 'Mapa mental']);
     if (!tabs.some(t => t[0] === abaRes)) abaRes = tabs[0][0];
     let corpo = '';
-    const incertos = (s.chunks || []).flatMap(c => (c.segs || []).filter(x => x.baixaConfianca).map(x => ({ trecho: c.i + 1, ...x })));
-    const alertaConfianca = incertos.length ? `<div class="aviso" role="note">⚠ ${incertos.length} segmento(s) sinalizado(s) para revisão por uma heurística de confiança da transcrição. Isso não avalia precisão médica. Confira o áudio, especialmente doses, números e condutas.<ul>${incertos.slice(0, 5).map(x => `<li>[trecho ${x.trecho} · ${mmss(x.a)}–${mmss(x.b)}] ${E(x.t)}</li>`).join('')}${incertos.length > 5 ? `<li>e mais ${incertos.length - 5} segmento(s)</li>` : ''}</ul><button class="b" onclick="auladia.aba('audio')">Ouvir o áudio</button></div>` : '';
-    if (abaRes === 'transcricao') corpo = `${alertaConfianca}<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="b" id="ad-ed-btn" onclick="auladia.editarTexto()"><i class="ph ph-pencil-simple"></i> Editar transcrição</button>${s.texto && s.textoRevisado ? '<button class="b" onclick="auladia.verOriginal()">Ver original (sem revisão)</button>' : ''}</div><div class="ad-tr" id="ad-tr-txt">${s.textoRevisado ? E(s.textoRevisado).replace(/([⭐❓]) \[(\d\d:\d\d)\]/g, '<span class="mk">$1 [$2]</span>') : textoHtml(s)}</div>`;
+    const incertos = (s.chunks || []).flatMap(c => (c.segs || []).filter(x => x.baixaConfianca).map(x => ({ trecho: c.i + 1, chunkId: c.i, ...x })));
+    const alertasCapturaDaAula = alertasCaptura(s);
+    const alertaConfianca = incertos.length ? `<div class="aviso" role="note"><i class="ph ph-warning-circle" aria-hidden="true"></i> ${incertos.length} segmento(s) sinalizado(s) por heurísticas de confiança do provedor. Isso não comprova erro nem avalia precisão médica. Confira o áudio, especialmente doses, números e condutas.<ul>${incertos.slice(0, 5).map(x => `<li>[trecho ${x.trecho} · ${mmss(x.a)}–${mmss(x.b)}] ${E(x.t)} <button class="b" type="button" onclick="auladia.ouvirTrecho(${x.chunkId},${Number(x.a) || 0})">Ouvir aqui</button> <button class="b" type="button" onclick="auladia.retranscrever(${x.chunkId})">Retranscrever trecho</button></li>`).join('')}${incertos.length > 5 ? `<li>e mais ${incertos.length - 5} segmento(s)</li>` : ''}</ul></div>` : '';
+    const alertaIntegridade = alertasCapturaDaAula.length ? `<div class="aviso" role="note"><i class="ph ph-warning-circle" aria-hidden="true"></i> ${alertasCapturaDaAula.length} possível(is) problema(s) na captura ou emenda. Revise antes de aceitar a transcrição.<ul>${alertasCapturaDaAula.slice(0, 8).map(x => `<li>Trecho ${x.i + 1}: ${E(x.texto)} <button class="b" type="button" onclick="auladia.ouvirTrecho(${x.i},0)">Ouvir</button> <button class="b" type="button" onclick="auladia.retranscrever(${x.i})">Retranscrever</button></li>`).join('')}</ul><span class="file-note">As sinalizações são heurísticas: não removem texto automaticamente.</span></div>` : '';
+    const diagnosticoCaptura = (s.chunks || []).some(c => c.captura) ? `<details class="card"><summary style="cursor:pointer;font-weight:600">Diagnóstico da captura</summary><div class="file-note">${(s.chunks || []).filter(c => c.captura).length} segmento(s) · mídia ${E(((s.chunks || []).find(c => c.captura) || {}).mime || 'não informada')} · ${E(String(((s.chunks || []).find(c => c.captura) || {}).captura?.sampleRate || 'taxa não informada'))} Hz · bitrate solicitado 64 kb/s; bitrate efetivo varia por navegador. O arquivo capturado é preservado sem conversão posterior; o processamento do navegador, se ativado, ocorre antes da codificação.</div></details>` : '';
+    if (abaRes === 'transcricao') corpo = `${alertaConfianca}${alertaIntegridade}${diagnosticoCaptura}${s.revisaoDesatualizada ? '<div class="aviso" role="status">Uma transcrição de trecho foi atualizada. A revisão anterior continua preservada; revise novamente para alinhar o texto e os materiais.</div>' : ''}<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="b" id="ad-ed-btn" onclick="auladia.editarTexto()"><i class="ph ph-pencil-simple"></i> Editar transcrição</button>${s.texto && s.textoRevisado ? '<button class="b" onclick="auladia.verOriginal()">Ver original (sem revisão)</button>' : ''}</div><div class="ad-tr" id="ad-tr-txt">${s.textoRevisado ? E(s.textoRevisado).replace(/([\u2B50\u2753]) \[(\d\d:\d\d)\]/g, '<span class="mk">$1 [$2]</span>') : textoHtml(s)}</div>`;
     else if (abaRes === 'audio') corpo = `<div id="ak-box"><div class="sub">Montando o player do karaoke…</div></div>`;
+    else if (abaRes === 'indice') corpo = indiceWorkspaceHtml(s);
+    else if (abaRes === 'comparar') corpo = comparadorWorkspaceHtml(s);
     else if (abaRes === 'resumo') corpo = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="b" onclick="auladia.regenerar('resumo')"><i class="ph ph-arrows-clockwise"></i> Regenerar resumo</button></div>${versoesHtml(s, 'resumoMd')}<div class="ad-md" id="ad-md">${mdParaHtml(s.resumoMd)}</div>`;
     else if (abaRes === 'qual') corpo = qualidadeHtml(s);
     else if (abaRes === 'tutor') corpo = tutorHtml(s);
@@ -1259,9 +1976,9 @@
     else if (abaRes === 'flash' && !s.flashcards) corpo = `<div class="card"><b>Flashcards sob demanda</b><div class="sub">Os cartões não são gerados automaticamente. Peça-os quando quiser praticar recuperação ativa a partir da transcrição e do plano desta aula.</div><button class="b pri" type="button" onclick="auladia.gerarFlashcards()"${pipelineRodando ? ' disabled' : ''}><i class="ph ph-cards"></i> Gerar flashcards</button></div>`;
     else if (abaRes === 'flash') {
       const grupos = {}; (s.flashcards || []).forEach(f => { (grupos[f.tema || 'Geral'] = grupos[f.tema || 'Geral'] || []).push(f); });
-      corpo = `<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="b pri" onclick="auladia.enviarFlash()"><i class="ph ph-cards"></i> Revisar e adicionar ao Treino</button><button class="b" onclick="auladia.regenerar('flash')"><i class="ph ph-arrows-clockwise"></i> Regenerar cartões</button></div>${versoesHtml(s, 'flashcards')}<div class="sub" style="margin-top:6px">Confira pergunta, resposta e alertas; edite ou remova qualquer cartão antes de aprová-lo para o Treino. As referências de origem apontam para o trecho usado na geração.</div><div style="margin-top:10px">${Object.keys(grupos).map(g => `<div class="grp2">${E(g)}</div>` + grupos[g].map(f => { const i = s.flashcards.indexOf(f); const qi = s.qualidade && s.qualidade.flashcards; const fl = (qi && qi.itens[i] || {}).flags || []; const revisar = qi && (qi.revisaoHumana || []).some(x => x.i === i); const fmt = ({ pergunta: 'Pergunta', mecanismo: 'Mecanismo', comparativo: 'Comparativo', sequencia: 'Sequência', vinheta: 'Vinheta' })[f.formato] || 'Pergunta'; const temOrigem = origemCartaoTexto(s, f); return `<div class="fc"${fl.length || revisar ? ' style="border-color:var(--amber)"' : ''}><div class="sub">${E(fmt)} · ${E(({ facil: 'Fácil', media: 'Média', dificil: 'Difícil' })[f.dificuldade] || 'Média')}</div><b>${E(f.frente)}</b>${E(f.verso)}${fl.length ? `<div class="sub" style="color:var(--amber)">⚠ ${fl.map(E).join(' · ')}</div>` : ''}${revisar ? '<div class="sub" style="color:var(--amber)">🩺 Revisão humana recomendada: confira os pontos clínicos diretamente na aula.</div>' : ''}<div style="margin-top:6px"><button class="b" onclick="auladia.cartaoEditar(${i})">✎ Editar</button> <button class="b" onclick="auladia.cartaoRemover(${i})">✕ Remover</button>${temOrigem ? ` <button class="b" onclick="auladia.verOrigem(${i})">↗ Trecho de origem</button>` : ''}</div></div>`; }).join('')).join('')}</div>`;
+      corpo = `<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="b pri" onclick="auladia.enviarFlash()"><i class="ph ph-cards" aria-hidden="true"></i> Revisar e adicionar ao Treino</button><button class="b" onclick="auladia.regenerar('flash')"><i class="ph ph-arrows-clockwise" aria-hidden="true"></i> Regenerar cartões</button></div>${versoesHtml(s, 'flashcards')}<div class="sub" style="margin-top:6px">Confira pergunta, resposta e alertas; edite ou remova qualquer cartão antes de aprová-lo para o Treino. As referências de origem apontam para o trecho usado na geração.</div><div style="margin-top:10px">${Object.keys(grupos).map(g => `<div class="grp2">${E(g)}</div>` + grupos[g].map(f => { const i = s.flashcards.indexOf(f); const qi = s.qualidade && s.qualidade.flashcards; const fl = (qi && qi.itens[i] || {}).flags || []; const revisar = qi && (qi.revisaoHumana || []).some(x => x.i === i); const fmt = ({ pergunta: 'Pergunta', mecanismo: 'Mecanismo', comparativo: 'Comparativo', sequencia: 'Sequência', vinheta: 'Vinheta' })[f.formato] || 'Pergunta'; const temOrigem = origemCartaoTexto(s, f); return `<div class="fc"${fl.length || revisar ? ' style="border-color:var(--amber)"' : ''}><div class="sub">${E(fmt)} · ${E(({ facil: 'Fácil', media: 'Média', dificil: 'Difícil' })[f.dificuldade] || 'Média')}</div><b>${E(f.frente)}</b>${E(f.verso)}${fl.length ? `<div class="sub" style="color:var(--amber)"><i class="ph ph-warning-circle" aria-hidden="true"></i> ${fl.map(E).join(' · ')}</div>` : ''}${revisar ? '<div class="sub" style="color:var(--amber)"><i class="ph ph-stethoscope" aria-hidden="true"></i> Revisão humana recomendada: confira os pontos clínicos diretamente na aula.</div>' : ''}<div style="margin-top:6px"><button class="b" onclick="auladia.cartaoEditar(${i})">Editar</button> <button class="b" onclick="auladia.cartaoRemover(${i})">Remover</button>${temOrigem ? ` <button class="b" onclick="auladia.verOrigem(${i})">Trecho de origem</button>` : ''}</div></div>`; }).join('')).join('')}</div>`;
     } else if (res && abaRes === 'prova') corpo = `${(res.caiNaProva || []).length ? '<ul>' + res.caiNaProva.map(p => `<li>${E(p)}</li>`).join('') + '</ul>' : '<div class="sub">O professor não indicou explicitamente o que cai na prova.</div>'}${(s.marcas || []).length ? '<h4>Momentos que você marcou</h4><div class="sub">' + s.marcas.map(E).join(' · ') + '</div>' : ''}${(res.assuntosCobertos || []).length ? '<h4>Assuntos do manual abordados nesta aula</h4><ul>' + res.assuntosCobertos.map(a => `<li>${E(a)}</li>`).join('') + '</ul>' : ''}${(() => { const ehAluno = d => /^\s*\[\d\d:\d\d\]/.test(d); const dv = res.duvidas || []; const meus = dv.filter(ehAluno), conf = dv.filter(d => !ehAluno(d));
-      return ((s.duvidasMarcas || []).length ? '<h4>❓ Suas dúvidas na aula</h4>' + (meus.length ? '<ul>' + meus.map(d => `<li>${E(d)}</li>`).join('') + '</ul>' : '<div class="sub">' + s.duvidasMarcas.map(E).join(' · ') + '</div>') : '')
+      return ((s.duvidasMarcas || []).length ? '<h4><i class="ph ph-question" aria-hidden="true"></i> Suas dúvidas na aula</h4>' + (meus.length ? '<ul>' + meus.map(d => `<li>${E(d)}</li>`).join('') + '</ul>' : '<div class="sub">' + s.duvidasMarcas.map(E).join(' · ') + '</div>') : '')
         + (conf.length ? '<h4>Para conferir (possíveis imprecisões)</h4><ul>' + conf.map(d => `<li>${E(d)}</li>`).join('') + '</ul>' : ''); })()}}`;
     else if (abaRes === 'resumo_g') corpo = rqRodando
       ? `<div class="card"><div class="ad-step go">⏳ Gerando o Resumo Geral — examinando TODA a aula e escrevendo o material autossuficiente (índice, hierarquia completa, tabelas, Síntese Integradora e Revisão de Véspera). Pode levar 1–3 min; não feche a página.</div></div>`
@@ -1274,11 +1991,38 @@
     const audioEmCurso = (s.chunks || []).some(c => c.status === 'transcrevendo');
     const statusAudio = audioEmCurso
       ? '<div class="ad-step go" role="status" aria-live="polite">⏳ Transcrevendo o arquivo… Ele já está salvo neste navegador; a etapa pode levar alguns minutos.</div>'
-      : audioComErro ? `<div class="ad-step" role="status" aria-live="polite">⚠ ${E(audioComErro.erro)} O áudio continua salvo; use “Tentar novamente”.</div>` : '';
+      : audioComErro ? `<div class="ad-step" role="status" aria-live="polite"><i class="ph ph-warning-circle" aria-hidden="true"></i> ${E(audioComErro.erro)} O áudio continua salvo; use “Tentar novamente”.</div>` : '';
     const completo = !!(s.resumoMd && s.resultado);
-    r.innerHTML = `<div class="ad"><h2>${E(nomeCompleto(s))}</h2><div class="sub">${E(s.disciplina || '')} › ${E(s.tema || 'sem conteúdo definido')} › ${E(s.parte || 'Única')} · ${E(s.data)} · ${s.audioImportado ? duracaoAudio(s.duracao || 0) : hms(s.duracao || 0)}${s.audioImportado ? ' · ' + E(s.audioImportado) + ' · ' + bytesAudio(s.audioBytes || 0) : ''} · ${E(TIPOS_AULA[s.tipoAula] || s.tipoAula || 'Expositiva')} · material ${E(PROFUNDIDADES[s.preferenciaMaterial] || s.preferenciaMaterial || 'Equilibrado')} · ${palavrasDe(s.textoRevisado || s.texto)} palavras${resumoPlano}</div>
-    ${personalizacaoHtml(s)}<div class="card">${statusAudio}<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="b" onclick="auladia.voltar()"><i class="ph ph-arrow-left"></i> Aulas</button>${geminiOk && !completo ? '<button class="b pri" onclick="auladia.gerar()"><i class="ph ph-sparkle"></i> Gerar / continuar</button>' : ''}${falhas ? `<button class="b" onclick="auladia.reenviar()">Tentar novamente (${falhas})</button>` : ''}<button class="b" onclick="auladia.copiar()">Copiar texto</button><button class="b" onclick="auladia.baixar('transcricao')">⬇ Transcrição .md</button>${s.resumoMd ? '<button class="b" onclick="auladia.baixar(\'resumo\')">⬇ Resumo .md</button>' : ''}${s.resumoGeral ? '<button class="b" onclick="auladia.baixar(\'resumogeral\')">⬇ Resumo Geral .md</button>' : ''}<button class="b" onclick="auladia.baixar('tudo')">⬇ Tudo (NotebookLM)</button></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="b" onclick="auladia.editarTranscricao()">Revisar transcrição</button><button class="b" onclick="auladia.regenerar('resumo')">Refazer resumo</button>${s.flashcards ? '<button class="b" onclick="auladia.regenerar(\'flashcards\')">Refazer cartões</button>' : '<button class="b" onclick="auladia.gerarFlashcards()">Gerar flashcards</button>'}<button class="b" onclick="auladia.baixarHistorico()">Baixar histórico</button></div><div id="ad-proc" style="margin:0 0 8px"></div>${cicloHtml(s)}
-    <div class="ad-tabs" role="tablist" aria-label="Conteúdo da aula">${tabs.map(([k, n]) => `<button class="b ${abaRes === k ? 'on' : ''}" role="tab" aria-selected="${abaRes === k}" aria-controls="ad-tab-panel" onclick="auladia.aba('${k}')">${n}</button>`).join('')}</div><div id="ad-tab-panel" role="tabpanel" tabindex="0">${corpo}</div></div></div>`;
+    const groupForTab = key => ({ transcricao: 'materiais', audio: 'materiais', indice: 'indice', comparar: 'comparar' })[key] || 'estudar';
+    const activeGroup = groupForTab(abaRes);
+    const groupDefinitions = [
+      { id: 'materiais', label: 'Materiais', first: 'transcricao' },
+      { id: 'indice', label: 'Índice curricular', first: 'indice' },
+      { id: 'comparar', label: 'Comparar aulas', first: 'comparar' },
+      { id: 'estudar', label: 'Estudar', first: s.resumoMd ? 'resumo' : 'progresso' }
+    ];
+    const visibleTabs = tabs.filter(([key]) => groupForTab(key) === activeGroup);
+    const railStatus = pipelineRodando ? 'Gerando materiais' : audioEmCurso ? 'Transcrevendo áudio' : falhas ? `${falhas} trecho(s) precisam de atenção` : completo ? 'Resumo disponível' : temFonte ? 'Conteúdo disponível para estudo' : 'Aguardando conteúdo';
+    const indexedSources = chavesIscDaSessao(s).length;
+    const availableMaterials = [
+      (s.textoRevisado || s.texto) ? 'Transcrição' : '', s.audioImportado || (s.chunks || []).length ? 'Áudio original' : '',
+      s.resumoMd ? 'Resumo' : '', s.resumoGeral ? 'Resumo geral' : '', s.flashcards?.length ? `${s.flashcards.length} flashcards` : '',
+      (s.iscSlideResourceKeys || []).length ? 'Slides indexados' : ''
+    ].filter(Boolean);
+    r.innerHTML = `<div class="ad ad-workspace">
+      <header class="ad-workspace-head"><div><h2>${E(nomeCompleto(s))}</h2><div class="sub">${E(s.disciplina || '')} › ${E(s.tema || 'sem conteúdo definido')} › ${E(s.parte || 'Única')} · ${E(s.data)} · ${s.audioImportado ? duracaoAudio(s.duracao || 0) : hms(s.duracao || 0)}${s.audioImportado ? ' · ' + E(s.audioImportado) + ' · ' + bytesAudio(s.audioBytes || 0) : ''} · ${E(TIPOS_AULA[s.tipoAula] || s.tipoAula || 'Expositiva')} · material ${E(PROFUNDIDADES[s.preferenciaMaterial] || s.preferenciaMaterial || 'Equilibrado')} · ${palavrasDe(s.textoRevisado || s.texto)} palavras${resumoPlano}</div></div><button class="b" type="button" onclick="auladia.voltar()"><i class="ph ph-arrow-left" aria-hidden="true"></i> Aulas</button></header>
+      <div class="ad-workspace-grid"><main class="ad-workspace-main">
+        <section class="ad-workspace-actions" aria-label="Ações principais"><div style="display:flex;gap:8px;flex-wrap:wrap">${geminiOk && !completo ? '<button class="b pri" type="button" onclick="auladia.gerar()"><i class="ph ph-sparkle" aria-hidden="true"></i> Gerar / continuar</button>' : ''}${falhas ? `<button class="b" type="button" onclick="auladia.reenviar()">Tentar novamente (${falhas})</button>` : ''}</div>${statusAudio}<div id="ad-proc" style="margin:0 0 8px"></div></section>
+        <nav class="ad-primary-tabs" aria-label="Etapas da aula">${groupDefinitions.map(group => `<button class="b" type="button" aria-pressed="${activeGroup === group.id}" onclick="auladia.grupo('${group.id}')">${group.label}</button>`).join('')}</nav>
+        ${visibleTabs.length > 1 ? `<div class="ad-subtabs" role="tablist" aria-label="Conteúdo de ${groupDefinitions.find(group => group.id === activeGroup)?.label || 'aula'}">${visibleTabs.map(([key, label]) => `<button class="b ${abaRes === key ? 'on' : ''}" type="button" role="tab" aria-selected="${abaRes === key}" aria-controls="ad-tab-panel" onclick="auladia.aba('${key}')">${label}</button>`).join('')}</div>` : ''}
+        <section class="card ad-study-panel"><div id="ad-tab-panel" role="tabpanel" tabindex="0">${corpo}</div></section>
+      </main><aside class="ad-workspace-rail" aria-label="Resumo da aula">
+        <section class="card"><div class="ad-rail-section"><b>Status</b><div class="sub" role="status" aria-live="polite">${E(railStatus)}</div>${falhas ? `<div class="file-note">${falhas} segmento(s) com falha ou pendentes. O áudio permanece salvo para nova tentativa.</div>` : ''}</div>
+          <div class="ad-rail-section"><b>Materiais disponíveis</b><div class="sub">${availableMaterials.length ? availableMaterials.map(E).join(' · ') : 'Nenhum material gerado ainda.'}</div></div>
+          <div class="ad-rail-section"><b>Índice curricular</b><div class="sub">${indexedSources ? `${indexedSources} fonte(s) privada(s) indexada(s)` : 'Ainda sem fontes indexadas.'}</div><button class="b" type="button" onclick="auladia.aba('indice')">Abrir índice</button></div>
+          <details class="ad-advanced ad-action-details"><summary>Ações e exportação</summary><div class="ad-rail-actions"><button class="b" type="button" onclick="auladia.copiar()">Copiar transcrição</button><button class="b" type="button" onclick="auladia.baixar('transcricao')">Transcrição .md</button>${s.resumoMd ? '<button class="b" type="button" onclick="auladia.baixar(\'resumo\')">Resumo .md</button>' : ''}${s.resumoGeral ? '<button class="b" type="button" onclick="auladia.baixar(\'resumogeral\')">Resumo geral .md</button>' : ''}<button class="b" type="button" onclick="auladia.baixar('tudo')">Exportar tudo</button><button class="b" type="button" onclick="auladia.editarTranscricao()">Revisar transcrição</button><button class="b" type="button" onclick="auladia.regenerar('resumo')">Refazer resumo</button>${s.flashcards ? '<button class="b" type="button" onclick="auladia.regenerar(\'flashcards\')">Refazer cartões</button>' : '<button class="b" type="button" onclick="auladia.gerarFlashcards()">Gerar flashcards</button>'}<button class="b" type="button" onclick="auladia.baixarHistorico()">Baixar histórico</button></div></details>
+          <details class="ad-advanced ad-action-details"><summary>Preferências pedagógicas</summary>${personalizacaoHtml(s)}</details>
+        </section>${cicloHtml(s)}</aside></div></div>`;
     r.querySelectorAll('[data-ad-objective]').forEach(el => el.addEventListener('change', () => marcarObjetivoRevisado(el.dataset.adObjective, el.checked)));
     if (pipelineRodando && sessAtual && htmlPassos) { const el = $('ad-proc'); if (el) el.innerHTML = htmlPassos; }
     if (abaRes === 'audio') desenharKaraoke();
@@ -1321,12 +2065,12 @@
     if (r) {
       const c = r.cobertura;
       h += '<h4>Resumo</h4>' + (c ? `<div class="card"><b>Cobertura estimada dos fatos extraídos da aula: ${c.percentual}%</b> (${c.cobertos} de ${c.total})<div class="sub">Estimativa por coincidência de termos e números; não confirma cobertura semântica.</div></div>` + (c.naoCobertos.length ? '<div class="sub" style="margin:6px 0">Fatos que parecem não estar no resumo (confira na transcrição):</div><ul>' + c.naoCobertos.slice(0, 25).map(x => `<li>${E(x.texto)} <span class="sub">— ${E(x.motivo)}</span></li>`).join('') + '</ul>' : '') : '<div class="sub">Sem base de fatos para medir cobertura (a extração não rodou nesta aula).</div>')
-        + (r.numerosParaConferir.length ? `<div class="card" style="border-color:var(--amber)"><b>⚠ Números/doses no resumo que não aparecem na transcrição:</b> ${r.numerosParaConferir.map(E).join(' · ')}<div class="sub">Podem ser erro de transcrição, de escrita da IA ou apenas outra forma de falar ("um grama"). Confira no áudio antes de estudar.</div></div>` : '<div class="sub">✔ Todo número com unidade do resumo aparece na transcrição.</div>');
+        + (r.numerosParaConferir.length ? `<div class="card" style="border-color:var(--amber)"><b><i class="ph ph-warning-circle" aria-hidden="true"></i> Números/doses no resumo que não aparecem na transcrição:</b> ${r.numerosParaConferir.map(E).join(' · ')}<div class="sub">Podem ser erro de transcrição, de escrita da IA ou apenas outra forma de falar ("um grama"). Confira no áudio antes de estudar.</div></div>` : '<div class="sub">Todo número com unidade do resumo aparece na transcrição.</div>');
     }
     if (f) {
       h += `<h4>Flashcards</h4><div class="card"><b>${f.comAlerta}</b> de ${f.itens.length} cartões com alerta · <b>${f.duplicatas.length}</b> possíveis duplicatas${f.cobertura ? ' · cobertura estimada dos fatos: <b>' + f.cobertura.percentual + '%</b>' : ''}</div>`;
       if (f.dimensoes && f.dimensoes.length) h += `<div class="card"><b>Indicadores automáticos (heurísticos)</b><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:6px;margin-top:8px">${f.dimensoes.map(d => `<div class="sub">${E(d.nome)}: <b>${d.nota}/10</b></div>`).join('')}</div><div class="sub" style="margin-top:8px">As notas medem apenas regras verificáveis de contexto, concisão, números encontrados na fonte, duplicação provável e referência de origem. Não medem verdade clínica nem substituem a revisão da aula.</div></div>`;
-      if ((f.revisaoHumana || []).length) h += `<div class="card" style="border-color:var(--amber)"><b>🩺 Revisão humana recomendada para ${f.revisaoHumana.length} cartão(ões)</b><div class="sub">Valores e unidades, medicamentos, critérios, condutas e vinhetas clínicas merecem conferência explícita na aula antes de estudar. Esse sinal não significa que o cartão esteja errado.</div>${f.revisaoHumana.slice(0, 20).map(x => `<div class="sub">Cartão ${x.i + 1}: ${E(x.motivos.join(' '))}</div>`).join('')}</div>`;
+      if ((f.revisaoHumana || []).length) h += `<div class="card" style="border-color:var(--amber)"><b><i class="ph ph-stethoscope" aria-hidden="true"></i> Revisão humana recomendada para ${f.revisaoHumana.length} cartão(ões)</b><div class="sub">Valores e unidades, medicamentos, critérios, condutas e vinhetas clínicas merecem conferência explícita na aula antes de estudar. Esse sinal não significa que o cartão esteja errado.</div>${f.revisaoHumana.slice(0, 20).map(x => `<div class="sub">Cartão ${x.i + 1}: ${E(x.motivos.join(' '))}</div>`).join('')}</div>`;
       if (f.duplicatas.length) h += '<button class="b" onclick="auladia.removerDuplicatas()"><i class="ph ph-copy"></i> Revisar possíveis duplicatas</button>';
     }
     return h + `<div class="sub" style="margin-top:10px">${E(q.aviso || '')} Material com dose, conduta ou critério clínico deve ser conferido por você antes de ser usado em prova.</div>`;
@@ -1381,7 +2125,7 @@
     if (novo.length < 20) { toast('Texto curto demais; edição descartada.', 'warning'); return desenharResultado(); }
     if (novo !== (s.textoRevisado || s.texto)) {
       if (!s.textoRevisado) s.textoRevisado = s.texto; // o original (s.texto) nunca é sobrescrito
-      s.textoRevisado = novo; s.textoEditadoEm = new Date().toISOString(); s.qualidade = null; await salvarAgora(s);
+      s.textoRevisado = novo; s.textoEditadoEm = new Date().toISOString(); s.revisaoDesatualizada = false; s.qualidade = null; await salvarAgora(s);
       toast('Transcrição salva. O resumo e os cartões já gerados não mudam: use "Regenerar" se quiser refazê-los com o texto corrigido.', 'success');
     }
     desenharResultado();
@@ -1510,8 +2254,8 @@
   function cicloHtml(s) {
     if (!s.flashcards) return '';
     const c = s.ciclo;
-    const linha = (ok, txt) => `<div class="ad-step ${ok ? 'ok' : ''}">${ok ? '✔' : '○'} ${txt}</div>`;
-    return `<div class="card" id="ad-ciclo" style="margin-bottom:10px"><b>🔁 Fechar o ciclo</b>
+    const linha = (ok, txt) => `<div class="ad-step ${ok ? 'ok' : ''}"><i class="ph ${ok ? 'ph-check-circle' : 'ph-circle'}" aria-hidden="true"></i> ${txt}</div>`;
+    return `<div class="card" id="ad-ciclo" style="margin-bottom:10px"><b><i class="ph ph-arrows-clockwise" aria-hidden="true"></i> Fechar o ciclo</b>
       <div class="sub" style="margin:4px 0 8px">Ler não basta: testar e revisar nos intervalos certos é o que fixa. Um toque faz tudo.</div>
       ${linha(c && c.cartoes != null, c && c.cartoes != null ? (c.cartoes + ' cartões novos no Treino (de ' + (c.cartoesTotal || (s.flashcards || []).length) + ')') : 'Flashcards da aula no Treino (revisão espaçada)')}
       ${linha(c && c.revisoes > 0, c && c.semPlano ? 'Sem plano no Mentor: crie um para agendar revisões' : (c && c.revisoes != null ? c.revisoes + ' revisões agendadas no Mentor (24 h, 7 e 30 dias)' : 'Revisões em 24 h, 7 e 30 dias no seu plano do Mentor'))}
@@ -1525,14 +2269,24 @@
     regenerar, restaurar, cartaoRemover, cartaoEditar, removerDuplicatas, editarTexto, verOriginal, verOrigem, verificar: () => verificarQualidade(sessAtual, false),
     iniciar, marcar, duvida, abrir: abrirSess, apagar: apagarSess, enviarFlash, baixar, copiar,
     pausar, continuar, parar, retomar, finalizar,
-    gerar() { if (sessAtual) pipeline(sessAtual); }, reenviar: reenviarFalhas, parteAuto: atualizarParteSugerida,
+    gerar() { if (sessAtual) pipeline(sessAtual); }, reenviar: reenviarFalhas, retranscrever: retranscreverTrechoSelecionado, ouvirTrecho, testarMicrofone, parteAuto: atualizarParteSugerida,
     kVai, fecharCiclo, testar: testarAgora,
     _deveCortar: deveCortar, _chunksProntos: () => (sessAtual && sessAtual.chunks ? sessAtual.chunks.length : 0), _CHUNK: { SOFT: CHUNK_SOFT_MS, HARD: CHUNK_MS }, _pool: pool, _limitador: limitador, _revisoes: revisoesParaPlano, _previa: concluirPrevia,
     editarTranscricao, regenerar, baixarHistorico, importarAudio, salvarPreferencias,
     gerarRQ: gerarResumoGeral, gerarFlashcards, salvarMetodologia, tutorEnviar, tutorReenviar, tutorAtalho,
+    indexarAtual, indexarSlides, revisarIndice, adicionarTopicoManual, buscarAulasRelacionadas, compararVideoAulas,
+    abrirAulaCatalogo, abrirTrechoVideo, fecharIndiceAula,
+    compararAulas, compararSelecionadas, removerDoIndice,
     mmGerar, mmToggle: mmClique, mmZoom, mmFit, mmTudo, mmPNG, mmMermaid,
     ancora(id) { const el = document.getElementById('adh-' + id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
     aba(k) { if (abaRes === 'audio' && k !== 'audio') karaokeParar(true); abaRes = k; desenharResultado(); },
+    grupo(key) {
+      const first = ({ materiais: 'transcricao', indice: 'indice', comparar: 'comparar', estudar: sessAtual?.resumoMd ? 'resumo' : 'progresso' })[key];
+      if (!first) return;
+      if (abaRes === 'audio') karaokeParar(true);
+      abaRes = first; desenharResultado();
+    },
+    filtrarHistorico, selecionarSlidesSetup, processarSlidesPendentes,
     voltar() { if (rec) return; karaokeParar(true); sessAtual = null; render(); }
   };
 

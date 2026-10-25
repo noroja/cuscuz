@@ -237,14 +237,15 @@ async function montarMensagens(params, c) {
   return msgs;
 }
 
-export async function pdfParaTexto(b64) {
+export async function pdfParaTexto(b64, { maxChars = 60000 } = {}) {
   let pdfParse;
   try { pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default; }
   catch (_) { throw new AIError('Leitura de PDF indisponível: dependência "pdf-parse" não instalada no servidor.', { status: 501, code: 'pdf_unavailable' }); }
   const r = await pdfParse(Buffer.from(b64, 'base64'));
   const t = String(r.text || '').replace(/\u0000/g, '').replace(/[ \t]+\n/g, '\n').trim();
   if (t.length < 40) throw new AIError('Não consegui extrair texto deste PDF (pode ser escaneado/imagem). Envie um PDF com texto selecionável.', { status: 422, code: 'pdf_sem_texto' });
-  return t.length > 60000 ? t.slice(0, 60000) + '\n[…texto truncado…]' : t;
+  const limit = Math.max(1000, Math.floor(Number(maxChars) || 60000));
+  return t.length > limit ? t.slice(0, limit) + '\n[…texto truncado…]' : t;
 }
 
 function rotuloVoz(nome) { return nome === 'gemini' ? 'Gemini' : nome === 'openrouter' ? 'OpenRouter' : 'Groq'; }
@@ -561,7 +562,7 @@ export function palavrasEmSegmentos(palavras) {
   return segs;
 }
 
-async function transcribeGeminiDedicado({ audioBase64, audioBuffer, mime = 'audio/webm', language = 'pt', timestamps = false }, modelo) {
+async function transcribeGeminiDedicado({ audioBase64, audioBuffer, mime = 'audio/webm', language = 'pt', timestamps = false, customVocabulary = [] }, modelo) {
   const c = cfg().gemini, t0 = Date.now();
   const origem = new URL(c.base).origin, v = new URL(c.base).pathname.replace(/\/+$/, '') || '/v1beta';
   const buf = audioBuffer ? Buffer.from(audioBuffer) : Buffer.from(audioBase64, 'base64');
@@ -575,8 +576,16 @@ async function transcribeGeminiDedicado({ audioBase64, audioBuffer, mime = 'audi
     if (!arq.uri) throw new AIError('Upload do áudio ao Gemini não devolveu o arquivo.', { status: 502, code: 'upstream', provider: 'gemini' });
     // 2) Transcrição
     const quer = process.env.GEMINI_STT_TIMESTAMPS === '1' && timestamps;
-    const body = { model: modelo, input: [{ type: 'audio', uri: arq.uri, mime_type: mime }],
-      ...(quer ? { generation_config: { transcription_config: { mode: { type: 'verbatim' }, timestamp_granularities: ['word'] } } } : { generation_config: { transcription_config: { mode: { type: 'verbatim' } } } }) };
+    const transcricao = { mode: quer ? { type: 'verbatim', timestamp_granularities: ['word'] } : { type: 'verbatim' } };
+    const idioma = String(language || '').toLowerCase() === 'pt' ? 'pt-BR' : String(language || '').trim();
+    if (idioma) transcricao.language_codes = [idioma];
+    // Gemini não combina vocabulário personalizado com timestamps. Nesse caso,
+    // priorizamos os timestamps e não enviamos uma configuração incompatível.
+    if (!quer && Array.isArray(customVocabulary)) {
+      const termos = [...new Set(customVocabulary.map(x => String(x || '').trim()).filter(Boolean))].slice(0, 80);
+      if (termos.length) transcricao.custom_vocabulary = termos;
+    }
+    const body = { model: modelo, input: [{ type: 'audio', uri: arq.uri, mime_type: mime }], generation_config: { transcription_config: transcricao } };
     const r = await chamar(`${c.base}/interactions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': c.key }, body: JSON.stringify(body) }, { ...c, nome: 'gemini', timeout: Math.max(c.timeout, 120000) }, 'transcrição');
     const j = await r.json();
     const texto = String(j.output_text || '').trim();
@@ -605,7 +614,7 @@ async function transcribeGeminiGenerate({ audioBase64, audioBuffer, mime = 'audi
   const dadosAudio = audioBuffer ? Buffer.from(audioBuffer).toString('base64') : audioBase64;
   const body = {
     contents: [{ role: 'user', parts: [
-      { text: `Transcreva fielmente este áudio de uma aula de Medicina em português do Brasil. Responda SOMENTE com a fala transcrita, sem comentários, sem rótulos de falante e sem resumir. Se não houver fala, responda exatamente [sem fala].${prompt ? ' Contexto e termos prováveis: ' + String(prompt).slice(0, 600) : ''}` },
+      { text: `Transcreva fielmente este áudio de uma aula de Medicina em ${String(language).toLowerCase() === 'pt' ? 'português do Brasil' : String(language || 'português do Brasil')}. Responda SOMENTE com a fala transcrita, sem comentários, sem rótulos de falante e sem resumir. Se não houver fala, responda exatamente [sem fala].${prompt ? ' Contexto e termos prováveis (use apenas para grafia; não acrescente palavras que não estejam audíveis): ' + String(prompt).slice(0, 600) : ''}` },
       { inlineData: { mimeType: mime, data: dadosAudio } }
     ] }],
     generationConfig: { temperature: 0, maxOutputTokens: c.maxOut }

@@ -44,3 +44,4 @@ public/
 .vercel
 .env*
 !.env.example
+supabase/.temp/

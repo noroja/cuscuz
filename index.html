@@ -2509,18 +2509,29 @@ mark.exam-highlight {
             </div>
 
             <div id="mat-content-questoes" class="ac2-mat-content active" role="tabpanel" tabindex="0" aria-labelledby="mat-tab-questoes">
-              <div style="padding:18px 8px 10px">
+              <div class="ac2-smart-questions" style="padding:18px 8px 10px">
                 <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:16px">
                   <i class="ph ph-target" aria-hidden="true" style="font-size:22px;color:var(--cyan);margin-top:2px"></i>
-                  <div><strong style="display:block;color:var(--text-primary);font-size:15px;margin-bottom:4px">Pratique o conteúdo desta aula</strong><span style="color:var(--text-secondary);font-size:13px;line-height:1.5">Questões relacionadas ao tema, selecionadas do banco disponível.</span></div>
+                  <div><strong style="display:block;color:var(--text-primary);font-size:15px;margin-bottom:4px">Pratique os objetivos desta aula</strong><span style="color:var(--text-secondary);font-size:13px;line-height:1.5">Seleção por tópicos disponíveis, evidência no enunciado e diversidade. Quando o vídeo não tem transcrição indexada, a relação é preliminar por metadados.</span></div>
                 </div>
+                <div class="ac2-smart-controls" aria-label="Configuração do treino por videoaula">
+                  <label>Questões<select id="ac2-q-count" data-ac2-smart-filter aria-label="Quantidade de questões"><option>5</option><option selected>10</option><option>15</option><option>20</option></select></label>
+                  <label>Modo<select id="ac2-q-mode" data-ac2-smart-filter aria-label="Modo de estudo"><option value="review">Revisão equilibrada</option><option value="fixation">Fixação</option><option value="proof">Prova</option><option value="reinforcement">Reforço dos erros</option></select></label>
+                  <label>Dificuldade<select id="ac2-q-difficulty" data-ac2-smart-filter aria-label="Dificuldade das questões"><option value="all">Todas</option><option value="easy">Fácil</option><option value="medium">Média</option><option value="hard">Difícil</option></select></label>
+                </div>
+                <div class="ac2-smart-options">
+                  <label><input type="checkbox" id="ac2-q-unanswered" data-ac2-smart-filter> Excluir questões já respondidas</label>
+                  <label><input type="checkbox" id="ac2-q-complementary" data-ac2-smart-filter checked> Incluir questões complementares</label>
+                </div>
+                <div id="ac2-q-coverage" class="ac2-q-coverage" role="status" aria-live="polite" aria-atomic="true">Consultando o banco de questões e o índice curricular…</div>
+                <div id="ac2-q-topics" class="ac2-q-topics" aria-live="polite"></div>
                 <div class="ac2-praticar-wrap" id="ac2-praticar-wrap" style="display:none">
-                  <button class="btn-praticar-questoes-tema" id="ac2-btn-praticar" onclick="ac2PraticarQuestoesTema()" title="Praticar questões selecionadas sobre este tema" aria-label="Praticar questões selecionadas sobre este tema">
+                  <button class="btn-praticar-questoes-tema" id="ac2-btn-praticar" onclick="ac2PraticarQuestoesTema()" title="Praticar questões selecionadas sobre esta videoaula" aria-label="Praticar questões selecionadas sobre esta videoaula">
                     <span class="praticar-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg></span>
-                    <span class="praticar-text">Praticar questões: <strong id="ac2-praticar-tema">Tema da Aula</strong> (<span id="ac2-praticar-qtd">80</span>)</span>
+                    <span class="praticar-text">Praticar <strong id="ac2-praticar-tema">esta videoaula</strong> · <span id="ac2-praticar-qtd">0</span> questões</span>
                   </button>
                 </div>
-                <div id="ac2-questoes-empty" style="display:none;margin-top:12px;padding:12px 14px;border-left:2px solid var(--border-muted);color:var(--text-muted);font-size:12.5px;line-height:1.5">Ainda não encontramos questões relacionadas a este tema no banco disponível.</div>
+                <div id="ac2-questoes-empty" style="display:none;margin-top:12px;padding:12px 14px;border-left:2px solid var(--border-muted);color:var(--text-muted);font-size:12.5px;line-height:1.5">Não há questões elegíveis com esses filtros. Tente outra dificuldade ou modo.</div>
               </div>
             </div>
 
@@ -8275,6 +8286,40 @@ function finishSim() {
     if (r.ans[i] === q.ans) porEspec[sp].acertos++;
   });
 
+  r.qs.forEach((q, i) => {
+    if (r.ans[i] < 0) return;
+    const id = String(q.id || ''); if (!id) return;
+    const record = { selectedIndex: r.ans[i], isCorrect: r.ans[i] === q.ans, answeredAt: new Date().toISOString(), source: r.curriculum ? 'smart-questions' : 'simulado' };
+    if (r.lessonVideoId) record.lessonVideoId = r.lessonVideoId;
+    BANK_ANSWERS[id] = record;
+    if (!record.isCorrect) WRONG.add(q.statement || q.q);
+  });
+  lsSet('cuscuz_exam_answers', BANK_ANSWERS);
+  lsSet('acv_wrong', [...WRONG]);
+  try { saveCloud(); } catch (_) {}
+
+  const objectivePerformance = new Map();
+  for (let index = 0; index < r.qs.length; index++) {
+    if (r.ans[index] < 0) continue;
+    const question = r.qs[index];
+    for (const relation of question.curriculumMatch?.relations || []) {
+      if (relation.relation === 'none') continue;
+      const stats = objectivePerformance.get(relation.topicId) || { attempted: 0, correct: 0 };
+      stats.attempted++;
+      if (r.ans[index] === question.ans) stats.correct++;
+      objectivePerformance.set(relation.topicId, stats);
+    }
+  }
+  const objectiveFeedback = r.curriculum?.objectives?.length ? `<section style="margin:18px 0;padding:14px 16px;border:1px solid var(--border-subtle);background:var(--bg-surface)">
+    <h3 style="margin:0 0 6px;font-size:15px">Resultado por objetivo</h3>
+    <p style="margin:0 0 8px;color:var(--text-secondary);font-size:12px">Desempenho da amostra deste treino; não estima domínio clínico. Relações com a videoaula podem ser preliminares por metadados.</p>
+    ${r.curriculum.objectives.map(objective => {
+      const stats = objectivePerformance.get(objective.topicId) || { attempted: 0, correct: 0 };
+      const result = stats.attempted >= 3 ? `${stats.correct}/${stats.attempted} corretas` : stats.attempted ? `${stats.correct}/${stats.attempted} · amostra pequena` : 'não avaliado';
+      return `<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border-subtle);font-size:12px"><span>${esc(objective.name)}</span><b style="white-space:nowrap">${esc(result)}</b></div>`;
+    }).join('')}
+  </section>` : '';
+
   SIMS.push({
     d: todayKey(),
     n: total,
@@ -8302,6 +8347,7 @@ function finishSim() {
           Você acertou <b>${s}</b> de <b>${total}</b> questões
         </div>
         <div style="font-size:13px;color:var(--teal);margin-top:6px">${diagnostico}</div>
+        ${objectiveFeedback}
 
         <!-- Detalhamento por Especialidade -->
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:16px;width:100%">
@@ -8337,6 +8383,14 @@ function finishSim() {
             const acertou = r.ans[i] === q.ans;
             const letraCorreta = String.fromCharCode(65 + q.ans);
 
+            const relations = q.curriculumMatch?.relations || [];
+            const directNames = [...new Set(relations.filter(item => item.relation === 'direct').map(item => item.name).filter(Boolean))];
+            const partialNames = [...new Set(relations.filter(item => item.relation === 'partial').map(item => item.name).filter(Boolean))];
+            const evidenceItems = relations.flatMap(item => item.lessonEvidence || []);
+            const lessonEvidence = evidenceItems.find(item => Number.isFinite(item.timestampStart));
+            const sourceEvidence = evidenceItems.find(item => typeof item.excerpt === 'string' && item.excerpt.trim());
+            const evidenceLabel = sourceEvidence ? (/^catalog_/.test(sourceEvidence.sourceKind || '') || sourceEvidence.sourceKind === 'catalog_metadata' ? 'Pista do catálogo' : 'Evidência indexada') : '';
+            const relatedContent = directNames.length || partialNames.length ? `<div style="margin:0 0 12px;padding:9px 10px;border-left:2px solid var(--teal);background:var(--bg-elevated);font-size:12px;color:var(--text-secondary)"><b>Relação estimada com a videoaula:</b>${directNames.length ? `<div>Direta no enunciado/alternativas: ${directNames.map(esc).join(' · ')}</div>` : ''}${partialNames.length ? `<div>Parcial por comentário ou metadados da questão: ${partialNames.map(esc).join(' · ')}</div>` : ''}${sourceEvidence ? `<div><b>${evidenceLabel}:</b> ${esc(sourceEvidence.excerpt)}</div>` : ''}${r.lessonVideoId && lessonEvidence ? ` <button class="btn-outline" type="button" onclick="auladia.abrirTrechoVideo(${esc(JSON.stringify(r.lessonVideoId))},${Number(lessonEvidence.timestampStart)})">Rever ${esc(mmss(lessonEvidence.timestampStart))}</button>` : ''}</div>` : '';
             return `
               <div class="sim-review-card ${acertou ? 'ok' : 'fail'}" data-status="${acertou ? 'acerto' : 'erro'}" style="background:var(--bg-surface);border:1px solid ${acertou ? 'rgba(74,222,128,0.25)' : 'rgba(248,113,113,0.25)'};border-radius:12px;padding:18px 20px">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px">
@@ -8355,6 +8409,7 @@ function finishSim() {
                 <div style="font-size:13.5px;color:var(--text-primary);line-height:1.5;margin-bottom:12px">
                   ${esc(q.statement || q.q)}
                 </div>
+                ${relatedContent}
 
                 <div style="display:flex;flex-direction:column;gap:6px">
                   ${(() => {
@@ -12219,11 +12274,22 @@ window.buscarAcervoSemantica = async function () {
   buscaSemanticaRodando = true;
   renderResultadoBuscaGlobal(query);
   try {
-    const response = await fetch('/api/acervo/busca-semantica', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query })
-    });
-    const data = await response.json();
-    if (!response.ok || !data.success) throw new Error(data.msg || 'Busca semântica indisponível.');
+    let data = null, falha = null;
+    for (const endpoint of ['/api/isc/search', '/api/acervo/busca-semantica']) {
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+            query, course: globalSearchFilters.course, discipline: globalSearchFilters.discipline, limit: 50
+          })
+        });
+        const candidate = await response.json();
+        if (!response.ok || !candidate.success) throw new Error(candidate.msg || 'Busca semântica indisponível.');
+        if (endpoint === '/api/isc/search' && !(candidate.itens || []).length) continue;
+        data = candidate;
+        break;
+      } catch (error) { falha = error; }
+    }
+    if (!data) throw falha || new Error('Busca semântica indisponível.');
     if (versao !== buscaSemanticaVersao || normAcc(bgInput.value.trim()) !== normAcc(query)) return;
     buscaSemantica = { query: normAcc(query), itens: data.itens || [] };
     renderResultadoBuscaGlobal(query);
@@ -12443,8 +12509,59 @@ function moduloDaAula(v) {
 }
 
 // comIA=false (padrão): só banco, sem gastar IA ao abrir a aula; true: pode gerar questões por IA (ação explícita de praticar).
-async function buscarQtdQuestoesTema(tema, disc, modulo, comIA) {
+function ac2FiltrosQuestoes() {
+  const answers = typeof BANK_ANSWERS === 'object' && BANK_ANSWERS ? BANK_ANSWERS : {};
+  return {
+    limit: Number.parseInt($('ac2-q-count')?.value || '10', 10) || 10,
+    mode: $('ac2-q-mode')?.value || 'review',
+    difficulty: $('ac2-q-difficulty')?.value || 'all',
+    excludeAnswered: !!$('ac2-q-unanswered')?.checked,
+    includeComplementary: $('ac2-q-complementary') ? $('ac2-q-complementary').checked : true,
+    excludedIds: Object.keys(answers).slice(-500),
+    prioritizeIds: Object.entries(answers).filter(([, answer]) => answer && answer.isCorrect === false).map(([id]) => id).slice(-500)
+  };
+}
+
+async function buscarQtdQuestoesTema(tema, disc, modulo, comIA, smartOptions) {
   try {
+    const smart = smartOptions && smartOptions.smart === true;
+    if (smart) {
+      let videoIndex = null;
+      if (smartOptions.videoId) {
+        try {
+          const cache = window._ac2VideoIndexCache || (window._ac2VideoIndexCache = new Map());
+          const cached = cache.get(String(smartOptions.videoId));
+          if (cached && Date.now() - cached.at < 120000) videoIndex = cached.data;
+          else {
+            const indexResponse = await fetch(`/api/isc/video-index?id=${encodeURIComponent(smartOptions.videoId)}`, { cache: 'no-store' });
+            const indexData = await indexResponse.json().catch(() => ({}));
+            if (indexResponse.ok && indexData.success) {
+              videoIndex = indexData; cache.set(String(smartOptions.videoId), { at: Date.now(), data: indexData });
+              if (cache.size > 100) cache.delete(cache.keys().next().value);
+            }
+          }
+        } catch (_) {}
+      }
+      const body = {
+        smart: true, tema, disciplina: disc || '', modulo: modulo || '',
+        limit: smartOptions.limit || 10, mode: smartOptions.mode || 'review',
+        difficulty: smartOptions.difficulty || 'all',
+        excludeAnswered: smartOptions.excludeAnswered === true,
+        excludedIds: smartOptions.excludedIds || [], prioritizeIds: smartOptions.prioritizeIds || [],
+        includeComplementary: smartOptions.includeComplementary !== false,
+        topics: (videoIndex?.topics || []).slice(0, 30).map(topic => ({
+          topicId: topic.topicId, name: topic.name, synonyms: topic.synonyms,
+          sourceKind: topic.sourceKind || videoIndex.evidenceMode || 'catalog_metadata',
+          confidence: topic.confidence, evidence: topic.evidence
+        }))
+      };
+      const res = await fetch('/api/questions/match', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error('Busca de questões indisponível.');
+      const data = await res.json();
+      if (!data || !Array.isArray(data.questions)) return { count: 0, questions: [], curriculum: null, videoIndex, smart: true };
+      return { count: data.questions.length, totalAvailable: Number(data.totalAvailable) || data.questions.length, questions: data.questions, curriculum: data.curriculum || null,
+        videoIndex, bancoCount: data.bancoCount || data.questions.length, iaCount: 0, smart: true };
+    }
     const qUrl = `/api/questions/match?disciplina=${encodeURIComponent(disc || '')}&tema=${encodeURIComponent(tema || '')}&modulo=${encodeURIComponent(modulo || '')}&limit=40${comIA ? '' : '&ia=0'}`;
     const res = await fetch(qUrl);
     if (res.ok) {
@@ -12487,18 +12604,57 @@ function ac2AtualizarBotaoPraticar(v) {
   if (emptyState) emptyState.style.display = 'none';
   temaEl.textContent = cleanTema;
   qtdEl.textContent = '…';
+  $('ac2-q-coverage')?.setAttribute('aria-busy', 'true');
   window._questoesTemaAtual = null;
-
-  buscarQtdQuestoesTema(cleanTema, v.disc, modulo).then(({ count, questions, bancoCount, iaCount }) => {
-    if (vid && AC2.atualId !== vid) return; // o aluno já foi para outra aula
-    if ($('ac2-praticar-qtd')) $('ac2-praticar-qtd').textContent = count + (iaCount ? ` · ${iaCount} IA` : '');
-    window._questoesTemaAtual = { tema: cleanTema, disc: v.disc, modulo, questions, bancoCount, iaCount };
+  const requestId = window._ac2QuestionRequest = (window._ac2QuestionRequest || 0) + 1;
+  const bindFilters = () => {
+    if (window._ac2SmartFiltersBound) return;
+    window._ac2SmartFiltersBound = true;
+    document.querySelectorAll('[data-ac2-smart-filter]').forEach(input => input.addEventListener('change', () => {
+      const current = AC2?.indice?.get(AC2?.atualId);
+      if (current) ac2AtualizarBotaoPraticar(current);
+    }));
+  };
+  bindFilters();
+  const filters = ac2FiltrosQuestoes();
+  const matching = buscarQtdQuestoesTema(cleanTema, v.disc, modulo, false, { ...filters, smart: true, videoId: vid });
+  matching.then(({ count, totalAvailable, questions, bancoCount, iaCount, curriculum, videoIndex, smart }) => {
+    if (requestId !== window._ac2QuestionRequest || (vid && AC2.atualId !== vid)) return;
+    $('ac2-q-coverage')?.removeAttribute('aria-busy');
+    if ($('ac2-praticar-qtd')) $('ac2-praticar-qtd').textContent = String(count);
+    const coverageEl = $('ac2-q-coverage'), topicsEl = $('ac2-q-topics');
+    const objectives = curriculum?.objectives || [];
+    const covered = objectives.filter(topic => topic.relation !== 'uncovered').length;
+    if (coverageEl) {
+      const metadataOnly = videoIndex?.evidenceMode !== 'indexed_content';
+      const evidenceNote = !videoIndex
+        ? '<br><strong>Índice do vídeo indisponível nesta consulta; a seleção é preliminar e usa título/pasta.</strong>'
+        : metadataOnly
+          ? '<br><strong>Sem texto indexado do vídeo; a relação parte dos metadados e da busca lexical.</strong>'
+          : '<br>A relação pergunta–tópico é heurística e requer validação pedagógica.';
+      const lowConfidenceNote = curriculum?.diagnostics?.lowConfidenceTopicCount
+        ? `<br>${curriculum.diagnostics.lowConfidenceTopicCount} tópico(s) de baixa confiança foram deixados fora da cobertura automática.` : '';
+      const eligible = Number(curriculum?.diagnostics?.candidateCount ?? totalAvailable ?? count) || 0;
+      const coverageLabel = objectives.length
+        ? `${covered} de ${objectives.length} tópicos com relação lexical estimada`
+        : 'Nenhum objetivo curricular identificado; seleção baseada no título e no banco de questões.';
+      const shortage = eligible < filters.limit ? `<br>O banco tem ${eligible} questão(ões) elegível(is) para estes filtros; foram selecionadas ${count}.` : `<br>${count} selecionada(s) de ${eligible} questão(ões) elegível(is).`;
+      coverageEl.innerHTML = `${esc(coverageLabel)}${shortage}${evidenceNote}${lowConfidenceNote}`;
+    }
+    if (topicsEl) topicsEl.innerHTML = objectives.map(topic => {
+      const state = topic.relation === 'direct' ? `${topic.directCount} direta(s)` : topic.relation === 'partial' ? `${topic.partialCount} parcial(is)` : 'sem questão';
+      return `<div class="ac2-q-topic"><span>${esc(topic.name)}</span><strong>${esc(state)}</strong></div>`;
+    }).join('');
+    window._questoesTemaAtual = { tema: cleanTema, disc: v.disc, modulo, questions, bancoCount, iaCount,
+      curriculum, videoIndex, smart, filters };
     const btn = $('ac2-btn-praticar');
     if (btn) { btn.disabled = !count; btn.style.opacity = count ? '' : '.55'; btn.title = count ? 'Questões selecionadas para esta videoaula' : 'Nenhuma questão do banco corresponde a esta aula ainda'; }
     if (emptyState) emptyState.style.display = count ? 'none' : 'block';
   }).catch(() => {
-    if (vid && AC2.atualId !== vid) return;
+    if (requestId !== window._ac2QuestionRequest || (vid && AC2.atualId !== vid)) return;
+    $('ac2-q-coverage')?.removeAttribute('aria-busy');
     if ($('ac2-praticar-qtd')) $('ac2-praticar-qtd').textContent = '0';
+    const coverageEl = $('ac2-q-coverage'); if (coverageEl) coverageEl.innerHTML = 'Não foi possível consultar a seleção agora. <button type="button" class="btn-outline" onclick="ac2AtualizarBotaoPraticar(AC2?.indice?.get(AC2?.atualId))">Tentar novamente</button>';
     const btn = $('ac2-btn-praticar');
     if (btn) { btn.disabled = true; btn.style.opacity = '.55'; }
     if (emptyState) emptyState.style.display = 'block';
@@ -12517,7 +12673,10 @@ window.ac2PraticarQuestoesTema = function() {
   const cache = window._questoesTemaAtual;
   const tema = (cache && cache.tema) || $('ac2-praticar-tema')?.textContent || 'Tema da Aula';
   const disc = (cache && cache.disc) || $('ac2-disc')?.textContent || 'Clínica Médica';
-  iniciarSimuladoDoTema(tema, disc, (cache && cache.questions) || []);
+  iniciarSimuladoDoTema(tema, disc, (cache && cache.questions) || [], cache?.modulo || '', cache?.smart ? {
+    smart: true, curriculum: cache.curriculum, mode: cache.filters?.mode,
+    lessonVideoId: cache.videoIndex?.resourceKey?.startsWith('video:') ? cache.videoIndex.resourceKey.slice(6) : ''
+  } : null);
 };
 
 window.ac2AbrirFlashcards = function() {
@@ -12537,9 +12696,9 @@ window.modalPraticarQuestoesTema = function() {
   iniciarSimuladoDoTema(tema, disc, (cache && cache.questions) || []);
 };
 
-window.iniciarSimuladoDoTema = async function(tema, disc, questions, modulo) {
+window.iniciarSimuladoDoTema = async function(tema, disc, questions, modulo, options = null) {
   let qs = Array.isArray(questions) && questions.length ? [...questions] : [];
-  if (qs.length < 10) {
+  if (qs.length < 10 && !options?.smart) {
     // A pré-busca ao abrir a aula não usa IA; ao praticar, completa com questões geradas se o banco tiver poucas.
     toast('Carregando questões selecionadas do tema…', 'info');
     const res = await buscarQtdQuestoesTema(tema, disc, modulo || '', true);
@@ -12569,6 +12728,9 @@ window.iniciarSimuladoDoTema = async function(tema, disc, questions, modulo) {
     name: `Praticar Questões: ${tema}`,
     banca: `Treino de Aula (${disc || 'Residência Médica'})`,
     tema: tema,
+    curriculum: options?.curriculum || null,
+    curriculumMode: options?.mode || 'review',
+    lessonVideoId: options?.lessonVideoId || '',
     origemView: 'view-acervo'
   };
 
