@@ -153,7 +153,7 @@ function selecionarComCobertura(bank, {
   excludeAnswered = false, excludedIds = [], prioritizeIds = [], includeComplementary = true
 } = {}) {
   const max = Math.max(1, Math.min(60, Number.parseInt(limit, 10) || 10));
-  const rawProvided = Array.isArray(topics) ? topics.filter(topic => topic && typeof topic.name === 'string' && topic.name.trim()).slice(0, 30) : [];
+  const rawProvided = Array.isArray(topics) ? topics.filter(topic => topic && typeof topic.name === 'string' && topic.name.trim()).slice(0, 120) : [];
   const lowConfidenceTopics = rawProvided.filter(topic => topic.confidence != null && topic.confidence !== '' &&
     Number.isFinite(Number(topic.confidence)) && Number(topic.confidence) < 0.45);
   const provided = rawProvided.filter(topic => !lowConfidenceTopics.includes(topic));

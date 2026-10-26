@@ -2523,12 +2523,12 @@ mark.exam-highlight {
                   <label><input type="checkbox" id="ac2-q-unanswered" data-ac2-smart-filter> Excluir questões já respondidas</label>
                   <label><input type="checkbox" id="ac2-q-complementary" data-ac2-smart-filter checked> Incluir questões complementares</label>
                 </div>
-                <div id="ac2-q-coverage" class="ac2-q-coverage" role="status" aria-live="polite" aria-atomic="true">Consultando o banco de questões e o índice curricular…</div>
+                <div id="ac2-q-coverage" class="ac2-q-coverage" role="status" aria-live="polite" aria-atomic="true">A indexação completa e a busca começam somente quando você solicitar. O índice concluído será reutilizado.</div>
                 <div id="ac2-q-topics" class="ac2-q-topics" aria-live="polite"></div>
                 <div class="ac2-praticar-wrap" id="ac2-praticar-wrap" style="display:none">
-                  <button class="btn-praticar-questoes-tema" id="ac2-btn-praticar" onclick="ac2PraticarQuestoesTema()" title="Praticar questões selecionadas sobre esta videoaula" aria-label="Praticar questões selecionadas sobre esta videoaula">
+                  <button class="btn-praticar-questoes-tema" id="ac2-btn-praticar" onclick="ac2PraticarQuestoesTema()" title="Gerar o índice desta videoaula e buscar questões relacionadas" aria-label="Gerar o índice desta videoaula e buscar questões relacionadas">
                     <span class="praticar-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg></span>
-                    <span class="praticar-text">Praticar <strong id="ac2-praticar-tema">esta videoaula</strong> · <span id="ac2-praticar-qtd">0</span> questões</span>
+                    <span class="praticar-text"><span id="ac2-praticar-acao">Gerar índice e buscar questões</span> · <strong id="ac2-praticar-tema">esta videoaula</strong> · <span id="ac2-praticar-qtd">sob demanda</span></span>
                   </button>
                 </div>
                 <div id="ac2-questoes-empty" style="display:none;margin-top:12px;padding:12px 14px;border-left:2px solid var(--border-muted);color:var(--text-muted);font-size:12.5px;line-height:1.5">Não há questões elegíveis com esses filtros. Tente outra dificuldade ou modo.</div>
@@ -12525,11 +12525,11 @@ function ac2FiltrosQuestoes() {
 }
 
 async function buscarQtdQuestoesTema(tema, disc, modulo, comIA, smartOptions) {
+  const smart = smartOptions && smartOptions.smart === true;
   try {
-    const smart = smartOptions && smartOptions.smart === true;
     if (smart) {
-      let videoIndex = null;
-      if (smartOptions.videoId) {
+      let videoIndex = smartOptions.videoIndex || null;
+      if (!videoIndex && smartOptions.videoId && !smartOptions.requireContent) {
         try {
           const cache = window._ac2VideoIndexCache || (window._ac2VideoIndexCache = new Map());
           const cached = cache.get(String(smartOptions.videoId));
@@ -12544,6 +12544,9 @@ async function buscarQtdQuestoesTema(tema, disc, modulo, comIA, smartOptions) {
           }
         } catch (_) {}
       }
+      if (smartOptions.requireContent && videoIndex?.evidenceMode !== 'indexed_content') {
+        return { count: 0, questions: [], curriculum: null, videoIndex, smart: true, error: 'O índice de conteúdo desta videoaula ainda não está disponível.' };
+      }
       const body = {
         smart: true, tema, disciplina: disc || '', modulo: modulo || '',
         limit: smartOptions.limit || 10, mode: smartOptions.mode || 'review',
@@ -12551,7 +12554,7 @@ async function buscarQtdQuestoesTema(tema, disc, modulo, comIA, smartOptions) {
         excludeAnswered: smartOptions.excludeAnswered === true,
         excludedIds: smartOptions.excludedIds || [], prioritizeIds: smartOptions.prioritizeIds || [],
         includeComplementary: smartOptions.includeComplementary !== false,
-        topics: (videoIndex?.topics || []).slice(0, 30).map(topic => ({
+        topics: (videoIndex?.topics || []).slice(0, 120).map(topic => ({
           topicId: topic.topicId, name: topic.name, synonyms: topic.synonyms,
           sourceKind: topic.sourceKind || videoIndex.evidenceMode || 'catalog_metadata',
           confidence: topic.confidence, evidence: topic.evidence
@@ -12572,7 +12575,9 @@ async function buscarQtdQuestoesTema(tema, disc, modulo, comIA, smartOptions) {
         return { count: data.questions.length, questions: data.questions, bancoCount: data.bancoCount || 0, iaCount: data.iaCount || 0 };
       }
     }
-  } catch (_) {}
+  } catch (error) {
+    if (smart && smartOptions?.requireContent) return { count: 0, questions: [], curriculum: null, videoIndex: smartOptions.videoIndex || null, smart: true, error: error.message };
+  }
   // Offline: só o que bate de verdade com o tema (todas as palavras-chave), nunca questões aleatórias
   const all = typeof getSimQuestionsBank === 'function' ? getSimQuestionsBank() : [];
   const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -12584,7 +12589,7 @@ async function buscarQtdQuestoesTema(tema, disc, modulo, comIA, smartOptions) {
   return { count: matched.length, questions: matched, bancoCount: matched.length, iaCount: 0 };
 }
 
-function ac2AtualizarBotaoPraticar(v) {
+function ac2AtualizarBotaoPraticar(v, searchOptions = null) {
   const wrap = $('ac2-praticar-wrap');
   const temaEl = $('ac2-praticar-tema');
   const qtdEl = $('ac2-praticar-qtd');
@@ -12605,9 +12610,15 @@ function ac2AtualizarBotaoPraticar(v) {
   const emptyState = $('ac2-questoes-empty');
   if (emptyState) emptyState.style.display = 'none';
   temaEl.textContent = cleanTema;
-  qtdEl.textContent = '…';
-  $('ac2-q-coverage')?.setAttribute('aria-busy', 'true');
-  window._questoesTemaAtual = null;
+  const actionEl = $('ac2-praticar-acao');
+  if (actionEl) actionEl.textContent = searchOptions?.search ? 'Buscando questões' : 'Gerar índice e buscar questões';
+  qtdEl.textContent = searchOptions?.search ? '…' : 'somente ao solicitar';
+  const btn = $('ac2-btn-praticar');
+  if (btn) {
+    btn.disabled = !vid || !!searchOptions?.busy;
+    btn.style.opacity = btn.disabled ? '.55' : '';
+    btn.title = 'Apenas a videoaula atual será indexada quando você solicitar a busca.';
+  }
   const requestId = window._ac2QuestionRequest = (window._ac2QuestionRequest || 0) + 1;
   const bindFilters = () => {
     if (window._ac2SmartFiltersBound) return;
@@ -12618,50 +12629,6 @@ function ac2AtualizarBotaoPraticar(v) {
     }));
   };
   bindFilters();
-  const filters = ac2FiltrosQuestoes();
-  const matching = buscarQtdQuestoesTema(cleanTema, v.disc, modulo, false, { ...filters, smart: true, videoId: vid });
-  matching.then(({ count, totalAvailable, questions, bancoCount, iaCount, curriculum, videoIndex, smart }) => {
-    if (requestId !== window._ac2QuestionRequest || (vid && AC2.atualId !== vid)) return;
-    $('ac2-q-coverage')?.removeAttribute('aria-busy');
-    if ($('ac2-praticar-qtd')) $('ac2-praticar-qtd').textContent = String(count);
-    const coverageEl = $('ac2-q-coverage'), topicsEl = $('ac2-q-topics');
-    const objectives = curriculum?.objectives || [];
-    const covered = objectives.filter(topic => topic.relation !== 'uncovered').length;
-    if (coverageEl) {
-      const metadataOnly = videoIndex?.evidenceMode !== 'indexed_content';
-      const evidenceNote = !videoIndex
-        ? '<br><strong>Índice do vídeo indisponível nesta consulta; a seleção é preliminar e usa título/pasta.</strong>'
-        : metadataOnly
-          ? '<br><strong>Sem texto indexado do vídeo; a relação parte dos metadados e da busca lexical.</strong>'
-          : '<br>A relação pergunta–tópico é heurística e requer validação pedagógica.';
-      const lowConfidenceNote = curriculum?.diagnostics?.lowConfidenceTopicCount
-        ? `<br>${curriculum.diagnostics.lowConfidenceTopicCount} tópico(s) de baixa confiança foram deixados fora da cobertura automática.` : '';
-      const eligible = Number(curriculum?.diagnostics?.candidateCount ?? totalAvailable ?? count) || 0;
-      const coverageLabel = objectives.length
-        ? `${covered} de ${objectives.length} tópicos com relação lexical estimada`
-        : 'Nenhum objetivo curricular identificado; seleção baseada no título e no banco de questões.';
-      const shortage = eligible < filters.limit ? `<br>O banco tem ${eligible} questão(ões) elegível(is) para estes filtros; foram selecionadas ${count}.` : `<br>${count} selecionada(s) de ${eligible} questão(ões) elegível(is).`;
-      coverageEl.innerHTML = `${esc(coverageLabel)}${shortage}${evidenceNote}${lowConfidenceNote}`;
-    }
-    if (topicsEl) topicsEl.innerHTML = objectives.map(topic => {
-      const state = topic.relation === 'direct' ? `${topic.directCount} direta(s)` : topic.relation === 'partial' ? `${topic.partialCount} parcial(is)` : 'sem questão';
-      return `<div class="ac2-q-topic"><span>${esc(topic.name)}</span><strong>${esc(state)}</strong></div>`;
-    }).join('');
-    window._questoesTemaAtual = { tema: cleanTema, disc: v.disc, modulo, questions, bancoCount, iaCount,
-      curriculum, videoIndex, smart, filters };
-    const btn = $('ac2-btn-praticar');
-    if (btn) { btn.disabled = !count; btn.style.opacity = count ? '' : '.55'; btn.title = count ? 'Questões selecionadas para esta videoaula' : 'Nenhuma questão do banco corresponde a esta aula ainda'; }
-    if (emptyState) emptyState.style.display = count ? 'none' : 'block';
-  }).catch(() => {
-    if (requestId !== window._ac2QuestionRequest || (vid && AC2.atualId !== vid)) return;
-    $('ac2-q-coverage')?.removeAttribute('aria-busy');
-    if ($('ac2-praticar-qtd')) $('ac2-praticar-qtd').textContent = '0';
-    const coverageEl = $('ac2-q-coverage'); if (coverageEl) coverageEl.innerHTML = 'Não foi possível consultar a seleção agora. <button type="button" class="btn-outline" onclick="ac2AtualizarBotaoPraticar(AC2?.indice?.get(AC2?.atualId))">Tentar novamente</button>';
-    const btn = $('ac2-btn-praticar');
-    if (btn) { btn.disabled = true; btn.style.opacity = '.55'; }
-    if (emptyState) emptyState.style.display = 'block';
-  });
-
   if (PL_FC_INLINE_LESSON && PL_FC_INLINE_LESSON !== vid) {
     PL_FC_REQUEST++;
     PL_FC_INLINE_LESSON = null;
@@ -12669,16 +12636,150 @@ function ac2AtualizarBotaoPraticar(v) {
     const fcArea = $('ac2-fc-area');
     if (fcArea) { fcArea.removeAttribute('aria-busy'); fcArea.innerHTML = ''; }
   }
+  const filters = ac2FiltrosQuestoes();
+  if (!searchOptions?.search) {
+    window._questoesTemaAtual = { tema: cleanTema, disc: v.disc, modulo, questions: [], smart: true, videoId: vid, filters };
+    const coverageEl = $('ac2-q-coverage'), topicsEl = $('ac2-q-topics');
+    if (coverageEl) {
+      coverageEl.removeAttribute('aria-busy');
+      coverageEl.textContent = 'Nenhum processamento foi iniciado. Ao solicitar, somente esta videoaula será enviada ao Gemini para gerar o índice curricular; o resultado será reutilizado nas próximas buscas.';
+    }
+    if (topicsEl) topicsEl.innerHTML = '';
+    if (btn) btn.setAttribute('aria-label', `Gerar índice e buscar questões para ${cleanTema}`);
+    return Promise.resolve(window._questoesTemaAtual);
+  }
+
+  $('ac2-q-coverage')?.setAttribute('aria-busy', 'true');
+  const matching = buscarQtdQuestoesTema(cleanTema, v.disc, modulo, false, {
+    ...filters, smart: true, videoId: vid, videoIndex: searchOptions.videoIndex, requireContent: true
+  });
+  return matching.then(({ count, totalAvailable, questions, bancoCount, iaCount, curriculum, videoIndex, smart, error }) => {
+    if (requestId !== window._ac2QuestionRequest || (vid && AC2.atualId !== vid)) return;
+    $('ac2-q-coverage')?.removeAttribute('aria-busy');
+    const coverageEl = $('ac2-q-coverage'), topicsEl = $('ac2-q-topics');
+    if (error) {
+      if (coverageEl) coverageEl.textContent = error;
+      if (actionEl) actionEl.textContent = 'Tentar novamente';
+      if (btn) btn.disabled = false;
+      return null;
+    }
+    if ($('ac2-praticar-qtd')) $('ac2-praticar-qtd').textContent = `${count} questões`;
+    if (actionEl) actionEl.textContent = 'Praticar';
+    const objectives = curriculum?.objectives || [];
+    const covered = objectives.filter(topic => topic.relation !== 'uncovered').length;
+    if (coverageEl) {
+      const evidenceNote = '<br>A relação pergunta–tópico é heurística e requer validação pedagógica.';
+      const lowConfidenceNote = curriculum?.diagnostics?.lowConfidenceTopicCount
+        ? `<br>${curriculum.diagnostics.lowConfidenceTopicCount} tópico(s) de baixa confiança foram deixados fora da cobertura automática.` : '';
+      const confidenceBasisNote = videoIndex?.confidenceBasis
+        ? '<br>A confiança dos tópicos é estimada pelo modelo e não foi calibrada clinicamente.' : '';
+      const unmappedNote = videoIndex?.unmappedTopics?.length
+        ? `<br>${videoIndex.unmappedTopics.length} tópico(s) não foram associados à taxonomia e não entraram na seleção.` : '';
+      const eligible = Number(curriculum?.diagnostics?.candidateCount ?? totalAvailable ?? count) || 0;
+      const coverageLabel = objectives.length
+        ? `${covered} de ${objectives.length} tópicos com relação lexical estimada`
+        : videoIndex?.topics?.length
+          ? 'Tópicos do índice desta videoaula foram usados na seleção; nenhum objetivo curricular explícito foi identificado.'
+          : 'A aula foi indexada, mas a taxonomia não identificou objetivos curriculares para cobertura.';
+      const shortage = eligible < filters.limit ? `<br>O banco tem ${eligible} questão(ões) elegível(is) para estes filtros; foram selecionadas ${count}.` : `<br>${count} selecionada(s) de ${eligible} questão(ões) elegível(is).`;
+      coverageEl.innerHTML = `${esc(coverageLabel)}${shortage}${evidenceNote}${lowConfidenceNote}${confidenceBasisNote}${unmappedNote}`;
+    }
+    if (topicsEl) topicsEl.innerHTML = objectives.map(topic => {
+      const state = topic.relation === 'direct' ? `${topic.directCount} direta(s)` : topic.relation === 'partial' ? `${topic.partialCount} parcial(is)` : 'sem questão';
+      return `<div class="ac2-q-topic"><span>${esc(topic.name)}</span><strong>${esc(state)}</strong></div>`;
+    }).join('');
+    window._questoesTemaAtual = { tema: cleanTema, disc: v.disc, modulo, questions, bancoCount, iaCount,
+      curriculum, videoIndex, smart, filters };
+    if (btn) { btn.disabled = !count; btn.style.opacity = count ? '' : '.55'; btn.title = count ? 'Questões selecionadas para esta videoaula' : 'Nenhuma questão do banco corresponde a esta aula ainda'; }
+    if (emptyState) emptyState.style.display = count ? 'none' : 'block';
+    return window._questoesTemaAtual;
+  }).catch(() => {
+    if (requestId !== window._ac2QuestionRequest || (vid && AC2.atualId !== vid)) return;
+    $('ac2-q-coverage')?.removeAttribute('aria-busy');
+    const coverageEl = $('ac2-q-coverage'); if (coverageEl) coverageEl.textContent = 'Não foi possível consultar a seleção agora. Tente novamente.';
+    if (actionEl) actionEl.textContent = 'Tentar novamente';
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    if (emptyState) emptyState.style.display = 'block';
+    return null;
+  });
+
 }
 
-window.ac2PraticarQuestoesTema = function() {
-  const cache = window._questoesTemaAtual;
-  const tema = (cache && cache.tema) || $('ac2-praticar-tema')?.textContent || 'Tema da Aula';
-  const disc = (cache && cache.disc) || $('ac2-disc')?.textContent || 'Clínica Médica';
-  iniciarSimuladoDoTema(tema, disc, (cache && cache.questions) || [], cache?.modulo || '', cache?.smart ? {
-    smart: true, curriculum: cache.curriculum, mode: cache.filters?.mode,
-    lessonVideoId: cache.videoIndex?.resourceKey?.startsWith('video:') ? cache.videoIndex.resourceKey.slice(6) : ''
-  } : null);
+async function ac2SolicitarIndiceVideo(video, requestId) {
+  const statusLabel = state => state === 'media_processing' ? 'Preparando a mídia enviada ao Gemini…'
+    : state === 'analyzing' ? 'Analisando o conteúdo desta videoaula…'
+      : state === 'starting_analysis' ? 'Iniciando a análise desta videoaula…'
+      : state === 'uploading' ? 'Enviando esta videoaula ao Gemini…' : 'Indexando esta videoaula…';
+  const updateStatus = state => {
+    if (AC2?.atualId !== video.id || requestId !== window._ac2QuestionRequest) return;
+    const coverage = $('ac2-q-coverage');
+    if (coverage) coverage.textContent = `${statusLabel(state)} O processamento fica limitado a esta aula e será reutilizado quando concluído.`;
+  };
+  const start = await fetch('/api/isc/video-index/request', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: video.id })
+  });
+  const initial = await start.json().catch(() => ({}));
+  if (!start.ok || !initial.success) throw new Error(initial.msg || 'Não foi possível solicitar o índice desta videoaula.');
+  if (initial.state === 'completed') return initial.videoIndex;
+  if (!initial.jobId) throw new Error('O servidor não devolveu o identificador do processamento.');
+
+  updateStatus(initial.state);
+  for (let attempt = 0; attempt < 24; attempt++) {
+    if (AC2?.atualId !== video.id || requestId !== window._ac2QuestionRequest) return null;
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    const response = await fetch(`/api/isc/video-index/jobs/${encodeURIComponent(initial.jobId)}`, { cache: 'no-store' });
+    const status = await response.json().catch(() => ({}));
+    if (!response.ok || !status.success) throw new Error(status.msg || 'Não foi possível consultar o processamento da videoaula.');
+    if (status.state === 'completed') return status.videoIndex;
+    if (status.state === 'failed') throw new Error(status.msg || 'A indexação desta videoaula falhou. Tente novamente.');
+    updateStatus(status.state);
+  }
+  throw new Error('A indexação continua no servidor. Clique novamente mais tarde para verificar e buscar as questões.');
+}
+
+window.ac2PraticarQuestoesTema = async function() {
+  if (window._ac2IndexRequestBusy) return;
+  const video = AC2?.indice?.get(AC2?.atualId);
+  if (!video?.id) { toast('Selecione uma videoaula antes de buscar questões.', 'warning'); return; }
+  window._ac2IndexRequestBusy = true;
+  const button = $('ac2-btn-praticar');
+  if (button) { button.disabled = true; button.setAttribute('aria-busy', 'true'); }
+  const requestId = window._ac2QuestionRequest = (window._ac2QuestionRequest || 0) + 1;
+  const action = $('ac2-praticar-acao');
+  const count = $('ac2-praticar-qtd');
+  const coverage = $('ac2-q-coverage');
+  if (action) action.textContent = 'Gerando índice…';
+  if (count) count.textContent = '';
+  if (coverage) { coverage.setAttribute('aria-busy', 'true'); coverage.textContent = 'Somente esta videoaula será enviada ao Gemini para análise. O consumo depende do plano da chave configurada.'; }
+  try {
+    const videoIndex = await ac2SolicitarIndiceVideo(video, requestId);
+    if (!videoIndex || AC2?.atualId !== video.id || requestId !== window._ac2QuestionRequest) return;
+    if (videoIndex.evidenceMode !== 'indexed_content' || !videoIndex.topics?.length) {
+      throw new Error(videoIndex.limitations?.[0] || 'A análise não encontrou tópicos curriculares suficientes nesta videoaula.');
+    }
+    const selectionPromise = ac2AtualizarBotaoPraticar(video, { search: true, videoIndex });
+    const selectionRequestId = window._ac2QuestionRequest;
+    const selection = await selectionPromise;
+    if (!selection || AC2?.atualId !== video.id || selectionRequestId !== window._ac2QuestionRequest) return;
+    if (!selection.questions?.length) {
+      toast('O índice foi salvo, mas não há questões elegíveis para estes filtros.', 'info');
+      return;
+    }
+    iniciarSimuladoDoTema(selection.tema, selection.disc, selection.questions, selection.modulo, {
+      smart: true, curriculum: selection.curriculum, mode: selection.filters?.mode,
+      lessonVideoId: video.id
+    });
+  } catch (error) {
+    if (AC2?.atualId === video.id) {
+      if (coverage) coverage.textContent = error.message || 'Não foi possível gerar o índice desta videoaula.';
+      if (action) action.textContent = 'Tentar novamente';
+      toast(error.message || 'Não foi possível buscar questões para esta videoaula.', 'warning');
+    }
+  } finally {
+    window._ac2IndexRequestBusy = false;
+    if (button) { button.removeAttribute('aria-busy'); if (AC2?.atualId === video.id) { button.disabled = false; button.style.opacity = ''; } }
+    coverage?.removeAttribute('aria-busy');
+  }
 };
 
 window.ac2AbrirFlashcards = function() {

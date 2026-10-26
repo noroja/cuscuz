@@ -1943,7 +1943,7 @@ const handleQuestionMatch = async (req, res) => {
     const modulo = String(input.modulo || input.curso || '').slice(0, 200);
     const limit = Math.max(1, Math.min(60, parseInt(input.limit, 10) || (smart ? 10 : 40)));
     const bank = readQuestionsBank();
-    const topics = smart && Array.isArray(input.topics) ? input.topics.slice(0, 30).filter(topic =>
+    const topics = smart && Array.isArray(input.topics) ? input.topics.slice(0, 120).filter(topic =>
       topic && typeof topic.name === 'string' && topic.name.length <= 200 && (!topic.topicId || String(topic.topicId).length <= 180))
       .map(topic => ({
         topicId: topic.topicId ? String(topic.topicId).slice(0, 180) : '', name: topic.name.trim(),
@@ -4186,7 +4186,26 @@ registerAula(app, {
 });
 registerAcervoSemantic(app, { getCatalog: () => CAT, supabase, supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY });
 registerIscRoutes(app, { getCatalog: () => CAT, supabase, supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-  enabled: process.env.ISC_ENABLED === '1' });
+  enabled: process.env.ISC_ENABLED === '1',
+  getVideoMediaInfo: async fileId => {
+    const id = cleanDriveId(fileId);
+    if (!id) throw Object.assign(new Error('ID de vídeo do Drive inválido.'), { status: 400, code: 'invalid_media' });
+    const response = await driveFetchWithRetry(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=id,size,videoMediaMetadata,mimeType,modifiedTime,md5Checksum,version&supportsAllDrives=true`, { signal: AbortSignal.timeout(15000) });
+    const file = await response.json();
+    const sizeBytes = Number.parseInt(file.size || '0', 10);
+    const durationMs = Number.parseInt(file.videoMediaMetadata?.durationMillis || '0', 10);
+    return {
+      sizeBytes, mimeType: /^video\//i.test(file.mimeType || '') ? file.mimeType : 'video/mp4',
+      durationSeconds: durationMs > 0 ? durationMs / 1000 : null,
+      sourceHash: String(file.md5Checksum || ''), version: String(file.version || ''), modifiedTime: String(file.modifiedTime || '')
+    };
+  },
+  openVideoMedia: async fileId => {
+    const id = cleanDriveId(fileId);
+    if (!id) throw Object.assign(new Error('ID de vídeo do Drive inválido.'), { status: 400, code: 'invalid_media' });
+    return driveFetchWithRetry(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`, { signal: AbortSignal.timeout(270000) });
+  }
+});
 
 // Mentor IA acadêmico (Faculdade + Residência) — rotas novas em /api/planner/v3/*
 registerPlannerV3(app, {
