@@ -806,9 +806,11 @@ async function medreaderCarregarMateriaisDaAula(aula) {
   (materiais || []).forEach((m) => {
     const nome = String(m.nome || '');
     const isApostila = m.isHtml === true || /^(html|htm)$/i.test(nome.split('.').pop() || '');
+    const extensaoNome = nome.match(/\.(pdf|html?)$/i)?.[1] || '';
+    const extensaoCorreta = isApostila ? /^html?$/i.test(extensaoNome) : /^pdf$/i.test(extensaoNome);
     const entry = {
       id: m.id,
-      nome: nome.endsWith('.pdf') || nome.endsWith('.html') || nome.endsWith('.htm') ? nome : nome + '.pdf',
+      nome: extensaoCorreta ? nome : nome.replace(/\.(pdf|html?)$/i, '') + (isApostila ? '.html' : '.pdf'),
       sub: 'Material da aula: ' + (m.aulaNome || aula.titulo),
       url: m.url || '',
       isHtml: isApostila,

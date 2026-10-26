@@ -40,9 +40,9 @@ try {
     assert.equal(loc.origin + loc.pathname, `https://www.googleapis.com/drive/v3/files/${ID}`);
     assert.equal(loc.searchParams.get('alt'), 'media'); assert.equal(loc.searchParams.get('access_token'), 'tok-falso-123');
   });
-  await teste('?via=app força o proxy (206, 8 MiB)', async () => {
+  await teste('?via=app força o proxy e preserva o stream progressivo', async () => {
     const r = await g((await tk('v')) + '?via=app', { headers: { Range: 'bytes=0-' } });
-    assert.equal(r.status, 206); assert.equal(Number(r.headers.get('content-length')), 8 * 1024 * 1024); await r.arrayBuffer();
+    assert.equal(r.status, 206); assert.equal(Number(r.headers.get('content-length')), 20 * 1024 * 1024); await r.arrayBuffer();
   });
   await teste('PDF continua pelo proxy (nunca redireciona ao Google)', async () => {
     const r = await g(await tk('p'));

@@ -24,7 +24,7 @@ const fakeGem = http.createServer((req, res) => { const p = []; req.on('data', d
     if (req.url === '/upload/v1beta/files') { capDed.push({ passo: 'start', h: req.headers, corpo: Buffer.concat(p).toString() }); res.writeHead(200, { 'x-goog-upload-url': `http://127.0.0.1:${porta}/upload-dados/1` }); return res.end('{}'); }
     if (req.url === '/upload-dados/1') { capDed.push({ passo: 'dados', h: req.headers, bytes: Buffer.concat(p).length }); res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ file: { uri: 'https://files.fake/abc', name: 'files/abc' } })); }
     if (req.url === '/v1beta/interactions') { const corpo = JSON.parse(Buffer.concat(p).toString()); capDed.push({ passo: 'interactions', corpo, key: req.headers['x-goog-api-key'] });
-      const ts = !!(corpo.generation_config.transcription_config.timestamp_granularities);
+      const ts = !!(corpo.generation_config.transcription_config.mode.timestamp_granularities);
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(JSON.stringify({ output_text: 'Olá turma. Hoje vemos sepse.', steps: ts ? [{ content: [{ annotations: [{ type: 'word_info', text: 'Olá', start_offset: '0.0s', end_offset: '0.4s' }, { type: 'word_info', text: 'turma.', start_offset: '0.4s', end_offset: '1.1s' }, { type: 'word_info', text: 'Hoje', start_offset: '1.5s', end_offset: '1.8s' }, { type: 'word_info', text: 'vemos', start_offset: '1.8s', end_offset: '2.1s' }, { type: 'word_info', text: 'sepse.', start_offset: '2.1s', end_offset: '2.6s' }] }] }] : [] })); }
   }
@@ -70,16 +70,22 @@ await teste('promptWhisper: glossário antes, ponta do trecho anterior por últi
 });
 await teste('/transcrever envia o trecho anterior no prompt do Whisper', async () => {
   limpa(); process.env.GROQ_API_KEY = 'gsk_x';
-  const audio = Buffer.alloc(5000, 1).toString('base64');
+  const bufferAudio = Buffer.alloc(5000, 1); bufferAudio.set([0x1a, 0x45, 0xdf, 0xa3]); const audio = bufferAudio.toString('base64');
   const r = await fetch(B + '/api/aula/transcrever', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ audio, mime: 'audio/webm', disciplina: 'Clínica', tema: 'Sepse', anterior: 'o paciente evoluiu com hipotensão refratária', glossario: ['lactato'] }) });
   assert.equal(r.status, 200); const j = await r.json(); assert.equal(j.success, true);
   const c = capt.find(x => x.url.endsWith('/audio/transcriptions'));
   assert.ok(c, 'chamada ao Whisper simulado'); assert.ok(c.corpo.includes('hipotensão refratária') || c.corpo.includes('hipotens'), 'prompt deve conter o fim do trecho anterior');
   assert.ok(c.corpo.includes('lactato'));
 });
+await teste('/transcrever recusa assinatura de mídia diferente do MIME', async () => {
+  limpa(); process.env.GROQ_API_KEY = 'gsk_x';
+  const arquivoFalso = Buffer.alloc(5000, 1).toString('base64');
+  const r = await fetch(B + '/api/aula/transcrever', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ audio: arquivoFalso, mime: 'audio/webm' }) });
+  assert.equal(r.status, 415);
+});
 
-const audioB64 = Buffer.alloc(5000, 1).toString('base64');
-const trans = () => fetch(B + '/api/aula/transcrever', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ audio: audioB64, mime: 'audio/webm;codecs=opus', disciplina: 'Cardio' }) }).then(async r => ({ status: r.status, j: await r.json() }));
+const bufferAudioB64 = Buffer.alloc(5000, 1); bufferAudioB64.set([0x1a, 0x45, 0xdf, 0xa3]); const audioB64 = bufferAudioB64.toString('base64');
+const trans = () => fetch(B + '/api/aula/transcrever', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ audio: audioB64, mime: 'audio/webm;codecs=opus', disciplina: 'Cardio', glossario: ['lactato'] }) }).then(async r => ({ status: r.status, j: await r.json() }));
 await teste('transcrição: só Gemini → usa o Gemini com o áudio inline, sem segmentos', async () => {
   limpa(); process.env.GEMINI_API_KEY = 'g'; capGem.length = 0;
   const { status, j } = await trans(); assert.equal(status, 200); assert.equal(j.texto, 'texto do gemini'); assert.deepEqual(j.segmentos, []);
@@ -97,7 +103,7 @@ await teste('transcrição: Groq ok → não chama o Gemini (segmentos preservad
   const { j } = await trans(); assert.equal(capGem.length, 0); assert.equal(j.segmentos.length, 1);
 });
 await teste('transcrição: Groq falha e sem Gemini → erro (sem reserva)', async () => {
-  limpa(); process.env.GROQ_API_KEY = 'gsk_x'; groqFalha = 429; const { status } = await trans(); groqFalha = 0; assert.ok(status >= 400);
+  limpa(); process.env.GROQ_API_KEY = 'gsk_x'; groqFalha = 429; const { status } = await trans(); groqFalha = 0; assert.equal(status, 429, 'a API deve preservar rate limit para backoff do cliente');
 });
 
 await teste('transcrição Gemini dedicada: upload (Files API) + /interactions com áudio, modo verbatim e sem marcas de tempo por padrão', async () => {
@@ -105,18 +111,18 @@ await teste('transcrição Gemini dedicada: upload (Files API) + /interactions c
   try { const { status, j } = await trans(); assert.equal(status, 200); assert.equal(j.texto, 'Olá turma. Hoje vemos sepse.'); assert.deepEqual(j.segmentos, []);
     assert.deepEqual(capDed.map(x => x.passo), ['start', 'dados', 'interactions']); assert.equal(capDed[0].h['x-goog-upload-command'], 'start'); assert.equal(capDed[1].h['x-goog-upload-command'], 'upload, finalize'); assert.equal(capDed[1].bytes, 5000);
     const i = capDed[2]; assert.equal(i.key, 'g'); assert.equal(i.corpo.model, 'gemini-3.5-transcribe'); assert.deepEqual(i.corpo.input[0], { type: 'audio', uri: 'https://files.fake/abc', mime_type: 'audio/webm' });
-    assert.equal(i.corpo.generation_config.transcription_config.mode.type, 'verbatim'); assert.equal(capGem.length, 0, 'não deve cair no generateContent'); }
+    assert.equal(i.corpo.generation_config.transcription_config.mode.type, 'verbatim'); assert.deepEqual(i.corpo.generation_config.transcription_config.language_codes, ['pt-BR']); assert.deepEqual(i.corpo.generation_config.transcription_config.custom_vocabulary, ['lactato']); assert.equal(capGem.length, 0, 'não deve cair no generateContent'); }
   finally { gemDedicado = false; }
 });
 await teste('transcrição Gemini dedicada com GEMINI_STT_TIMESTAMPS=1: palavras viram segmentos para o karaokê', async () => {
-  limpa(); process.env.GEMINI_API_KEY = 'g'; process.env.GEMINI_STT_TIMESTAMPS = '1'; gemDedicado = true;
-  try { const { j } = await trans(); assert.equal(j.segmentos.length, 2); assert.deepEqual(j.segmentos[0], { ini: 0, fim: 1.1, text: 'Olá turma.' }); assert.equal(j.segmentos[1].text, 'Hoje vemos sepse.'); }
+  limpa(); process.env.GEMINI_API_KEY = 'g'; process.env.GEMINI_STT_TIMESTAMPS = '1'; gemDedicado = true; capDed.length = 0;
+  try { const { j } = await trans(); assert.equal(j.segmentos.length, 2); assert.deepEqual(j.segmentos[0], { ini: 0, fim: 1.1, text: 'Olá turma.' }); assert.equal(j.segmentos[1].text, 'Hoje vemos sepse.'); assert.equal(capDed[2].corpo.generation_config.transcription_config.custom_vocabulary, undefined, 'vocabulário não pode ser combinado com timestamp granular'); }
   finally { gemDedicado = false; delete process.env.GEMINI_STT_TIMESTAMPS; }
 });
 await teste('upload de áudio longo: URL assinada, Gemini dedicado sem timestamps e remoção temporária', async () => {
   limpa(); process.env.GROQ_API_KEY = 'gsk_x'; process.env.GEMINI_API_KEY = 'g'; process.env.AI_PROVIDER = 'auto';
   gemDedicado = true; capDed.length = 0;
-  const audio = Buffer.alloc(4 * 1024 * 1024, 7), removidos = [], buckets = [];
+  const audio = Buffer.alloc(4 * 1024 * 1024, 7), removidos = [], buckets = []; audio.write('ID3', 0, 'ascii');
   const storage = { storage: {
     listBuckets: async () => ({ data: [], error: null }),
     createBucket: async (name, options) => { buckets.push({ name, options }); return { error: null }; },
@@ -135,11 +141,15 @@ await teste('upload de áudio longo: URL assinada, Gemini dedicado sem timestamp
     const info = await upload.json(); assert.equal(upload.status, 200); assert.equal(info.success, true); assert.match(info.path, /^aluno\/[0-9a-f-]{36}\.mp3$/); assert.equal(info.bucket, 'aula-audio');
     assert.equal(buckets[0].options.public, false); assert.equal(buckets[0].options.fileSizeLimit, '50MB');
     const antes = capt.filter(x => x.url.endsWith('/audio/transcriptions')).length;
-    const r = await fetch(url + '/transcrever', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: info.path, mime: 'audio/mpeg', duracao: 3600, disciplina: 'Clínica' }) });
+    const r = await fetch(url + '/transcrever', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: info.path, bytes: audio.length, mime: 'audio/mpeg', duracao: 3600, disciplina: 'Clínica', glossario: ['norepinefrina'] }) });
     const j = await r.json(); assert.equal(r.status, 200); assert.equal(j.texto, 'Olá turma. Hoje vemos sepse.');
     assert.equal(capt.filter(x => x.url.endsWith('/audio/transcriptions')).length, antes, 'arquivo acima do limite da Groq usa Gemini');
-    assert.equal(capDed[1].bytes, audio.length); assert.equal(capDed[2].corpo.generation_config.transcription_config.mode.timestamp_granularities, undefined, 'aula de 1 hora não pede timestamps incompatíveis');
+    assert.equal(capDed[1].bytes, audio.length); assert.equal(capDed[2].corpo.generation_config.transcription_config.mode.timestamp_granularities, undefined, 'aula de 1 hora não pede timestamps incompatíveis'); assert.deepEqual(capDed[2].corpo.generation_config.transcription_config.custom_vocabulary, ['norepinefrina']);
     assert.deepEqual(removidos, [info.path], 'o arquivo temporário deve ser removido depois da transcrição');
+    const incompleto = await fetch(url + '/transcrever', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: info.path, bytes: audio.length - 1, mime: 'audio/mpeg', duracao: 3600 }) });
+    assert.equal(incompleto.status, 422, 'tamanho recebido deve ser comparado ao declarado pelo navegador');
+    const mimeFalso = await fetch(url + '/transcrever', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: info.path, bytes: audio.length, mime: 'audio/wav', duracao: 3600 }) });
+    assert.equal(mimeFalso.status, 415, 'assinatura do arquivo deve corresponder ao MIME informado');
     const grande = await fetch(url + '/upload-url', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bytes: 50_000_001, mime: 'audio/mpeg' }) });
     assert.equal(grande.status, 413);
   } finally { gemDedicado = false; srvUpload.close(); }

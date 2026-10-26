@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "nodes": [
+    { "id": "isc.discipline.cardiologia", "kind": "discipline", "parentId": null, "name": "Cardiologia", "synonyms": ["cardio"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.discipline.gastroenterologia", "kind": "discipline", "parentId": null, "name": "Gastroenterologia", "synonyms": ["gastro"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.discipline.cirurgia-geral", "kind": "discipline", "parentId": null, "name": "Cirurgia Geral", "synonyms": ["cirurgia"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.discipline.emergencia", "kind": "discipline", "parentId": null, "name": "Medicina de Emergência", "synonyms": ["emergência", "medicina de urgência", "urgência e emergência"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.discipline.clinica-medica", "kind": "discipline", "parentId": null, "name": "Clínica Médica", "synonyms": ["clínica", "medicina interna"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.discipline.pneumologia", "kind": "discipline", "parentId": null, "name": "Pneumologia", "synonyms": ["pneumo"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.discipline.infectologia", "kind": "discipline", "parentId": null, "name": "Infectologia", "synonyms": ["doenças infecciosas", "infecto"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.discipline.neurologia", "kind": "discipline", "parentId": null, "name": "Neurologia", "synonyms": ["neuro"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.discipline.nefrologia", "kind": "discipline", "parentId": null, "name": "Nefrologia", "synonyms": ["nefro"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.discipline.ginecologia-obstetricia", "kind": "discipline", "parentId": null, "name": "Ginecologia e Obstetrícia", "synonyms": ["ginecologia", "obstetrícia", "go"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.discipline.pediatria", "kind": "discipline", "parentId": null, "name": "Pediatria", "synonyms": ["pediátrica", "pediátrico"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.discipline.ortopedia", "kind": "discipline", "parentId": null, "name": "Ortopedia e Traumatologia", "synonyms": ["ortopedia", "traumatologia"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.discipline.psiquiatria", "kind": "discipline", "parentId": null, "name": "Psiquiatria", "synonyms": ["psiquiátrica", "psiquiátrico"], "origin": "curated", "canonical": true, "confidence": 1 },
+
+    { "id": "isc.subject.cardiologia.insuficiencia-cardiaca", "kind": "subject", "parentId": "isc.discipline.cardiologia", "name": "Insuficiência cardíaca", "synonyms": ["insuficiência cardíaca congestiva", "síndrome de insuficiência cardíaca", "heart failure"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.subtopic.cardiologia.icfer", "kind": "subtopic", "parentId": "isc.subject.cardiologia.insuficiencia-cardiaca", "name": "Insuficiência cardíaca com fração de ejeção reduzida", "synonyms": ["ICFER", "HFrEF", "IC com fração de ejeção reduzida"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.subtopic.cardiologia.icfep", "kind": "subtopic", "parentId": "isc.subject.cardiologia.insuficiencia-cardiaca", "name": "Insuficiência cardíaca com fração de ejeção preservada", "synonyms": ["ICFEP", "HFpEF", "IC com fração de ejeção preservada"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.subject.cardiologia.arritmias", "kind": "subject", "parentId": "isc.discipline.cardiologia", "name": "Arritmias cardíacas", "synonyms": ["arritmia cardíaca", "arritmias"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.subject.cardiologia.sindrome-coronariana-aguda", "kind": "subject", "parentId": "isc.discipline.cardiologia", "name": "Síndrome coronariana aguda", "synonyms": ["SCA", "síndromes coronarianas agudas"], "origin": "curated", "canonical": true, "confidence": 1 },
+
+    { "id": "isc.subject.gastroenterologia.drge", "kind": "subject", "parentId": "isc.discipline.gastroenterologia", "name": "Doença do refluxo gastroesofágico", "synonyms": ["DRGE", "refluxo gastroesofágico", "doença do refluxo"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.subject.gastroenterologia.esofagites", "kind": "subject", "parentId": "isc.discipline.gastroenterologia", "name": "Esofagites", "synonyms": ["esofagite", "esofagites não pépticas"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.subject.gastroenterologia.hemorragia-digestiva", "kind": "subject", "parentId": "isc.discipline.gastroenterologia", "name": "Hemorragia digestiva", "synonyms": ["sangramento gastrointestinal", "hemorragia gastrointestinal", "HDA", "HDB"], "origin": "curated", "canonical": true, "confidence": 1 },
+
+    { "id": "isc.subject.cirurgia-geral.avaliacao-inicial-trauma", "kind": "subject", "parentId": "isc.discipline.cirurgia-geral", "name": "Avaliação inicial do trauma", "synonyms": ["atendimento inicial ao trauma", "avaliação primária do trauma", "ABCDE do trauma", "ATLS"], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.subject.emergencia.parada-cardiorrespiratoria", "kind": "subject", "parentId": "isc.discipline.emergencia", "name": "Parada cardiorrespiratória", "synonyms": ["parada cardíaca", "PCR em emergência"], "origin": "curated", "canonical": true, "confidence": 1 },
+
+    { "id": "isc.objective.cardiologia.ic.fisiopatologia", "kind": "learning_objective", "parentId": "isc.subject.cardiologia.insuficiencia-cardiaca", "name": "Explicar os mecanismos fisiopatológicos da insuficiência cardíaca", "synonyms": [], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.objective.cardiologia.ic.fenotipos", "kind": "learning_objective", "parentId": "isc.subject.cardiologia.insuficiencia-cardiaca", "name": "Diferenciar os fenótipos de insuficiência cardíaca pela fração de ejeção", "synonyms": [], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.objective.gastroenterologia.drge.mecanismo", "kind": "learning_objective", "parentId": "isc.subject.gastroenterologia.drge", "name": "Relacionar os mecanismos do refluxo gastroesofágico às manifestações clínicas", "synonyms": [], "origin": "curated", "canonical": true, "confidence": 1 },
+    { "id": "isc.objective.cirurgia.trauma.abcde", "kind": "learning_objective", "parentId": "isc.subject.cirurgia-geral.avaliacao-inicial-trauma", "name": "Organizar a avaliação inicial do trauma segundo a sequência ABCDE", "synonyms": [], "origin": "curated", "canonical": true, "confidence": 1 }
+  ]
+}

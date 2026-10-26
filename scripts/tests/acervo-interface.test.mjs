@@ -3,6 +3,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import * as cheerio from 'cheerio';
 const html=fs.readFileSync(new URL('../../index.html',import.meta.url),'utf8');
+const server=fs.readFileSync(new URL('../../server.js',import.meta.url),'utf8');
 const dom=cheerio.load(html);
 // Parse every executable inline script to catch malformed generated markup edits.
 dom('script:not([src])').each((_i,el)=>{if(!dom(el).attr('type')||dom(el).attr('type')==='text/javascript')new vm.Script(dom(el).html());});
@@ -11,6 +12,17 @@ assert.equal(dom('#ac2-progt').attr('onclick'),undefined,'Resumo sem ação não
 assert.equal(dom('#ac2-vol-slider').attr('aria-label'),'Volume da videoaula');
 assert.equal(dom('#ac2-views').length,0,'Não exibir visualizações inventadas');
 assert.ok(!html.includes('ac2CalcularLikes')&&!html.includes('ac2CalcularViews'));
+assert.equal(dom('script[src="/js/vendor/mpegts.js"]').length,1,'Carregar o transmuxer local para aulas MPEG-TS');
+assert.match(html,/info\.container === 'mpegts'/,'Detectar o formato real antes de escolher o player');
+assert.match(html,/lazyLoad:\s*true/,'Limitar o pré-carregamento do stream MPEG-TS');
+assert.match(html,/lazyLoadMaxDuration:\s*60/,'Limitar o buffer futuro a 60 segundos');
+assert.match(html,/lazyLoadRecoverDuration:\s*20/,'Retomar o stream com 20 segundos restantes');
+assert.match(html,/autoCleanupMaxBackwardDuration:\s*90/,'Limitar o buffer antigo do player');
+assert.match(html,/autoCleanupMinBackwardDuration:\s*45/,'Preservar uma janela de retorno de 45 segundos');
+assert.match(html,/function ac2MpegtsCanSeek\(/,'Restringir a busca ao trecho já carregado no player MPEG-TS');
+assert.match(html,/nv\._ac2Mpegts = true;\s*if \(recovery\) recovery\.hidden = true;/,'Limpar mensagens antigas de erro ao iniciar o player MPEG-TS');
+assert.match(server,/const catalogoBootPromise = inicializarCatalogoNuvem\(\)\.then\(\(\) => initSnapshotIndex\(\)\);/,'Manter a promessa de carga do catálogo disponível durante o cold start');
+assert.match(server,/app\.get\('\/acervo-manifest\.json',[\s\S]*?await catalogoBootPromise;[\s\S]*?const ex = lerExtra\(\);/,'Esperar o catálogo inicial antes de responder o manifesto do acervo');
 const helper=html.slice(html.indexOf('function ac2StatusMensagem('),html.indexOf('/* Atualização por evento do Drive;'));
 let calls=0,finish;
 const ctx={Intl,ac2Atualizar:()=>{calls++;return new Promise(resolve=>{finish=resolve})}};

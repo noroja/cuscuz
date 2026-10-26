@@ -17,6 +17,7 @@
 <meta property="og:title" content="Cuscuz-MED">
 <meta property="og:description" content="Planejador de estudos médicos, cronograma inteligente, acervo completo de videoaulas, flashcards SRS e simulados.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif&display=swap" rel="stylesheet">
+<script defer src="/js/vendor/mpegts.js"></script>
 <script src="/js/pdf-links.js"></script>
 <script>
 /* Auth da API: anexa o token em /api/* e volta ao login se o servidor responder 401 */
@@ -2501,18 +2502,29 @@ mark.exam-highlight {
             </div>
 
             <div id="mat-content-questoes" class="ac2-mat-content active" role="tabpanel" tabindex="0" aria-labelledby="mat-tab-questoes">
-              <div style="padding:18px 8px 10px">
+              <div class="ac2-smart-questions" style="padding:18px 8px 10px">
                 <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:16px">
                   <i class="ph ph-target" aria-hidden="true" style="font-size:22px;color:var(--cyan);margin-top:2px"></i>
-                  <div><strong style="display:block;color:var(--text-primary);font-size:15px;margin-bottom:4px">Pratique o conteúdo desta aula</strong><span style="color:var(--text-secondary);font-size:13px;line-height:1.5">Questões relacionadas ao tema, selecionadas do banco disponível.</span></div>
+                  <div><strong style="display:block;color:var(--text-primary);font-size:15px;margin-bottom:4px">Pratique os objetivos desta aula</strong><span style="color:var(--text-secondary);font-size:13px;line-height:1.5">Seleção por tópicos disponíveis, evidência no enunciado e diversidade. Quando o vídeo não tem transcrição indexada, a relação é preliminar por metadados.</span></div>
                 </div>
+                <div class="ac2-smart-controls" aria-label="Configuração do treino por videoaula">
+                  <label>Questões<select id="ac2-q-count" data-ac2-smart-filter aria-label="Quantidade de questões"><option>5</option><option selected>10</option><option>15</option><option>20</option></select></label>
+                  <label>Modo<select id="ac2-q-mode" data-ac2-smart-filter aria-label="Modo de estudo"><option value="review">Revisão equilibrada</option><option value="fixation">Fixação</option><option value="proof">Prova</option><option value="reinforcement">Reforço dos erros</option></select></label>
+                  <label>Dificuldade<select id="ac2-q-difficulty" data-ac2-smart-filter aria-label="Dificuldade das questões"><option value="all">Todas</option><option value="easy">Fácil</option><option value="medium">Média</option><option value="hard">Difícil</option></select></label>
+                </div>
+                <div class="ac2-smart-options">
+                  <label><input type="checkbox" id="ac2-q-unanswered" data-ac2-smart-filter> Excluir questões já respondidas</label>
+                  <label><input type="checkbox" id="ac2-q-complementary" data-ac2-smart-filter checked> Incluir questões complementares</label>
+                </div>
+                <div id="ac2-q-coverage" class="ac2-q-coverage" role="status" aria-live="polite" aria-atomic="true">A indexação completa e a busca começam somente quando você solicitar. O índice concluído será reutilizado.</div>
+                <div id="ac2-q-topics" class="ac2-q-topics" aria-live="polite"></div>
                 <div class="ac2-praticar-wrap" id="ac2-praticar-wrap" style="display:none">
-                  <button class="btn-praticar-questoes-tema" id="ac2-btn-praticar" onclick="ac2PraticarQuestoesTema()" title="Praticar questões selecionadas sobre este tema" aria-label="Praticar questões selecionadas sobre este tema">
+                  <button class="btn-praticar-questoes-tema" id="ac2-btn-praticar" onclick="ac2PraticarQuestoesTema()" title="Gerar o índice desta videoaula e buscar questões relacionadas" aria-label="Gerar o índice desta videoaula e buscar questões relacionadas">
                     <span class="praticar-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg></span>
-                    <span class="praticar-text">Praticar questões: <strong id="ac2-praticar-tema">Tema da Aula</strong> (<span id="ac2-praticar-qtd">80</span>)</span>
+                    <span class="praticar-text"><span id="ac2-praticar-acao">Gerar índice e buscar questões</span> · <strong id="ac2-praticar-tema">esta videoaula</strong> · <span id="ac2-praticar-qtd">sob demanda</span></span>
                   </button>
                 </div>
-                <div id="ac2-questoes-empty" style="display:none;margin-top:12px;padding:12px 14px;border-left:2px solid var(--border-muted);color:var(--text-muted);font-size:12.5px;line-height:1.5">Ainda não encontramos questões relacionadas a este tema no banco disponível.</div>
+                <div id="ac2-questoes-empty" style="display:none;margin-top:12px;padding:12px 14px;border-left:2px solid var(--border-muted);color:var(--text-muted);font-size:12.5px;line-height:1.5">Não há questões elegíveis com esses filtros. Tente outra dificuldade ou modo.</div>
               </div>
             </div>
 
@@ -8273,6 +8285,40 @@ function finishSim() {
     if (r.ans[i] === q.ans) porEspec[sp].acertos++;
   });
 
+  r.qs.forEach((q, i) => {
+    if (r.ans[i] < 0) return;
+    const id = String(q.id || ''); if (!id) return;
+    const record = { selectedIndex: r.ans[i], isCorrect: r.ans[i] === q.ans, answeredAt: new Date().toISOString(), source: r.curriculum ? 'smart-questions' : 'simulado' };
+    if (r.lessonVideoId) record.lessonVideoId = r.lessonVideoId;
+    BANK_ANSWERS[id] = record;
+    if (!record.isCorrect) WRONG.add(q.statement || q.q);
+  });
+  lsSet('cuscuz_exam_answers', BANK_ANSWERS);
+  lsSet('acv_wrong', [...WRONG]);
+  try { saveCloud(); } catch (_) {}
+
+  const objectivePerformance = new Map();
+  for (let index = 0; index < r.qs.length; index++) {
+    if (r.ans[index] < 0) continue;
+    const question = r.qs[index];
+    for (const relation of question.curriculumMatch?.relations || []) {
+      if (relation.relation === 'none') continue;
+      const stats = objectivePerformance.get(relation.topicId) || { attempted: 0, correct: 0 };
+      stats.attempted++;
+      if (r.ans[index] === question.ans) stats.correct++;
+      objectivePerformance.set(relation.topicId, stats);
+    }
+  }
+  const objectiveFeedback = r.curriculum?.objectives?.length ? `<section style="margin:18px 0;padding:14px 16px;border:1px solid var(--border-subtle);background:var(--bg-surface)">
+    <h3 style="margin:0 0 6px;font-size:15px">Resultado por objetivo</h3>
+    <p style="margin:0 0 8px;color:var(--text-secondary);font-size:12px">Desempenho da amostra deste treino; não estima domínio clínico. Relações com a videoaula podem ser preliminares por metadados.</p>
+    ${r.curriculum.objectives.map(objective => {
+      const stats = objectivePerformance.get(objective.topicId) || { attempted: 0, correct: 0 };
+      const result = stats.attempted >= 3 ? `${stats.correct}/${stats.attempted} corretas` : stats.attempted ? `${stats.correct}/${stats.attempted} · amostra pequena` : 'não avaliado';
+      return `<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border-subtle);font-size:12px"><span>${esc(objective.name)}</span><b style="white-space:nowrap">${esc(result)}</b></div>`;
+    }).join('')}
+  </section>` : '';
+
   SIMS.push({
     d: todayKey(),
     n: total,
@@ -8300,6 +8346,7 @@ function finishSim() {
           Você acertou <b>${s}</b> de <b>${total}</b> questões
         </div>
         <div style="font-size:13px;color:var(--teal);margin-top:6px">${diagnostico}</div>
+        ${objectiveFeedback}
 
         <!-- Detalhamento por Especialidade -->
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:16px;width:100%">
@@ -8335,6 +8382,14 @@ function finishSim() {
             const acertou = r.ans[i] === q.ans;
             const letraCorreta = String.fromCharCode(65 + q.ans);
 
+            const relations = q.curriculumMatch?.relations || [];
+            const directNames = [...new Set(relations.filter(item => item.relation === 'direct').map(item => item.name).filter(Boolean))];
+            const partialNames = [...new Set(relations.filter(item => item.relation === 'partial').map(item => item.name).filter(Boolean))];
+            const evidenceItems = relations.flatMap(item => item.lessonEvidence || []);
+            const lessonEvidence = evidenceItems.find(item => Number.isFinite(item.timestampStart));
+            const sourceEvidence = evidenceItems.find(item => typeof item.excerpt === 'string' && item.excerpt.trim());
+            const evidenceLabel = sourceEvidence ? (/^catalog_/.test(sourceEvidence.sourceKind || '') || sourceEvidence.sourceKind === 'catalog_metadata' ? 'Pista do catálogo' : 'Evidência indexada') : '';
+            const relatedContent = directNames.length || partialNames.length ? `<div style="margin:0 0 12px;padding:9px 10px;border-left:2px solid var(--teal);background:var(--bg-elevated);font-size:12px;color:var(--text-secondary)"><b>Relação estimada com a videoaula:</b>${directNames.length ? `<div>Direta no enunciado/alternativas: ${directNames.map(esc).join(' · ')}</div>` : ''}${partialNames.length ? `<div>Parcial por comentário ou metadados da questão: ${partialNames.map(esc).join(' · ')}</div>` : ''}${sourceEvidence ? `<div><b>${evidenceLabel}:</b> ${esc(sourceEvidence.excerpt)}</div>` : ''}${r.lessonVideoId && lessonEvidence ? ` <button class="btn-outline" type="button" onclick="auladia.abrirTrechoVideo(${esc(JSON.stringify(r.lessonVideoId))},${Number(lessonEvidence.timestampStart)})">Rever ${esc(mmss(lessonEvidence.timestampStart))}</button>` : ''}</div>` : '';
             return `
               <div class="sim-review-card ${acertou ? 'ok' : 'fail'}" data-status="${acertou ? 'acerto' : 'erro'}" style="background:var(--bg-surface);border:1px solid ${acertou ? 'rgba(74,222,128,0.25)' : 'rgba(248,113,113,0.25)'};border-radius:12px;padding:18px 20px">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px">
@@ -8353,6 +8408,7 @@ function finishSim() {
                 <div style="font-size:13.5px;color:var(--text-primary);line-height:1.5;margin-bottom:12px">
                   ${esc(q.statement || q.q)}
                 </div>
+                ${relatedContent}
 
                 <div style="display:flex;flex-direction:column;gap:6px">
                   ${(() => {
@@ -10693,10 +10749,11 @@ function ac2Preencher(curso, disc) {
 }
 
 /* Buffer inteligente (metadados do Drive + pré-carregar a próxima aula) */
-function ac2Info(ids) {
-  const faltam = [...new Set(ids)].filter(id => id && !AC2.infoCache.has(id));
+function ac2Info(ids, detectSelectedContainer = false) {
+  const selectedId = detectSelectedContainer ? ids[0] : null;
+  const faltam = [...new Set(ids)].filter(id => id && (!AC2.infoCache.has(id) || (id === selectedId && !AC2.infoCache.get(id)?.container)));
   const p = faltam.length
-    ? fetch('/api/drive/video-info?ids=' + encodeURIComponent(faltam.join(','))).then(r => r.json())
+    ? fetch('/api/drive/video-info?ids=' + encodeURIComponent(faltam.join(','))).then(r => { if (!r.ok) throw new Error('video-info ' + r.status); return r.json(); })
         .then(d => { Object.entries(d.info || {}).forEach(([id, info]) => AC2.infoCache.set(id, info)); }).catch(() => {})
     : Promise.resolve();
   return p.then(() => ids.map(id => AC2.infoCache.get(id) || null));
@@ -10743,6 +10800,11 @@ function fmtTime(sec) {
 window.ac2TogglePlay = function () {
   const nv = $('ac2-native-video');
   if (!nv) return;
+  if (nv._ac2Mpegts && nv._ac2MpegtsStart) {
+    if (nv.paused) nv._ac2MpegtsStart();
+    else nv.pause();
+    return;
+  }
   if (nv.paused) {
     nv.play().catch(() => {});
   } else {
@@ -10752,8 +10814,14 @@ window.ac2TogglePlay = function () {
 
 window.ac2SeekOffset = function (sec) {
   const nv = $('ac2-native-video');
-  if (!nv || !nv.duration) return;
-  nv.currentTime = Math.max(0, Math.min(nv.duration, nv.currentTime + sec));
+  if (!nv) return;
+  const duration = ac2Duration(nv);
+  const target = Math.max(0, duration ? Math.min(duration, nv.currentTime + sec) : nv.currentTime + sec);
+  if (nv._ac2Mpegts && !ac2MpegtsCanSeek(nv, target)) {
+    toast('Esse trecho ainda não está em buffer. Aguarde carregar ou avance dentro do trecho disponível.', 'info');
+    return;
+  }
+  try { nv.currentTime = target; } catch (_) { return; }
   ac2WakeControls();
 };
 
@@ -10837,10 +10905,24 @@ function ac2WakeControls() {
 }
 
 // Sincronização automática contínua de buffer e timeline
+function ac2Duration(nv) {
+  if (Number.isFinite(nv?.duration) && nv.duration > 0) return nv.duration;
+  const hinted = Number(nv?._ac2Duration || 0);
+  return Number.isFinite(hinted) && hinted > 0 ? hinted : 0;
+}
+
+function ac2MpegtsCanSeek(nv, target) {
+  for (let i = 0; i < nv.buffered.length; i++) {
+    if (target >= nv.buffered.start(i) && target <= nv.buffered.end(i)) return true;
+  }
+  return false;
+}
+
 function ac2SyncBuffer() {
   const nv = $('ac2-native-video');
-  if (!nv || !nv.duration) return;
-  const d = nv.duration;
+  if (!nv) return;
+  const d = ac2Duration(nv);
+  if (!d && !nv._ac2Mpegts) return;
   let bufferedEnd = 0;
   for (let i = 0; i < nv.buffered.length; i++) {
     if (nv.buffered.start(i) <= nv.currentTime && nv.buffered.end(i) >= nv.currentTime) {
@@ -10851,16 +10933,18 @@ function ac2SyncBuffer() {
       bufferedEnd = nv.buffered.end(i);
     }
   }
-  const pct = Math.min(100, Math.round((bufferedEnd / d) * 100));
+  const pct = d ? Math.min(100, Math.round((bufferedEnd / d) * 100)) : 0;
   const bEl = $('ac2-timeline-buffer');
-  if (bEl) bEl.style.width = pct + '%';
+  if (bEl) bEl.style.width = d ? pct + '%' : '0%';
 
   const syncTxt = $('ac2-sync-text');
-  if (syncTxt) syncTxt.textContent = pct >= 98 ? '100% Sincronizado' : `Buffer: ${pct}%`;
+  if (syncTxt) syncTxt.textContent = d ? (pct >= 98 ? '100% Sincronizado' : `Buffer: ${pct}%`) : (nv._ac2Mpegts ? 'MPEG-TS · stream ativo' : 'Buffer em carregamento');
 
   const bStatus = $('ac2-buffer');
   if (bStatus) {
-    bStatus.innerHTML = pct >= 98
+    bStatus.innerHTML = !d && nv._ac2Mpegts
+      ? `<i class="ph ph-play-circle ok"></i> Aula MPEG-TS · carregado até ${fmtTime(bufferedEnd)}`
+      : pct >= 98
       ? '<i class="ph ph-check-circle ok"></i> Buffer 100% sincronizado'
       : `<i class="ph ph-lightning" style="color:var(--teal)"></i> Buffer dinâmico: <b>${pct}%</b> em cache`;
   }
@@ -10868,24 +10952,26 @@ function ac2SyncBuffer() {
 
 function ac2OnTimeUpdate() {
   const nv = $('ac2-native-video');
-  if (!nv || !nv.duration) return;
+  if (!nv || !Number.isFinite(nv.currentTime)) return;
   const cur = nv.currentTime;
-  const d = nv.duration;
-  const pct = Math.min(100, (cur / d) * 100);
+  const d = ac2Duration(nv);
+  const pct = d ? Math.min(100, (cur / d) * 100) : null;
 
   const pEl = $('ac2-timeline-play');
-  if (pEl) pEl.style.width = pct + '%';
+  if (pEl && pct != null) pEl.style.width = pct + '%';
   const hEl = $('ac2-timeline-handle');
-  if (hEl) hEl.style.left = pct + '%';
+  if (hEl && pct != null) hEl.style.left = pct + '%';
 
   const curEl = $('ac2-cur-time');
   if (curEl) curEl.textContent = fmtTime(cur);
+  const durEl = $('ac2-dur-time');
+  if (durEl && d) durEl.textContent = fmtTime(d);
 
   // Sincroniza buffer periodicamente
   ac2SyncBuffer();
 
   // Salva progresso a cada 3 segundos
-  if (AC2.atualId && Math.floor(cur) % 3 === 0) {
+  if (AC2.atualId && !nv._ac2ResumePending && Math.floor(cur) % 3 === 0) {
     lsSet('med_pos_' + AC2.atualId, cur);
   }
 }
@@ -10895,14 +10981,15 @@ function ac2OnLoadedMetadata() {
   if (!nv) return;
   const recovery = $('ac2-recovery'); if (recovery) recovery.hidden = true;
   const dEl = $('ac2-dur-time');
-  if (dEl && nv.duration) dEl.textContent = fmtTime(nv.duration);
+  const duration = ac2Duration(nv);
+  if (dEl && duration) dEl.textContent = fmtTime(duration);
   const durBadge = $('ac2-dur');
-  if (durBadge && nv.duration) durBadge.textContent = Math.round(nv.duration / 60) + ' min';
+  if (durBadge && duration) durBadge.textContent = Math.round(duration / 60) + ' min';
 
   // Retoma de onde o aluno parou
   if (AC2.atualId) {
     const saved = lsGet('med_pos_' + AC2.atualId, 0);
-    if (saved && saved > 5 && saved < (nv.duration - 15)) {
+    if (!nv._ac2Mpegts && saved && saved > 5 && (!duration || saved < (duration - 15))) {
       nv.currentTime = saved;
       toast(`⏱️ Retomando aula de onde você parou: ${fmtTime(saved)}`, 'info');
     }
@@ -10934,7 +11021,7 @@ function ac2InitNativeVideoListeners() {
   const spin = on => { const w = document.querySelector('.ac2-player-wrap'); if (w) w.classList.toggle('ac2-buffering', !!on); };
   const clearStall = () => { clearTimeout(stallT); stallT = null; spin(false); };
   const armStall = () => {
-    if (nv.paused || stallT || !nv._played) return;
+    if (nv._ac2Mpegts || nv.paused || stallT || !nv._played) return;
     spin(true);
     stallT = setTimeout(() => {
       stallT = null;
@@ -10960,6 +11047,7 @@ function ac2InitNativeVideoListeners() {
   });
   nv.addEventListener('error', () => {
     if (nv.getAttribute('data-vid') !== AC2.atualId) return;
+    if (nv._ac2Mpegts) return;
     // Modo direto (DRIVE_DIRECT): se o Google recusar, repete uma vez pelo proxy do app.
     if (nv.src && nv.src.indexOf('/m/') > -1 && nv.src.indexOf('via=app') < 0 && nv._viaAppId !== AC2.atualId) {
       nv._viaAppId = AC2.atualId; const t0 = nv.currentTime || 0;
@@ -10998,13 +11086,20 @@ function ac2InitNativeVideoListeners() {
     const seekTo = (e) => {
       const rect = tWrap.getBoundingClientRect();
       const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      if (nv.duration) {
+      const duration = ac2Duration(nv);
+      if (duration) {
         // Arrastar a barra não dispara uma requisição por pixel: só o último ponto vale (evita lag/travadas)
-        const alvo = pos * nv.duration;
+        const alvo = pos * duration;
+        if (nv._ac2Mpegts && !ac2MpegtsCanSeek(nv, alvo)) {
+          if (e.type === 'mousedown') toast('Esse trecho ainda não está em buffer; avance dentro do trecho disponível.', 'info');
+          return;
+        }
         const fill = $('ac2-timeline-play');
         if (fill) fill.style.width = (pos * 100) + '%';
         clearTimeout(seekTimer);
         seekTimer = setTimeout(() => { try { nv.currentTime = alvo; } catch (_) {} ac2OnTimeUpdate(); }, 140);
+      } else if (nv._ac2Mpegts && e.type === 'mousedown') {
+        toast('A duração deste arquivo não está catalogada; use os botões de 10 segundos para navegar no trecho em buffer.', 'info');
       }
     };
     tWrap.addEventListener('mousedown', (e) => {
@@ -11016,11 +11111,12 @@ function ac2InitNativeVideoListeners() {
     tWrap.addEventListener('touchmove', tp, { passive: true });
     window.addEventListener('mousemove', (e) => {
       if (isDragging) seekTo(e);
-      if (tTip && tWrap.contains(e.target) && nv.duration) {
+      const duration = ac2Duration(nv);
+      if (tTip && tWrap.contains(e.target) && duration) {
         const rect = tWrap.getBoundingClientRect();
         const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         tTip.style.left = (pos * 100) + '%';
-        tTip.textContent = fmtTime(pos * nv.duration);
+        tTip.textContent = fmtTime(pos * duration);
         tTip.style.display = 'block';
       }
     });
@@ -11247,15 +11343,129 @@ class AC2MSEPlayer {
   }
 }
 
-let ac2PlayerMode = 'native'; // Player nativo como padrão permanente
+let ac2PlayerMode = 'native';
+let ac2MpegtsPlayer = null;
+
+function ac2DestroyMpegts() {
+  const nv = $('ac2-native-video');
+  if (nv) {
+    if (nv._ac2ResumeHandler) nv.removeEventListener('progress', nv._ac2ResumeHandler);
+    nv._ac2ResumeHandler = null;
+    nv._ac2ResumePending = false;
+    nv._ac2Mpegts = false;
+    nv._ac2MpegtsStart = null;
+    nv._ac2Duration = 0;
+    nv._ac2MpegtsRequestedPlay = false;
+  }
+  if (!ac2MpegtsPlayer) return;
+  try { ac2MpegtsPlayer.pause(); } catch (_) {}
+  try { ac2MpegtsPlayer.unload(); } catch (_) {}
+  try { ac2MpegtsPlayer.detachMediaElement(); } catch (_) {}
+  try { ac2MpegtsPlayer.destroy(); } catch (_) {}
+  ac2MpegtsPlayer = null;
+}
+
+function ac2UsarMpegts(nv, id, info, url, autoPlay) {
+  const shouldPlay = autoPlay || nv._ac2MpegtsRequestedPlay;
+  const recovery = $('ac2-recovery');
+  const status = $('ac2-buffer');
+  const syncTxt = $('ac2-sync-text');
+  if (!window.mpegts || !window.mpegts.isSupported()) {
+    if (recovery) recovery.hidden = false;
+    if (status) status.textContent = 'Este navegador não oferece suporte ao decodificador MPEG-TS desta aula.';
+    if (syncTxt) syncTxt.textContent = 'Formato MPEG-TS sem suporte';
+    nv._ac2Loading = false;
+    return;
+  }
+
+  ac2DestroyMpegts();
+  nv.pause();
+  nv.removeAttribute('src');
+  nv.load();
+  nv._ac2Mpegts = true;
+  if (recovery) recovery.hidden = true;
+  nv._ac2Loading = false;
+  nv._ac2Duration = Number(info.durationMs) > 0
+    ? Number(info.durationMs) / 1000
+    : (info.durLabel && /^\d+:\d{2}$/.test(info.durLabel)
+        ? Number(info.durLabel.split(':')[0]) * 60 + Number(info.durLabel.split(':')[1])
+        : 0);
+  const player = window.mpegts.createPlayer({
+    type: 'mpegts',
+    isLive: false,
+    url: new URL(url, location.href).href
+  }, {
+    enableWorker: true,
+    lazyLoad: true,
+    lazyLoadMaxDuration: 60,
+    lazyLoadRecoverDuration: 20,
+    autoCleanupSourceBuffer: true,
+    autoCleanupMaxBackwardDuration: 90,
+    autoCleanupMinBackwardDuration: 45,
+    seekType: 'range',
+    rangeLoadZeroStart: false
+  });
+  ac2MpegtsPlayer = player;
+  player.attachMediaElement(nv);
+  player.on(window.mpegts.Events.ERROR, (type, detail) => {
+    if (nv.getAttribute('data-vid') !== id || ac2MpegtsPlayer !== player) return;
+    console.error('[Acervo MPEG-TS]', type, detail);
+    nv._ac2MpegtsRequestedPlay = false;
+    ac2SetPlayingState(false);
+    if (recovery) recovery.hidden = false;
+    if (syncTxt) syncTxt.textContent = 'Falha no stream MPEG-TS';
+    if (status) status.innerHTML = '<i class="ph ph-warning-circle" style="color:var(--amber)"></i> Falha ao carregar o vídeo. Tente recarregar a aula.';
+  });
+
+  let started = false;
+  nv._ac2MpegtsStart = () => {
+    if (ac2MpegtsPlayer !== player || nv.getAttribute('data-vid') !== id) return;
+    nv._ac2Played = true;
+    nv._played = true;
+    if (!started) {
+      started = true;
+      player.load(); // O download começa somente após a ação explícita do aluno.
+    }
+    player.play().catch(err => {
+      console.warn('[Acervo MPEG-TS] Não foi possível iniciar a reprodução:', err.message);
+      if (recovery) recovery.hidden = false;
+    });
+    if (status) status.innerHTML = '<i class="ph ph-lightning" style="color:var(--teal)"></i> Conectando ao vídeo MPEG-TS…';
+    if (syncTxt) syncTxt.textContent = 'Conectando';
+  };
+  nv._ac2MpegtsPause = () => {
+    if (ac2MpegtsPlayer === player) player.pause();
+  };
+  const dur = $('ac2-dur-time');
+  if (dur) dur.textContent = nv._ac2Duration ? fmtTime(nv._ac2Duration) : '—';
+  const saved = Number(lsGet('med_pos_' + id, 0));
+  if (saved > 5 && (!nv._ac2Duration || saved < nv._ac2Duration - 15)) {
+    nv._ac2ResumePending = true;
+    nv._ac2ResumeHandler = () => {
+      if (!nv._ac2ResumePending || nv.getAttribute('data-vid') !== id || !ac2MpegtsCanSeek(nv, saved)) return;
+      try { nv.currentTime = saved; } catch (_) { return; }
+      nv._ac2ResumePending = false;
+      nv.removeEventListener('progress', nv._ac2ResumeHandler);
+      nv._ac2ResumeHandler = null;
+      toast(`⏱️ Retomando aula de onde você parou: ${fmtTime(saved)}`, 'info');
+    };
+    nv.addEventListener('progress', nv._ac2ResumeHandler);
+  }
+  const mode = $('ac2-mode-label');
+  if (mode) mode.innerHTML = '<i class="ph ph-shield-check ok"></i> Player MPEG-TS';
+  if (status) status.innerHTML = '<i class="ph ph-play-circle"></i> Clique em reproduzir para iniciar a aula';
+  if (syncTxt) syncTxt.textContent = 'Aguardando reprodução';
+  if (shouldPlay) nv._ac2MpegtsStart();
+  ac2SyncBuffer();
+}
 
 window.ac2AlternarModoPlayer = function () {
   ac2PlayerMode = 'native';
-  if (AC2.atualId) ac2Ativar(AC2.atualId, false);
+  if (AC2.atualId) ac2Ativar(AC2.atualId, false, true);
   toast('▶ Player ativado', 'info');
 };
 
-function ac2Ativar(id, autoPlay = false) {
+function ac2Ativar(id, autoPlay = false, forceReload = false) {
   if (window.appLocked && appLocked()) return; // nada carrega nem toca por trás da tela de login
   const ph = $('ac2-ph');
   if (ph) ph.style.display = 'none';
@@ -11277,17 +11487,53 @@ function ac2Ativar(id, autoPlay = false) {
     nv.style.display = 'block';
     nv.classList.add('ativo');
     ac2InitNativeVideoListeners();
-        nv.preload = autoPlay ? 'auto' : 'metadata'; // só baixa o vídeo inteiro quando o aluno der play
-    if (nv.getAttribute('data-vid') !== id) {
+    const changed = nv.getAttribute('data-vid') !== id;
+    if (changed || forceReload) nv._ac2LoadGeneration = (nv._ac2LoadGeneration || 0) + 1;
+    const loadGeneration = nv._ac2LoadGeneration;
+    if (changed || forceReload) {
       nv.setAttribute('data-vid', id);
       nv._retries = 0; nv._played = !!autoPlay; nv._failed = false;
-      // O servidor já retoma sozinho se o Drive cair; o navegador cuida do buffer com HTTP Range.
-      nv.pause(); if (!autoPlay) ac2SetPlayingState(false);
-      cuscuzTicket(id, 'v').then(tu => {
-        if (nv.getAttribute('data-vid') !== id) return;
-        nv.src = tu; nv.load();
+      nv._ac2Loading = true;
+      nv.pause();
+      ac2DestroyMpegts();
+      nv._ac2MpegtsRequestedPlay = !!autoPlay;
+      for (const timelineId of ['ac2-timeline-play', 'ac2-timeline-buffer']) {
+        const timeline = $(timelineId); if (timeline) timeline.style.width = '0%';
+      }
+      const handle = $('ac2-timeline-handle'); if (handle) handle.style.left = '0%';
+      const currentTime = $('ac2-cur-time'); if (currentTime) currentTime.textContent = '00:00';
+      const durationTime = $('ac2-dur-time'); if (durationTime) durationTime.textContent = '00:00';
+      nv.preload = 'metadata';
+      nv.removeAttribute('src');
+      nv.load();
+      if (!autoPlay) ac2SetPlayingState(false);
+      Promise.all([cuscuzTicket(id, 'v'), ac2Info([id], true)]).then(([tu, infos]) => {
+        if (nv.getAttribute('data-vid') !== id || nv._ac2LoadGeneration !== loadGeneration) return;
+        const info = infos[0] || {};
+        if (info.container === 'mpegts') {
+          ac2UsarMpegts(nv, id, info, tu, autoPlay);
+          return;
+        }
+        nv._ac2Loading = false;
+        nv._ac2MpegtsRequestedPlay = false;
+        nv._ac2Duration = Number(info.durationMs) > 0 ? Number(info.durationMs) / 1000 : 0;
+        nv.preload = autoPlay ? 'auto' : 'metadata';
+        nv.src = tu;
+        nv.load();
         if (autoPlay) nv.play().catch(() => {});
-      }).catch(() => { nv._failed = true; });
+      }).catch(err => {
+        if (nv.getAttribute('data-vid') !== id || nv._ac2LoadGeneration !== loadGeneration) return;
+        nv._ac2Loading = false;
+        nv._failed = true;
+        const recovery = $('ac2-recovery'); if (recovery) recovery.hidden = false;
+        console.warn('[Acervo] Falha ao preparar a aula:', err.message);
+      });
+    } else if (nv._ac2Mpegts && nv._ac2MpegtsStart) {
+      if (autoPlay) nv._ac2MpegtsStart();
+      else { nv._ac2MpegtsPause?.(); ac2SetPlayingState(false); }
+    } else if (nv._ac2Loading) {
+      if (autoPlay) nv._ac2MpegtsRequestedPlay = true;
+      else ac2SetPlayingState(false);
     } else if (autoPlay) {
       nv.play().catch(() => {});
     } else {
@@ -11295,7 +11541,8 @@ function ac2Ativar(id, autoPlay = false) {
       ac2SetPlayingState(false);
     }
     nv.onerror = () => {
-      if (nv.getAttribute('data-vid') !== id) return;
+      if (nv.getAttribute('data-vid') !== id || nv._ac2LoadGeneration !== loadGeneration) return;
+      if (nv._ac2Mpegts) return;
       if (!nv._played) { nv._failed = true; return; } // ninguém deu play ainda: não insiste nem avisa
       nv._retries = (nv._retries || 0) + 1;
       const t = nv.currentTime || 0, tocava = !nv.paused;
@@ -11305,13 +11552,14 @@ function ac2Ativar(id, autoPlay = false) {
       }
       if (nv._retries === 1) toast('Reconectando a aula…', 'info');
       setTimeout(() => {
-        if (!nv || nv.getAttribute('data-vid') !== id) return;
+        if (!nv || nv.getAttribute('data-vid') !== id || nv._ac2LoadGeneration !== loadGeneration) return;
         cuscuzTicket(id, 'v').then(tu => { nv.src = tu; nv.load();
         nv.addEventListener('loadedmetadata', function once() { nv.removeEventListener('loadedmetadata', once); try { if (t > 1) nv.currentTime = t; } catch (_) {} if (tocava) nv.play().catch(() => {}); }, { once: true }); });
       }, 1200 * nv._retries);
     };
     nv.onplaying = () => { nv._retries = 0; };
     nv.onplay = () => {
+      if (nv._ac2Mpegts) { nv._played = true; return; }
       nv._played = true; nv.preload = 'auto';
       if (nv._failed || nv.error) { nv._failed = false; nv._retries = 0; cuscuzTicket(id, 'v').then(tu => { nv.src = tu; nv.load(); nv.play().catch(() => {}); }); }
     };
@@ -11516,16 +11764,11 @@ window.ac2Diagnosticar = async function () {
   } catch (e) { pre.textContent = 'Falhou: ' + e.message; }
 };
 window.ac2Recarregar = function () {
-  if (ac2PlayerMode === 'native') {
-    const nv = $('ac2-native-video');
-    if (nv && AC2.atualId) {
-      const cur = nv.currentTime;
-      cuscuzTicket(AC2.atualId, 'v').then(tu => { nv.src = tu; nv.load();
-      if (cur > 0) nv.currentTime = cur;
-      nv.play().catch(() => {}); });
-      toast('↻ Vídeo recarregado no player nativo', 'info');
-      return;
-    }
+  const nv = $('ac2-native-video');
+  if (nv && AC2.atualId) {
+    ac2Ativar(AC2.atualId, true, true);
+    toast('↻ Vídeo recarregado', 'info');
+    return;
   }
   const f = document.querySelector('#ac2-player iframe.ativo');
   if (!f) return;
@@ -11772,9 +12015,11 @@ async function ac2Materiais(v) {
   (mats || []).forEach(m => {
     const nome = String(m.nome || '');
     const isApostila = m.isHtml === true || /^(html|htm)$/i.test(nome.split('.').pop() || '');
+    const extensaoNome = nome.match(/\.(pdf|html?)$/i)?.[1] || '';
+    const extensaoCorreta = isApostila ? /^html?$/i.test(extensaoNome) : /^pdf$/i.test(extensaoNome);
     const entry = {
       id: m.id,
-      nome: nome.endsWith('.pdf') || nome.endsWith('.html') || nome.endsWith('.htm') ? nome : nome + '.pdf',
+      nome: extensaoCorreta ? nome : nome.replace(/\.(pdf|html?)$/i, '') + (isApostila ? '.html' : '.pdf'),
       sub: materialScope === 'aula' ? 'Na mesma pasta desta aula' : 'Material da disciplina: ' + v.disc,
       url: '',
       isHtml: isApostila
@@ -12039,11 +12284,22 @@ window.buscarAcervoSemantica = async function () {
   buscaSemanticaRodando = true;
   renderResultadoBuscaGlobal(query);
   try {
-    const response = await fetch('/api/acervo/busca-semantica', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query })
-    });
-    const data = await response.json();
-    if (!response.ok || !data.success) throw new Error(data.msg || 'Busca semântica indisponível.');
+    let data = null, falha = null;
+    for (const endpoint of ['/api/isc/search', '/api/acervo/busca-semantica']) {
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+            query, course: globalSearchFilters.course, discipline: globalSearchFilters.discipline, limit: 50
+          })
+        });
+        const candidate = await response.json();
+        if (!response.ok || !candidate.success) throw new Error(candidate.msg || 'Busca semântica indisponível.');
+        if (endpoint === '/api/isc/search' && !(candidate.itens || []).length) continue;
+        data = candidate;
+        break;
+      } catch (error) { falha = error; }
+    }
+    if (!data) throw falha || new Error('Busca semântica indisponível.');
     if (versao !== buscaSemanticaVersao || normAcc(bgInput.value.trim()) !== normAcc(query)) return;
     buscaSemantica = { query: normAcc(query), itens: data.itens || [] };
     renderResultadoBuscaGlobal(query);
@@ -12263,8 +12519,62 @@ function moduloDaAula(v) {
 }
 
 // comIA=false (padrão): só banco, sem gastar IA ao abrir a aula; true: pode gerar questões por IA (ação explícita de praticar).
-async function buscarQtdQuestoesTema(tema, disc, modulo, comIA) {
+function ac2FiltrosQuestoes() {
+  const answers = typeof BANK_ANSWERS === 'object' && BANK_ANSWERS ? BANK_ANSWERS : {};
+  return {
+    limit: Number.parseInt($('ac2-q-count')?.value || '10', 10) || 10,
+    mode: $('ac2-q-mode')?.value || 'review',
+    difficulty: $('ac2-q-difficulty')?.value || 'all',
+    excludeAnswered: !!$('ac2-q-unanswered')?.checked,
+    includeComplementary: $('ac2-q-complementary') ? $('ac2-q-complementary').checked : true,
+    excludedIds: Object.keys(answers).slice(-500),
+    prioritizeIds: Object.entries(answers).filter(([, answer]) => answer && answer.isCorrect === false).map(([id]) => id).slice(-500)
+  };
+}
+
+async function buscarQtdQuestoesTema(tema, disc, modulo, comIA, smartOptions) {
+  const smart = smartOptions && smartOptions.smart === true;
   try {
+    if (smart) {
+      let videoIndex = smartOptions.videoIndex || null;
+      if (!videoIndex && smartOptions.videoId && !smartOptions.requireContent) {
+        try {
+          const cache = window._ac2VideoIndexCache || (window._ac2VideoIndexCache = new Map());
+          const cached = cache.get(String(smartOptions.videoId));
+          if (cached && Date.now() - cached.at < 120000) videoIndex = cached.data;
+          else {
+            const indexResponse = await fetch(`/api/isc/video-index?id=${encodeURIComponent(smartOptions.videoId)}`, { cache: 'no-store' });
+            const indexData = await indexResponse.json().catch(() => ({}));
+            if (indexResponse.ok && indexData.success) {
+              videoIndex = indexData; cache.set(String(smartOptions.videoId), { at: Date.now(), data: indexData });
+              if (cache.size > 100) cache.delete(cache.keys().next().value);
+            }
+          }
+        } catch (_) {}
+      }
+      if (smartOptions.requireContent && videoIndex?.evidenceMode !== 'indexed_content') {
+        return { count: 0, questions: [], curriculum: null, videoIndex, smart: true, error: 'O índice de conteúdo desta videoaula ainda não está disponível.' };
+      }
+      const body = {
+        smart: true, tema, disciplina: disc || '', modulo: modulo || '',
+        limit: smartOptions.limit || 10, mode: smartOptions.mode || 'review',
+        difficulty: smartOptions.difficulty || 'all',
+        excludeAnswered: smartOptions.excludeAnswered === true,
+        excludedIds: smartOptions.excludedIds || [], prioritizeIds: smartOptions.prioritizeIds || [],
+        includeComplementary: smartOptions.includeComplementary !== false,
+        topics: (videoIndex?.topics || []).slice(0, 120).map(topic => ({
+          topicId: topic.topicId, name: topic.name, synonyms: topic.synonyms,
+          sourceKind: topic.sourceKind || videoIndex.evidenceMode || 'catalog_metadata',
+          confidence: topic.confidence, evidence: topic.evidence
+        }))
+      };
+      const res = await fetch('/api/questions/match', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error('Busca de questões indisponível.');
+      const data = await res.json();
+      if (!data || !Array.isArray(data.questions)) return { count: 0, questions: [], curriculum: null, videoIndex, smart: true };
+      return { count: data.questions.length, totalAvailable: Number(data.totalAvailable) || data.questions.length, questions: data.questions, curriculum: data.curriculum || null,
+        videoIndex, bancoCount: data.bancoCount || data.questions.length, iaCount: 0, smart: true };
+    }
     const qUrl = `/api/questions/match?disciplina=${encodeURIComponent(disc || '')}&tema=${encodeURIComponent(tema || '')}&modulo=${encodeURIComponent(modulo || '')}&limit=40${comIA ? '' : '&ia=0'}`;
     const res = await fetch(qUrl);
     if (res.ok) {
@@ -12273,7 +12583,9 @@ async function buscarQtdQuestoesTema(tema, disc, modulo, comIA) {
         return { count: data.questions.length, questions: data.questions, bancoCount: data.bancoCount || 0, iaCount: data.iaCount || 0 };
       }
     }
-  } catch (_) {}
+  } catch (error) {
+    if (smart && smartOptions?.requireContent) return { count: 0, questions: [], curriculum: null, videoIndex: smartOptions.videoIndex || null, smart: true, error: error.message };
+  }
   // Offline: só o que bate de verdade com o tema (todas as palavras-chave), nunca questões aleatórias
   const all = typeof getSimQuestionsBank === 'function' ? getSimQuestionsBank() : [];
   const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -12285,7 +12597,7 @@ async function buscarQtdQuestoesTema(tema, disc, modulo, comIA) {
   return { count: matched.length, questions: matched, bancoCount: matched.length, iaCount: 0 };
 }
 
-function ac2AtualizarBotaoPraticar(v) {
+function ac2AtualizarBotaoPraticar(v, searchOptions = null) {
   const wrap = $('ac2-praticar-wrap');
   const temaEl = $('ac2-praticar-tema');
   const qtdEl = $('ac2-praticar-qtd');
@@ -12306,24 +12618,25 @@ function ac2AtualizarBotaoPraticar(v) {
   const emptyState = $('ac2-questoes-empty');
   if (emptyState) emptyState.style.display = 'none';
   temaEl.textContent = cleanTema;
-  qtdEl.textContent = '…';
-  window._questoesTemaAtual = null;
-
-  buscarQtdQuestoesTema(cleanTema, v.disc, modulo).then(({ count, questions, bancoCount, iaCount }) => {
-    if (vid && AC2.atualId !== vid) return; // o aluno já foi para outra aula
-    if ($('ac2-praticar-qtd')) $('ac2-praticar-qtd').textContent = count + (iaCount ? ` · ${iaCount} IA` : '');
-    window._questoesTemaAtual = { tema: cleanTema, disc: v.disc, modulo, questions, bancoCount, iaCount };
-    const btn = $('ac2-btn-praticar');
-    if (btn) { btn.disabled = !count; btn.style.opacity = count ? '' : '.55'; btn.title = count ? 'Questões selecionadas para esta videoaula' : 'Nenhuma questão do banco corresponde a esta aula ainda'; }
-    if (emptyState) emptyState.style.display = count ? 'none' : 'block';
-  }).catch(() => {
-    if (vid && AC2.atualId !== vid) return;
-    if ($('ac2-praticar-qtd')) $('ac2-praticar-qtd').textContent = '0';
-    const btn = $('ac2-btn-praticar');
-    if (btn) { btn.disabled = true; btn.style.opacity = '.55'; }
-    if (emptyState) emptyState.style.display = 'block';
-  });
-
+  const actionEl = $('ac2-praticar-acao');
+  if (actionEl) actionEl.textContent = searchOptions?.search ? 'Buscando questões' : 'Gerar índice e buscar questões';
+  qtdEl.textContent = searchOptions?.search ? '…' : 'somente ao solicitar';
+  const btn = $('ac2-btn-praticar');
+  if (btn) {
+    btn.disabled = !vid || !!searchOptions?.busy;
+    btn.style.opacity = btn.disabled ? '.55' : '';
+    btn.title = 'Apenas a videoaula atual será indexada quando você solicitar a busca.';
+  }
+  const requestId = window._ac2QuestionRequest = (window._ac2QuestionRequest || 0) + 1;
+  const bindFilters = () => {
+    if (window._ac2SmartFiltersBound) return;
+    window._ac2SmartFiltersBound = true;
+    document.querySelectorAll('[data-ac2-smart-filter]').forEach(input => input.addEventListener('change', () => {
+      const current = AC2?.indice?.get(AC2?.atualId);
+      if (current) ac2AtualizarBotaoPraticar(current);
+    }));
+  };
+  bindFilters();
   if (PL_FC_INLINE_LESSON && PL_FC_INLINE_LESSON !== vid) {
     PL_FC_REQUEST++;
     PL_FC_INLINE_LESSON = null;
@@ -12331,13 +12644,150 @@ function ac2AtualizarBotaoPraticar(v) {
     const fcArea = $('ac2-fc-area');
     if (fcArea) { fcArea.removeAttribute('aria-busy'); fcArea.innerHTML = ''; }
   }
+  const filters = ac2FiltrosQuestoes();
+  if (!searchOptions?.search) {
+    window._questoesTemaAtual = { tema: cleanTema, disc: v.disc, modulo, questions: [], smart: true, videoId: vid, filters };
+    const coverageEl = $('ac2-q-coverage'), topicsEl = $('ac2-q-topics');
+    if (coverageEl) {
+      coverageEl.removeAttribute('aria-busy');
+      coverageEl.textContent = 'Nenhum processamento foi iniciado. Ao solicitar, somente esta videoaula será enviada ao Gemini para gerar o índice curricular; o resultado será reutilizado nas próximas buscas.';
+    }
+    if (topicsEl) topicsEl.innerHTML = '';
+    if (btn) btn.setAttribute('aria-label', `Gerar índice e buscar questões para ${cleanTema}`);
+    return Promise.resolve(window._questoesTemaAtual);
+  }
+
+  $('ac2-q-coverage')?.setAttribute('aria-busy', 'true');
+  const matching = buscarQtdQuestoesTema(cleanTema, v.disc, modulo, false, {
+    ...filters, smart: true, videoId: vid, videoIndex: searchOptions.videoIndex, requireContent: true
+  });
+  return matching.then(({ count, totalAvailable, questions, bancoCount, iaCount, curriculum, videoIndex, smart, error }) => {
+    if (requestId !== window._ac2QuestionRequest || (vid && AC2.atualId !== vid)) return;
+    $('ac2-q-coverage')?.removeAttribute('aria-busy');
+    const coverageEl = $('ac2-q-coverage'), topicsEl = $('ac2-q-topics');
+    if (error) {
+      if (coverageEl) coverageEl.textContent = error;
+      if (actionEl) actionEl.textContent = 'Tentar novamente';
+      if (btn) btn.disabled = false;
+      return null;
+    }
+    if ($('ac2-praticar-qtd')) $('ac2-praticar-qtd').textContent = `${count} questões`;
+    if (actionEl) actionEl.textContent = 'Praticar';
+    const objectives = curriculum?.objectives || [];
+    const covered = objectives.filter(topic => topic.relation !== 'uncovered').length;
+    if (coverageEl) {
+      const evidenceNote = '<br>A relação pergunta–tópico é heurística e requer validação pedagógica.';
+      const lowConfidenceNote = curriculum?.diagnostics?.lowConfidenceTopicCount
+        ? `<br>${curriculum.diagnostics.lowConfidenceTopicCount} tópico(s) de baixa confiança foram deixados fora da cobertura automática.` : '';
+      const confidenceBasisNote = videoIndex?.confidenceBasis
+        ? '<br>A confiança dos tópicos é estimada pelo modelo e não foi calibrada clinicamente.' : '';
+      const unmappedNote = videoIndex?.unmappedTopics?.length
+        ? `<br>${videoIndex.unmappedTopics.length} tópico(s) não foram associados à taxonomia e não entraram na seleção.` : '';
+      const eligible = Number(curriculum?.diagnostics?.candidateCount ?? totalAvailable ?? count) || 0;
+      const coverageLabel = objectives.length
+        ? `${covered} de ${objectives.length} tópicos com relação lexical estimada`
+        : videoIndex?.topics?.length
+          ? 'Tópicos do índice desta videoaula foram usados na seleção; nenhum objetivo curricular explícito foi identificado.'
+          : 'A aula foi indexada, mas a taxonomia não identificou objetivos curriculares para cobertura.';
+      const shortage = eligible < filters.limit ? `<br>O banco tem ${eligible} questão(ões) elegível(is) para estes filtros; foram selecionadas ${count}.` : `<br>${count} selecionada(s) de ${eligible} questão(ões) elegível(is).`;
+      coverageEl.innerHTML = `${esc(coverageLabel)}${shortage}${evidenceNote}${lowConfidenceNote}${confidenceBasisNote}${unmappedNote}`;
+    }
+    if (topicsEl) topicsEl.innerHTML = objectives.map(topic => {
+      const state = topic.relation === 'direct' ? `${topic.directCount} direta(s)` : topic.relation === 'partial' ? `${topic.partialCount} parcial(is)` : 'sem questão';
+      return `<div class="ac2-q-topic"><span>${esc(topic.name)}</span><strong>${esc(state)}</strong></div>`;
+    }).join('');
+    window._questoesTemaAtual = { tema: cleanTema, disc: v.disc, modulo, questions, bancoCount, iaCount,
+      curriculum, videoIndex, smart, filters };
+    if (btn) { btn.disabled = !count; btn.style.opacity = count ? '' : '.55'; btn.title = count ? 'Questões selecionadas para esta videoaula' : 'Nenhuma questão do banco corresponde a esta aula ainda'; }
+    if (emptyState) emptyState.style.display = count ? 'none' : 'block';
+    return window._questoesTemaAtual;
+  }).catch(() => {
+    if (requestId !== window._ac2QuestionRequest || (vid && AC2.atualId !== vid)) return;
+    $('ac2-q-coverage')?.removeAttribute('aria-busy');
+    const coverageEl = $('ac2-q-coverage'); if (coverageEl) coverageEl.textContent = 'Não foi possível consultar a seleção agora. Tente novamente.';
+    if (actionEl) actionEl.textContent = 'Tentar novamente';
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    if (emptyState) emptyState.style.display = 'block';
+    return null;
+  });
+
 }
 
-window.ac2PraticarQuestoesTema = function() {
-  const cache = window._questoesTemaAtual;
-  const tema = (cache && cache.tema) || $('ac2-praticar-tema')?.textContent || 'Tema da Aula';
-  const disc = (cache && cache.disc) || $('ac2-disc')?.textContent || 'Clínica Médica';
-  iniciarSimuladoDoTema(tema, disc, (cache && cache.questions) || []);
+async function ac2SolicitarIndiceVideo(video, requestId) {
+  const statusLabel = state => state === 'media_processing' ? 'Preparando a mídia enviada ao Gemini…'
+    : state === 'analyzing' ? 'Analisando o conteúdo desta videoaula…'
+      : state === 'starting_analysis' ? 'Iniciando a análise desta videoaula…'
+      : state === 'uploading' ? 'Enviando esta videoaula ao Gemini…' : 'Indexando esta videoaula…';
+  const updateStatus = state => {
+    if (AC2?.atualId !== video.id || requestId !== window._ac2QuestionRequest) return;
+    const coverage = $('ac2-q-coverage');
+    if (coverage) coverage.textContent = `${statusLabel(state)} O processamento fica limitado a esta aula e será reutilizado quando concluído.`;
+  };
+  const start = await fetch('/api/isc/video-index/request', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: video.id })
+  });
+  const initial = await start.json().catch(() => ({}));
+  if (!start.ok || !initial.success) throw new Error(initial.msg || 'Não foi possível solicitar o índice desta videoaula.');
+  if (initial.state === 'completed') return initial.videoIndex;
+  if (!initial.jobId) throw new Error('O servidor não devolveu o identificador do processamento.');
+
+  updateStatus(initial.state);
+  for (let attempt = 0; attempt < 24; attempt++) {
+    if (AC2?.atualId !== video.id || requestId !== window._ac2QuestionRequest) return null;
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    const response = await fetch(`/api/isc/video-index/jobs/${encodeURIComponent(initial.jobId)}`, { cache: 'no-store' });
+    const status = await response.json().catch(() => ({}));
+    if (!response.ok || !status.success) throw new Error(status.msg || 'Não foi possível consultar o processamento da videoaula.');
+    if (status.state === 'completed') return status.videoIndex;
+    if (status.state === 'failed') throw new Error(status.msg || 'A indexação desta videoaula falhou. Tente novamente.');
+    updateStatus(status.state);
+  }
+  throw new Error('A indexação continua no servidor. Clique novamente mais tarde para verificar e buscar as questões.');
+}
+
+window.ac2PraticarQuestoesTema = async function() {
+  if (window._ac2IndexRequestBusy) return;
+  const video = AC2?.indice?.get(AC2?.atualId);
+  if (!video?.id) { toast('Selecione uma videoaula antes de buscar questões.', 'warning'); return; }
+  window._ac2IndexRequestBusy = true;
+  const button = $('ac2-btn-praticar');
+  if (button) { button.disabled = true; button.setAttribute('aria-busy', 'true'); }
+  const requestId = window._ac2QuestionRequest = (window._ac2QuestionRequest || 0) + 1;
+  const action = $('ac2-praticar-acao');
+  const count = $('ac2-praticar-qtd');
+  const coverage = $('ac2-q-coverage');
+  if (action) action.textContent = 'Gerando índice…';
+  if (count) count.textContent = '';
+  if (coverage) { coverage.setAttribute('aria-busy', 'true'); coverage.textContent = 'Somente esta videoaula será enviada ao Gemini para análise. O consumo depende do plano da chave configurada.'; }
+  try {
+    const videoIndex = await ac2SolicitarIndiceVideo(video, requestId);
+    if (!videoIndex || AC2?.atualId !== video.id || requestId !== window._ac2QuestionRequest) return;
+    if (videoIndex.evidenceMode !== 'indexed_content' || !videoIndex.topics?.length) {
+      throw new Error(videoIndex.limitations?.[0] || 'A análise não encontrou tópicos curriculares suficientes nesta videoaula.');
+    }
+    const selectionPromise = ac2AtualizarBotaoPraticar(video, { search: true, videoIndex });
+    const selectionRequestId = window._ac2QuestionRequest;
+    const selection = await selectionPromise;
+    if (!selection || AC2?.atualId !== video.id || selectionRequestId !== window._ac2QuestionRequest) return;
+    if (!selection.questions?.length) {
+      toast('O índice foi salvo, mas não há questões elegíveis para estes filtros.', 'info');
+      return;
+    }
+    iniciarSimuladoDoTema(selection.tema, selection.disc, selection.questions, selection.modulo, {
+      smart: true, curriculum: selection.curriculum, mode: selection.filters?.mode,
+      lessonVideoId: video.id
+    });
+  } catch (error) {
+    if (AC2?.atualId === video.id) {
+      if (coverage) coverage.textContent = error.message || 'Não foi possível gerar o índice desta videoaula.';
+      if (action) action.textContent = 'Tentar novamente';
+      toast(error.message || 'Não foi possível buscar questões para esta videoaula.', 'warning');
+    }
+  } finally {
+    window._ac2IndexRequestBusy = false;
+    if (button) { button.removeAttribute('aria-busy'); if (AC2?.atualId === video.id) { button.disabled = false; button.style.opacity = ''; } }
+    coverage?.removeAttribute('aria-busy');
+  }
 };
 
 window.ac2AbrirFlashcards = function() {
@@ -12357,9 +12807,9 @@ window.modalPraticarQuestoesTema = function() {
   iniciarSimuladoDoTema(tema, disc, (cache && cache.questions) || []);
 };
 
-window.iniciarSimuladoDoTema = async function(tema, disc, questions, modulo) {
+window.iniciarSimuladoDoTema = async function(tema, disc, questions, modulo, options = null) {
   let qs = Array.isArray(questions) && questions.length ? [...questions] : [];
-  if (qs.length < 10) {
+  if (qs.length < 10 && !options?.smart) {
     // A pré-busca ao abrir a aula não usa IA; ao praticar, completa com questões geradas se o banco tiver poucas.
     toast('Carregando questões selecionadas do tema…', 'info');
     const res = await buscarQtdQuestoesTema(tema, disc, modulo || '', true);
@@ -12389,6 +12839,9 @@ window.iniciarSimuladoDoTema = async function(tema, disc, questions, modulo) {
     name: `Praticar Questões: ${tema}`,
     banca: `Treino de Aula (${disc || 'Residência Médica'})`,
     tema: tema,
+    curriculum: options?.curriculum || null,
+    curriculumMode: options?.mode || 'review',
+    lessonVideoId: options?.lessonVideoId || '',
     origemView: 'view-acervo'
   };
 
