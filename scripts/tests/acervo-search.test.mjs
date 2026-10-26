@@ -80,6 +80,8 @@ assert.match(source, /data-global-search-filter="format"/);
 assert.match(source, /await import\('\/js\/acervo-search\.js'\)/);
 assert.match(source, /data-global-search-more/);
 assert.match(source, /await ac2Init\(\);[\s\S]{0,150}AC2\.indice\.has\(entry\.id\)/, 'search opens the existing course player only after the catalog is ready');
+assert.match(source, /\['\/api\/isc\/search', '\/api\/acervo\/busca-semantica'\]/, 'global semantic search tries the curricular index and retains the legacy fallback');
+assert.match(source, /course: globalSearchFilters\.course, discipline: globalSearchFilters\.discipline/, 'global semantic search forwards course and discipline filters');
 assert.match(source, /e\.metaKey[\s\S]{0,80}e\.key\.toLowerCase\(\) === 'k'/, 'supports the Cmd/Ctrl+K shortcut');
 
 console.log('OK — caminho completo, acentos, siglas, typo, deduplicação, filtros combinados e contrato da busca global.');

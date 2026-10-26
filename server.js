@@ -1,5 +1,7 @@
 import './src/load-env.js';
-import { selecionar as selecionarQuestoes, norm, acharDoencas } from './src/questoes-aula.js';
+import { selecionar as selecionarQuestoes, selecionarComCobertura as selecionarQuestoesComCobertura, norm, acharDoencas } from './src/questoes-aula.js';
+import { filterQuestionsByIndexRows, getQuestionIndexPlan, searchPersistedQuestionIndex } from './src/question-index.js';
+import { embedIscTexts, semanticEmbeddingConfig } from './src/isc-embeddings.js';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -18,6 +20,7 @@ import { registerPlannerV3 } from './src/planner-v3-routes.js';
 
 import { registerAula } from './src/aula.js';
 import { registerAcervoSemantic } from './src/acervo-semantic.js';
+import { registerIscRoutes, retrieveIscUserContext } from './src/isc-routes.js';
 import { registerApostilaReader } from './src/apostila-reader.js';
 import { registerMedreaderMarcas } from './src/medreader-marcas.js';
 import { materiaisDeIrmaos } from './src/materiais-irmaos.js';
@@ -1917,18 +1920,137 @@ app.get('/api/questions/bank', (req, res) => {
 // Se o banco tiver poucas e houver IA, completa com questões inéditas sobre o MESMO tema (marcadas como IA).
 const _qIaCache = new Map();
 const _qVivoCache = new Map();
-app.get('/api/questions/match', async (req, res) => {
+const _qEmbeddingCache = new Map();
+let _questionIndexUnavailableWarned = false;
+async function embedQuestionSearch(query, username, config) {
+  const digest = crypto.createHash('sha256').update(query).digest('hex');
+  const key = `${username}:${config.indexModel}:${digest}`;
+  const cached = _qEmbeddingCache.get(key);
+  if (cached) return cached;
+  const [vector] = await embedIscTexts([query], {
+    purpose: 'query', config, signal: AbortSignal.timeout(15000)
+  });
+  _qEmbeddingCache.set(key, vector);
+  if (_qEmbeddingCache.size > 200) _qEmbeddingCache.delete(_qEmbeddingCache.keys().next().value);
+  return vector;
+}
+const handleQuestionMatch = async (req, res) => {
   try {
-    const disciplina = String(req.query.disciplina || req.query.disc || '').slice(0, 120);
-    const tema = String(req.query.tema || req.query.titulo || '').slice(0, 200);
-    const modulo = String(req.query.modulo || req.query.curso || '').slice(0, 200);
-    const limit = Math.max(1, Math.min(60, parseInt(req.query.limit, 10) || 40));
+    const input = req.method === 'POST' ? (req.body || {}) : (req.query || {});
+    const smart = req.method === 'POST' && input.smart === true;
+    const disciplina = String(input.disciplina || input.disc || '').slice(0, 120);
+    const tema = String(input.tema || input.titulo || '').slice(0, 200);
+    const modulo = String(input.modulo || input.curso || '').slice(0, 200);
+    const limit = Math.max(1, Math.min(60, parseInt(input.limit, 10) || (smart ? 10 : 40)));
     const bank = readQuestionsBank();
-    const r = selecionarQuestoes(bank, { tema, modulo, disc: disciplina, limit });
+    const topics = smart && Array.isArray(input.topics) ? input.topics.slice(0, 30).filter(topic =>
+      topic && typeof topic.name === 'string' && topic.name.length <= 200 && (!topic.topicId || String(topic.topicId).length <= 180))
+      .map(topic => ({
+        topicId: topic.topicId ? String(topic.topicId).slice(0, 180) : '', name: topic.name.trim(),
+        synonyms: Array.isArray(topic.synonyms) ? topic.synonyms.filter(value => typeof value === 'string').slice(0, 12).map(value => value.slice(0, 120)) : [],
+        sourceKind: typeof topic.sourceKind === 'string' ? topic.sourceKind.slice(0, 60) : '',
+        confidence: topic.confidence != null && topic.confidence !== '' && Number.isFinite(Number(topic.confidence)) ? Math.max(0, Math.min(1, Number(topic.confidence))) : null,
+        evidence: Array.isArray(topic.evidence) ? topic.evidence.slice(0, 4).filter(item => item && typeof item === 'object').map(item => ({
+          sourceKind: typeof item.sourceKind === 'string' ? item.sourceKind.slice(0, 60) : '',
+          excerpt: typeof item.excerpt === 'string' ? item.excerpt.slice(0, 500) : '',
+          sourceRef: typeof item.sourceRef === 'string' ? item.sourceRef.slice(0, 180) : '',
+          timestampStart: item.timestampStart != null && item.timestampStart !== '' && Number.isFinite(Number(item.timestampStart)) ? Number(item.timestampStart) : null,
+          timestampEnd: item.timestampEnd != null && item.timestampEnd !== '' && Number.isFinite(Number(item.timestampEnd)) ? Number(item.timestampEnd) : null,
+          page: item.page != null && item.page !== '' && Number.isFinite(Number(item.page)) ? Number(item.page) : null
+        })) : []
+      })) : [];
+    let selectionBank = bank;
+    let questionIndexMode = 'local_full_bank_no_service_role';
+    let indexedCandidateCount = null;
+    if (smart && supabase && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        const indexPlan = await getQuestionIndexPlan(bank);
+        const queryParts = [tema, modulo, disciplina, ...topics.flatMap(topic => [topic.name, ...topic.synonyms])]
+          .map(value => String(value || '').replace(/"/g, ' ').replace(/[\r\n]+/g, ' ').trim())
+          .filter(Boolean);
+        const query = [...new Set(queryParts)].slice(0, 30).map(value => `"${value}"`).join(' OR ').slice(0, 1200);
+        const semanticQuery = [...new Set([tema, modulo, disciplina, ...topics.flatMap(topic => [topic.name, ...topic.synonyms])].filter(Boolean))]
+          .join(' ').slice(0, 1200);
+        let queryEmbedding = null;
+        let embeddingModel = null;
+        if (process.env.ISC_QUESTION_EMBEDDINGS_ENABLED === '1' && semanticQuery) {
+          const config = semanticEmbeddingConfig();
+          if (config.token) {
+            try {
+              queryEmbedding = await embedQuestionSearch(semanticQuery, String(req.user?.username || 'user'), config);
+              embeddingModel = config.indexModel;
+            } catch (error) {
+              if (!_questionIndexUnavailableWarned) {
+                _questionIndexUnavailableWarned = true;
+                console.warn('[Smart Questions] Embedding de consulta indisponível; usando texto e tópicos:', error.message);
+              }
+            }
+          }
+        }
+        const indexed = await searchPersistedQuestionIndex(supabase, {
+          query,
+          topicIds: topics.map(topic => topic.topicId).filter(Boolean),
+          sourceHash: indexPlan.sourceHash,
+          limit: Math.max(100, Math.min(500, limit * 25)), queryEmbedding, embeddingModel
+        });
+        if (indexed.available && indexed.ready && indexed.rows.length) {
+          const candidates = filterQuestionsByIndexRows(bank, indexed.rows);
+          if (candidates.length) {
+            selectionBank = candidates;
+            indexedCandidateCount = candidates.length;
+            questionIndexMode = indexed.semanticEnabled ? 'persistent_hybrid_semantic' : 'persistent_canonical_full_text';
+          }
+        } else if (indexed.available && indexed.ready) {
+          questionIndexMode = 'local_fallback_after_index_no_match';
+        } else {
+          questionIndexMode = `local_fallback_${indexed.reason || 'index_unavailable'}`;
+          if (indexed.error && !_questionIndexUnavailableWarned) {
+            _questionIndexUnavailableWarned = true;
+            console.warn('[Smart Questions] Índice persistente indisponível; usando busca local:', indexed.error.message || 'falha na consulta');
+          }
+        }
+      } catch (indexError) {
+        questionIndexMode = 'local_fallback_index_error';
+        if (!_questionIndexUnavailableWarned) {
+          _questionIndexUnavailableWarned = true;
+          console.warn('[Smart Questions] Não foi possível preparar o índice; usando busca local:', indexError.message);
+        }
+      }
+    }
+    const smartOptions = {
+      tema, modulo, disc: disciplina, limit, topics,
+      mode: ['fixation', 'review', 'proof', 'reinforcement'].includes(input.mode) ? input.mode : 'review',
+      difficulty: ['all', 'easy', 'medium', 'hard'].includes(input.difficulty) ? input.difficulty : 'all',
+      excludeAnswered: input.excludeAnswered === true,
+      excludedIds: Array.isArray(input.excludedIds) ? input.excludedIds : [],
+      prioritizeIds: Array.isArray(input.prioritizeIds) ? input.prioritizeIds : [],
+      includeComplementary: input.includeComplementary !== false
+    };
+    let r = smart
+      ? selecionarQuestoesComCobertura(selectionBank, smartOptions)
+      : selecionarQuestoes(bank, { tema, modulo, disc: disciplina, limit });
+    if (smart && selectionBank !== bank && r.questions.length === 0) {
+      selectionBank = bank;
+      questionIndexMode = 'local_fallback_after_empty_selection';
+      indexedCandidateCount = null;
+      r = selecionarQuestoesComCobertura(bank, smartOptions);
+    }
+    if (smart) {
+      r.diagnostics.retrievalMode = questionIndexMode;
+      if (indexedCandidateCount != null) r.diagnostics.indexedCandidateCount = indexedCandidateCount;
+      if (questionIndexMode.startsWith('persistent_')) {
+        const retrievalSources = questionIndexMode === 'persistent_hybrid_semantic'
+          ? 'tópicos, busca textual e embeddings'
+          : 'o índice curricular persistido e busca textual';
+        r.diagnostics.limitations.push(`A pré-seleção usa ${retrievalSources}; a relação questão–objetivo continua heurística até revisão humana.`);
+      } else {
+        r.diagnostics.limitations.push('O índice persistente não estava pronto para esta consulta; foi usada a busca local sobre o banco disponível.');
+      }
+    }
     let questions = r.questions;
     let iaCount = 0, vivoCount = 0, doencasUsadas = [];
     // Banco completo do Hardworq (30 mil+): acha a(s) doença(s) do catálogo que correspondem à aula e busca só elas
-    if (req.query.vivo !== '0' && (HWQ.email && HWQ.senha || HWQ_STATE.userToken || HWQ.cookie)) {
+    if (!smart && input.vivo !== '0' && (HWQ.email && HWQ.senha || HWQ_STATE.userToken || HWQ.cookie)) {
       try {
         const doencas = await hwqListarDoencas();
         const alvo = acharDoencas(doencas, tema, modulo);
@@ -1960,7 +2082,7 @@ app.get('/api/questions/match', async (req, res) => {
     const MIN = 10;
     const assunto = (tema && r.termos.length ? tema : (modulo || tema)).trim();
     const gemini = aiConfigured();
-    if (questions.length < MIN && gemini && assunto.length > 3 && req.query.ia !== '0') {
+    if (!smart && questions.length < MIN && gemini && assunto.length > 3 && input.ia !== '0') {
       const key = norm(assunto) + '|' + norm(disciplina);
       let novas = _qIaCache.get(key);
       if (!novas) {
@@ -1991,15 +2113,18 @@ Regras: caso clínico objetivo, 4 alternativas ("A) ...", "B) ..."), apenas UMA 
       questions = [...questions, ...novas].slice(0, limit);
     }
     res.json({
-      success: true, count: questions.length, totalAvailable: questions.length,
+      success: true, count: questions.length, totalAvailable: smart ? r.total : questions.length,
       bancoCount: questions.length - iaCount, iaCount, vivoCount, doencas: doencasUsadas, exatas: r.exatas, termos: r.termos,
-      questions, tema, modulo, disciplina
+      questions, tema, modulo, disciplina,
+      ...(smart ? { curriculum: { objectives: r.objectives, coverage: r.coverage, diagnostics: r.diagnostics } } : {})
     });
   } catch (err) {
     console.error('Erro em /api/questions/match:', err.message);
     res.status(500).json({ success: false, msg: err.message });
   }
-});
+};
+app.get('/api/questions/match', handleQuestionMatch);
+app.post('/api/questions/match', handleQuestionMatch);
 
 // Sincronização TOTAL e Bidirecional: mescla todas as questões do cliente com as do servidor
 // sem perda, salvando em sua totalidade no arquivo persistente questions-bank.json
@@ -4054,8 +4179,14 @@ app.post('/api/planner/deck', (req, res) => {
 
 registerPlanner(app, { generateAI, aiConfigured, getBank: () => readQuestionsBank() });
 
-registerAula(app, { generateAI, aiConfigured, supabaseStorage: supabase, supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY });
+registerAula(app, {
+  generateAI, aiConfigured, supabaseStorage: supabase, supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+  retrieveIscContext: params => retrieveIscUserContext({ ...params, supabase,
+    supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY, enabled: process.env.ISC_ENABLED === '1' })
+});
 registerAcervoSemantic(app, { getCatalog: () => CAT, supabase, supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY });
+registerIscRoutes(app, { getCatalog: () => CAT, supabase, supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+  enabled: process.env.ISC_ENABLED === '1' });
 
 // Mentor IA acadêmico (Faculdade + Residência) — rotas novas em /api/planner/v3/*
 registerPlannerV3(app, {
