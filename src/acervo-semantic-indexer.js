@@ -8,9 +8,14 @@ const BUCKET = 'acervo';
 const BATCH_SIZE = 96;
 const MAX_BATCHES_PER_REQUEST = 8;
 const COHERE_REQUEST_INTERVAL_MS = 13_000;
-const GOOGLE_REQUEST_INTERVAL_MS = 12_000;
+const GOOGLE_REQUEST_INTERVAL_MS = 1_000;
+const GOOGLE_TOKENS_PER_MINUTE = 30_000;
 
 export function semanticEmbeddingConfig() {
+  if (process.env.VERCEL_ENV === 'preview' && process.env.COHERE_API_KEY) {
+    const model = process.env.COHERE_EMBEDDING_MODEL || 'embed-multilingual-v3.0';
+    return { provider: 'cohere', model, indexModel: `cohere:${model}`, token: process.env.COHERE_API_KEY };
+  }
   const googleToken = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
   if (googleToken) {
     const model = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2';
@@ -110,7 +115,7 @@ async function embedGoogle(texts, config, limiter) {
   const data = await response.json().catch(() => null);
   if (!response.ok) throw new Error(`Gemini Embedding indisponível (${response.status}).`);
   const promptTokens = Number(data?.usageMetadata?.promptTokenCount) || 0;
-  if (promptTokens) limiter.nextRequestAt = startedAt + Math.max(GOOGLE_REQUEST_INTERVAL_MS, Math.ceil(promptTokens * 60_000 / 30_000 * 1.15));
+  if (promptTokens) limiter.nextRequestAt = startedAt + Math.max(GOOGLE_REQUEST_INTERVAL_MS, Math.ceil(promptTokens * 60_000 / GOOGLE_TOKENS_PER_MINUTE * 1.15));
   const vectors = data?.embeddings?.map(embedding => embedding?.values);
   if (!Array.isArray(vectors) || vectors.length !== texts.length || !vectors.every(vector => Array.isArray(vector) && vector.length > 0 && vector.every(Number.isFinite))) {
     throw new Error('Gemini Embedding devolveu vetores em formato ou dimensão inesperados.');
