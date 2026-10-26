@@ -34,14 +34,30 @@ const supabase = {
         return Promise.resolve({ data: rows, error: null });
       }
     };
+  },
+  async rpc(name, args) {
+    assert.equal(name, 'ensure_isc_video_metadata_index');
+    const row = args.p_resource;
+    if (resources.some(item => item.resource_key === row.resource_key)) return { data: false, error: null };
+    resources.push({
+      resource_key: row.resource_key, resource_id: row.resource_id, resource_kind: row.resource_kind,
+      title: row.title, course: row.course, source_path: row.source_path, source_kind: row.source_kind,
+      index_status: row.index_status, metadata_confidence: row.metadata_confidence,
+      is_active: true, scope: 'catalog', owner_username: null
+    });
+    topicRows.push(...args.p_topics);
+    return { data: true, error: null };
   }
 };
 const handlers = new Map();
+const catalog = { generatedAt: '2026-10-25T00:00:00.000Z', videos: [
+  { id: 'b456', t: 'Ventilação mecânica', course: 'Extensivo', path: 'UTI / Ventilação' }
+] };
 registerIscRoutes({
   get(path, callback) { handlers.set(`GET ${path}`, callback); },
   post(path, callback) { handlers.set(`POST ${path}`, callback); },
   delete(path, callback) { handlers.set(`DELETE ${path}`, callback); }
-}, { supabase, supabaseServiceRole: true, enabled: true });
+}, { supabase, supabaseServiceRole: true, enabled: true, getCatalog: () => catalog });
 const response = () => ({ statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; }, set(name, value) { this.headers ||= {}; this.headers[name] = value; return this; } });
 const handler = handlers.get('GET /api/isc/video-index');
 
@@ -73,4 +89,27 @@ assert.equal(indexed.body.topics[0].confidence, 0.8);
 assert.equal(indexed.body.topics[0].evidence[0].timestampStart, 42);
 assert.equal(indexed.headers['Cache-Control'], 'private, no-store');
 
-console.log('OK — ISC video-index protege a leitura, separa metadados de conteúdo e preserva confiança/timestamps ausentes.');
+const generated = response();
+await handler({ user: { username: 'ana' }, query: { id: 'b456' } }, generated);
+assert.equal(generated.statusCode, 200, 'gera o índice quando o vídeo atual ainda não está persistido');
+assert.equal(generated.body.generatedOnDemand, true);
+assert.equal(generated.body.persisted, true);
+assert.equal(generated.body.evidenceMode, 'catalog_metadata');
+assert.equal(generated.body.topics[0].name, 'Ventilação mecânica');
+assert.equal(generated.body.topics[0].sourceKind, 'catalog_metadata');
+assert.equal(generated.body.topics[0].evidence[0].sourceKind, 'catalog_title');
+
+const fallbackHandlers = new Map();
+registerIscRoutes({
+  get(path, callback) { fallbackHandlers.set(`GET ${path}`, callback); },
+  post() {}, delete() {}
+}, { enabled: false, getCatalog: () => ({ videos: [
+  { id: 'c789', t: 'Conduta da Fibrilação e Flutter Atrial', course: 'Extensivo 2026', path: 'Estratégia MED 2026 / Extensivo 2026 / Cardiologia / Arritmias cardíacas / Conduta da Fibrilação e Flutter Atrial.mp4' }
+] }) });
+const fallback = response();
+await fallbackHandlers.get('GET /api/isc/video-index')({ user: { username: 'ana' }, query: { id: 'c789' } }, fallback);
+assert.equal(fallback.statusCode, 200, 'gera índice de metadados mesmo sem ISC/Supabase habilitado');
+assert.equal(fallback.body.persisted, false);
+assert.ok(fallback.body.topics.some(topic => topic.name === 'Arritmias cardíacas'), 'o tópico curricular do vídeo selecionado é extraído de seus metadados');
+
+console.log('OK — índice do vídeo atual é gerado sob demanda, persiste apenas se ausente e mantém explícita a diferença entre metadados e fala indexada.');

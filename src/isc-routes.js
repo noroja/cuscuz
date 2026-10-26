@@ -1,10 +1,16 @@
-import { buildIscConsolidatedIndex, buildIscUserResource, compareIscResources, hashIsc, ISC_INDEX_VERSION, normalizeIscText } from './isc-core.js';
+import { buildIscCatalogResource, buildIscConsolidatedIndex, buildIscUserResource, compareIscResources, hashIsc, ISC_INDEX_VERSION, normalizeIscText } from './isc-core.js';
 import { embedIscTexts, semanticEmbeddingConfig } from './isc-embeddings.js';
 import { pdfParaTexto } from './ai-provider.js';
+import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import * as defaultVideoIndexProvider from './gemini-video-index.js';
+
+const LOCAL_TAXONOMY_URL = new URL('../data/isc-taxonomy.json', import.meta.url);
 
 const isAdmin = req => ['admin', 'super_admin'].includes(req.user?.role);
 const safeId = value => typeof value === 'string' && /^[a-z0-9._:-]{3,180}$/i.test(value);
 const cache = { taxonomy: null, loadedAt: 0 };
+let localTaxonomyPromise = null;
 const queryEmbeddingCache = new Map();
 const QUERY_EMBEDDING_TTL_MS = 5 * 60 * 1000;
 const QUERY_EMBEDDING_MAX_ITEMS = 256;
@@ -50,6 +56,160 @@ async function getTaxonomy(supabase, force = false) {
   }));
   cache.loadedAt = Date.now();
   return cache.taxonomy;
+}
+
+async function getLocalTaxonomy() {
+  if (!localTaxonomyPromise) {
+    localTaxonomyPromise = readFile(LOCAL_TAXONOMY_URL, 'utf8').then(text => {
+      const taxonomy = JSON.parse(text);
+      if (!Number.isInteger(taxonomy.version) || !Array.isArray(taxonomy.nodes)) throw new Error('Taxonomia ISC local inválida.');
+      return {
+        version: taxonomy.version,
+        nodes: taxonomy.nodes.map(node => ({
+          id: node.id, kind: node.kind, parentId: node.parentId || null, name: node.name,
+          synonyms: node.synonyms || [], origin: node.origin || 'curated',
+          canonical: node.canonical !== false, confidence: node.confidence ?? 1
+        }))
+      };
+    }).catch(error => { localTaxonomyPromise = null; throw error; });
+  }
+  return localTaxonomyPromise;
+}
+
+function findCatalogVideo(catalog, resourceId) {
+  return (catalog?.videos || []).find(item => String(item?.id || '') === resourceId) ||
+    (catalog?.items || []).find(item => String(item?.id || '') === resourceId &&
+      (item.kind === 'video' || /^video\//i.test(item.mimeType || '')));
+}
+
+function catalogVideoIndex(indexed, taxonomyNodes, { persisted = false } = {}) {
+  const resource = indexed.resource;
+  const byId = new Map(taxonomyNodes.map(node => [node.id, node]));
+  const topics = indexed.topics.map(topic => {
+    const node = byId.get(topic.topicId);
+    return {
+      topicId: topic.topicId,
+      name: node?.name || topic.topicId,
+      synonyms: node?.synonyms || [],
+      sourceKind: topic.sourceKind,
+      confidence: topic.confidence,
+      evidence: [{ sourceKind: topic.sourceKind, confidence: topic.confidence, excerpt: topic.excerpt,
+        sourceRef: topic.sourceRef, page: null, timestampStart: null, timestampEnd: null }]
+    };
+  });
+  return {
+    success: true, resourceKey: resource.resourceKey, title: resource.title, course: resource.course,
+    indexStatus: resource.indexStatus, evidenceMode: 'catalog_metadata', topics,
+    segmentCount: 0, generatedOnDemand: true, persisted,
+    limitations: [
+      'O índice foi gerado a partir do título, curso e caminho do acervo; ainda não há transcrição do áudio desta videoaula.',
+      ...(persisted ? [] : ['Este índice foi calculado para esta consulta e ainda não foi persistido neste ambiente.'])
+    ]
+  };
+}
+
+function catalogIndexRows(indexed, taxonomyVersion) {
+  const resource = indexed.resource;
+  return {
+    p_resource: {
+      resource_key: resource.resourceKey, resource_id: resource.resourceId, resource_kind: resource.resourceKind,
+      title: resource.title, course: resource.course, source_path: resource.sourcePath, source_hash: resource.sourceHash,
+      indexer_version: resource.indexerVersion, source_kind: resource.sourceKind, index_status: resource.indexStatus,
+      metadata_confidence: resource.metadataConfidence, taxonomy_topic_ids: resource.taxonomyTopicIds,
+      catalog_generated_at: resource.catalogGeneratedAt, scope: 'catalog', owner_username: null, is_active: true,
+      metadata: { ...resource.metadata, taxonomyVersion, indexGeneration: 'on_demand', embeddingStatus: 'pending' }
+    },
+    p_taxonomy_nodes: indexed.taxonomyNodes.map(node => ({
+      id: node.id, kind: node.kind, parent_id: node.parentId || null, canonical_name: node.name,
+      normalized_name: normalizeIscText(node.name), synonyms: node.synonyms || [], origin: node.origin || 'catalog_path',
+      is_canonical: node.canonical === true, confidence: node.confidence ?? 0.45,
+      metadata: { taxonomyVersion }
+    })),
+    p_topics: indexed.topics.map(topic => ({
+      resource_key: resource.resourceKey, topic_id: topic.topicId, source_hash: topic.sourceHash,
+      source_kind: topic.sourceKind, evidence_ref: topic.sourceRef, evidence_excerpt: topic.excerpt,
+      confidence: topic.confidence, coverage_level: null, depth_level: null,
+      source_start: null, source_end: null, source_page: null, timestamp_start: null, timestamp_end: null
+    }))
+  };
+}
+
+function persistedVideoIndex(bundle, taxonomy) {
+  const taxonomyById = new Map(taxonomy.map(node => [node.id, node]));
+  const topicIds = new Set(bundle.topics.map(topic => topic.topicId));
+  for (const segment of bundle.segments) for (const topicId of segment.topicIds || []) topicIds.add(topicId);
+  const topics = [...topicIds].map(topicId => {
+    const node = taxonomyById.get(topicId);
+    const relations = bundle.topics.filter(topic => topic.topicId === topicId);
+    const segments = bundle.segments.filter(segment => (segment.topicIds || []).includes(topicId));
+    const evidence = [
+      ...relations.map(topic => ({ sourceKind: topic.sourceKind, confidence: topic.confidence,
+        excerpt: topic.evidence || '', sourceRef: topic.sourceRef || '', page: topic.sourcePage,
+        timestampStart: topic.timestampStart, timestampEnd: topic.timestampEnd })),
+      ...segments.map(segment => ({ sourceKind: segment.sourceKind, confidence: segment.confidence,
+        excerpt: segment.evidenceExcerpt || '', sourceRef: segment.sourceRef || '', page: segment.sourcePage,
+        timestampStart: segment.timestampStart, timestampEnd: segment.timestampEnd }))
+    ].filter(item => item.excerpt || Number.isFinite(item.timestampStart) || Number.isFinite(item.page)).slice(0, 6);
+    const sourceKinds = [...new Set([...relations.map(topic => topic.sourceKind), ...segments.map(segment => segment.sourceKind)].filter(Boolean))];
+    const confidenceValues = [...relations, ...segments].map(item => item.confidence).filter(Number.isFinite);
+    return {
+      topicId, name: node?.name || relations.find(topic => topic.evidence)?.evidence || topicId, synonyms: node?.synonyms || [],
+      sourceKind: sourceKinds.some(kind => !METADATA_SOURCE_KINDS.has(kind)) ? 'indexed_content' : 'catalog_metadata',
+      confidence: confidenceValues.length ? Math.min(...confidenceValues) : null,
+      evidence
+    };
+  }).sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'));
+  const hasContent = bundle.sourceKind === 'video_analysis' || topics.some(topic => topic.sourceKind === 'indexed_content');
+  return {
+    success: true, resourceKey: bundle.resourceKey, title: bundle.title, course: bundle.course,
+    indexStatus: bundle.indexStatus, evidenceMode: hasContent ? 'indexed_content' : 'catalog_metadata',
+    sourceHash: bundle.sourceHash, topics, segmentCount: bundle.segments.length, persisted: true,
+    unmappedTopics: Array.isArray(bundle.metadata?.unmappedTopics) ? bundle.metadata.unmappedTopics : [],
+    confidenceBasis: bundle.metadata?.confidenceBasis || null,
+    limitations: hasContent
+      ? (bundle.indexStatus === 'insufficient_evidence' ? ['A análise do vídeo não encontrou tópicos curriculares com evidência suficiente para a taxonomia atual.'] : [])
+      : ['O catálogo ainda não contém transcrição ou segmentos de conteúdo desta videoaula; os tópicos são pistas de título/pasta.']
+  };
+}
+
+export function canonicalVideoTopicRows(items, taxonomy, resourceKey, sourceHash, durationSeconds) {
+  const nodes = (taxonomy || []).filter(node => node.kind !== 'discipline');
+  const mapped = new Map();
+  const unmapped = [];
+  const normalize = value => normalizeIscText(value);
+  for (const item of items || []) {
+    const queryTerms = [item.name, ...(item.synonyms || [])].map(normalize).filter(Boolean);
+    const evidenceText = normalize(item.evidence);
+    let match = null;
+    let matchLength = 0;
+    for (const node of nodes) {
+      for (const alias of [node.name, ...(node.synonyms || [])].map(normalize).filter(value => value.length >= 4)) {
+        const exact = queryTerms.includes(alias);
+        const supportedByEvidence = (` ${evidenceText} `).includes(` ${alias} `);
+        if ((exact || supportedByEvidence) && alias.length > matchLength) { match = node; matchLength = alias.length; }
+      }
+    }
+    if (!match) {
+      unmapped.push({ name: item.name, evidence: item.evidence, timestampStart: item.timestampStart, timestampEnd: item.timestampEnd });
+      continue;
+    }
+    let timestampStart = item.timestampStart;
+    let timestampEnd = item.timestampEnd;
+    if (Number.isFinite(durationSeconds) && ((timestampStart !== null && timestampStart > durationSeconds) || (timestampEnd !== null && timestampEnd > durationSeconds))) {
+      timestampStart = null;
+      timestampEnd = null;
+    }
+    const topic = {
+      resource_key: resourceKey, topic_id: match.id, source_hash: sourceHash, source_kind: 'video_analysis',
+      evidence_ref: timestampStart === null ? `video:topic:${match.id}` : `video:seconds:${timestampStart}-${timestampEnd ?? timestampStart}`,
+      evidence_excerpt: item.evidence, confidence: item.confidence, coverage_level: item.coverageLevel,
+      depth_level: item.depthLevel, source_start: null, source_end: null, source_page: null,
+      timestamp_start: timestampStart, timestamp_end: timestampEnd
+    };
+    const existing = mapped.get(match.id);
+    if (!existing || topic.confidence > existing.confidence) mapped.set(match.id, topic);
+  }
+  return { topics: [...mapped.values()], unmapped };
 }
 
 function catalogEntries(catalog) {
@@ -133,6 +293,7 @@ function attachIscEvidence(resources, topicRows = [], segmentRows = []) {
   const bundles = resources.map(row => ({
     resourceKey: row.resource_key, resourceId: row.resource_id, resourceKind: row.resource_kind,
     title: row.title, course: row.course, sourcePath: row.source_path, sourceKind: row.source_kind,
+    sourceHash: row.source_hash, metadata: row.metadata || {},
     indexStatus: row.index_status, metadataConfidence: row.metadata_confidence,
     scope: row.scope, ownerUsername: row.owner_username,
     topics: [], segments: []
@@ -209,7 +370,8 @@ export async function retrieveIscUserContext({ supabase, username, resourceKey, 
 }
 
 export function registerIscRoutes(app, { supabase, supabaseServiceRole = false, getCatalog = () => null,
-  getEmbeddingConfig = semanticEmbeddingConfig, embedQuery = embedIscTexts, enabled = false } = {}) {
+  getEmbeddingConfig = semanticEmbeddingConfig, embedQuery = embedIscTexts, enabled = false,
+  getVideoMediaInfo = null, openVideoMedia = null, videoIndexProvider = defaultVideoIndexProvider } = {}) {
   const ready = res => {
     if (!enabled || !supabase || !supabaseServiceRole) {
       res.status(503).json({ success: false, msg: 'O índice curricular ainda não está conectado ao banco privado.' });
@@ -226,6 +388,31 @@ export function registerIscRoutes(app, { supabase, supabaseServiceRole = false, 
     if ((resources || []).length !== resourceKeys.length) return null;
     const { topicRows, segmentRows } = await fetchIscEvidence(supabase, resourceKeys);
     return attachIscEvidence(resources || [], topicRows, segmentRows);
+  }
+
+  async function loadVideoIndex(resourceKey) {
+    const { data: resource, error } = await supabase.from('isc_resources')
+      .select('resource_key,resource_id,resource_kind,title,course,source_path,source_hash,source_kind,index_status,metadata_confidence,is_active,scope,owner_username,metadata')
+      .eq('resource_key', resourceKey).eq('scope', 'catalog').eq('resource_kind', 'video').eq('is_active', true).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!resource) return null;
+    const [{ topicRows, segmentRows }, taxonomy] = await Promise.all([
+      fetchIscEvidence(supabase, [resourceKey]), getTaxonomy(supabase)
+    ]);
+    return persistedVideoIndex(attachIscEvidence([resource], topicRows, segmentRows)[0], taxonomy);
+  }
+
+  async function ensureVideoMetadataResource(video, catalog) {
+    const resourceKey = `video:${String(video.id)}`;
+    const { data: existing, error } = await supabase.from('isc_resources').select('resource_key')
+      .eq('resource_key', resourceKey).eq('scope', 'catalog').eq('resource_kind', 'video').eq('is_active', true).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (existing) return;
+    const taxonomy = { version: ISC_INDEX_VERSION, nodes: await getTaxonomy(supabase) };
+    const indexed = buildIscCatalogResource(video, 'video', taxonomy, catalog?.generatedAt || '');
+    if (!indexed) throw new Error('Não foi possível preparar os metadados da videoaula.');
+    const { error: persistError } = await supabase.rpc('ensure_isc_video_metadata_index', catalogIndexRows(indexed, taxonomy.version));
+    if (persistError) throw new Error(persistError.message);
   }
 
   app.get('/api/isc/status', (_req, res) => {
@@ -256,55 +443,277 @@ export function registerIscRoutes(app, { supabase, supabaseServiceRole = false, 
   });
 
   app.get('/api/isc/video-index', async (req, res) => {
-    if (!ready(res)) return;
     if (!req.user?.username) return res.status(401).json({ success: false, msg: 'Não autenticado.' });
     const resourceId = String(req.query?.id || '').trim().slice(0, 180);
     if (!safeId(resourceId)) return res.status(400).json({ success: false, msg: 'Identificador de videoaula inválido.' });
     const resourceKey = `video:${resourceId}`;
     try {
-      const { data: resource, error: resourceError } = await supabase.from('isc_resources')
-        .select('resource_key,resource_id,resource_kind,title,course,source_path,source_kind,index_status,metadata_confidence,is_active,scope,owner_username')
-        .eq('resource_key', resourceKey).eq('scope', 'catalog').eq('resource_kind', 'video').eq('is_active', true).maybeSingle();
-      if (resourceError) throw new Error(resourceError.message);
-      if (!resource) return res.status(404).json({ success: false, msg: 'Esta videoaula não está disponível no índice curricular.' });
-      const [{ topicRows, segmentRows }, taxonomy] = await Promise.all([
-        fetchIscEvidence(supabase, [resourceKey]), getTaxonomy(supabase)
-      ]);
-      const bundle = attachIscEvidence([resource], topicRows, segmentRows)[0];
-      const taxonomyById = new Map(taxonomy.map(node => [node.id, node]));
-      const topicIds = new Set(bundle.topics.map(topic => topic.topicId));
-      for (const segment of bundle.segments) for (const topicId of segment.topicIds || []) topicIds.add(topicId);
-      const topics = [...topicIds].map(topicId => {
-        const node = taxonomyById.get(topicId);
-        const relations = bundle.topics.filter(topic => topic.topicId === topicId);
-        const segments = bundle.segments.filter(segment => (segment.topicIds || []).includes(topicId));
-        const evidence = [
-          ...relations.map(topic => ({ sourceKind: topic.sourceKind, confidence: topic.confidence,
-            excerpt: topic.evidence || '', sourceRef: topic.sourceRef || '', page: topic.sourcePage,
-            timestampStart: topic.timestampStart, timestampEnd: topic.timestampEnd })),
-          ...segments.map(segment => ({ sourceKind: segment.sourceKind, confidence: segment.confidence,
-            excerpt: segment.evidenceExcerpt || '', sourceRef: segment.sourceRef || '', page: segment.sourcePage,
-            timestampStart: segment.timestampStart, timestampEnd: segment.timestampEnd }))
-        ].filter(item => item.excerpt || Number.isFinite(item.timestampStart) || Number.isFinite(item.page)).slice(0, 6);
-        const sourceKinds = [...new Set([...relations.map(topic => topic.sourceKind), ...segments.map(segment => segment.sourceKind)].filter(Boolean))];
-        const confidenceValues = [...relations, ...segments].map(item => item.confidence).filter(Number.isFinite);
-        return {
-          topicId, name: node?.name || topicId, synonyms: node?.synonyms || [],
-          sourceKind: sourceKinds.some(kind => !METADATA_SOURCE_KINDS.has(kind)) ? 'indexed_content' : 'catalog_metadata',
-          confidence: confidenceValues.length ? Math.min(...confidenceValues) : null,
-          evidence
-        };
-      }).sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'));
-      const hasContent = topics.some(topic => topic.sourceKind === 'indexed_content');
-      return res.set('Cache-Control', 'private, no-store').json({
-        success: true, resourceKey, title: bundle.title, course: bundle.course,
-        indexStatus: bundle.indexStatus, evidenceMode: hasContent ? 'indexed_content' : 'catalog_metadata',
-        topics, segmentCount: bundle.segments.length,
-        limitations: hasContent ? [] : ['O catálogo ainda não contém transcrição ou segmentos de conteúdo desta videoaula; os tópicos são pistas de título/pasta.']
-      });
+      const canPersist = !!(enabled && supabase && supabaseServiceRole);
+      if (canPersist) {
+        const { data: resource, error: resourceError } = await supabase.from('isc_resources')
+          .select('resource_key,resource_id,resource_kind,title,course,source_path,source_hash,source_kind,index_status,metadata_confidence,is_active,scope,owner_username,metadata')
+          .eq('resource_key', resourceKey).eq('scope', 'catalog').eq('resource_kind', 'video').eq('is_active', true).maybeSingle();
+        if (resourceError) throw new Error(resourceError.message);
+        if (resource) {
+          const [{ topicRows, segmentRows }, taxonomy] = await Promise.all([
+            fetchIscEvidence(supabase, [resourceKey]), getTaxonomy(supabase)
+          ]);
+          const bundle = attachIscEvidence([resource], topicRows, segmentRows)[0];
+          return res.set('Cache-Control', 'private, no-store').json(persistedVideoIndex(bundle, taxonomy));
+        }
+      }
+
+      const catalog = getCatalog?.();
+      const video = findCatalogVideo(catalog, resourceId);
+      if (!video) return res.status(404).json({ success: false, msg: 'Esta videoaula não foi encontrada no acervo atual.' });
+      const taxonomy = canPersist ? { version: ISC_INDEX_VERSION, nodes: await getTaxonomy(supabase) } : await getLocalTaxonomy();
+      const indexed = buildIscCatalogResource(video, 'video', taxonomy, catalog?.generatedAt || '');
+      if (!indexed) return res.status(404).json({ success: false, msg: 'Não foi possível gerar o índice desta videoaula.' });
+
+      let persisted = false;
+      if (canPersist && typeof supabase.rpc === 'function') {
+        try {
+          const rows = catalogIndexRows(indexed, taxonomy.version);
+          const { error } = await supabase.rpc('ensure_isc_video_metadata_index', rows);
+          if (error) throw new Error(error.message);
+          persisted = true;
+        } catch (error) {
+          console.warn('[ISC] Índice de vídeo gerado, mas não persistido:', error.message);
+        }
+      }
+      if (persisted) {
+        const { data: resource, error: resourceError } = await supabase.from('isc_resources')
+          .select('resource_key,resource_id,resource_kind,title,course,source_path,source_hash,source_kind,index_status,metadata_confidence,is_active,scope,owner_username,metadata')
+          .eq('resource_key', resourceKey).eq('scope', 'catalog').eq('resource_kind', 'video').eq('is_active', true).maybeSingle();
+        if (!resourceError && resource) {
+          const [{ topicRows, segmentRows }] = await Promise.all([fetchIscEvidence(supabase, [resourceKey])]);
+          const bundle = attachIscEvidence([resource], topicRows, segmentRows)[0];
+          const response = persistedVideoIndex(bundle, [...taxonomy.nodes, ...indexed.taxonomyNodes]);
+          response.generatedOnDemand = true;
+          return res.set('Cache-Control', 'private, no-store').json(response);
+        }
+      }
+      return res.set('Cache-Control', 'private, no-store').json(catalogVideoIndex(indexed, [...taxonomy.nodes, ...indexed.taxonomyNodes], { persisted }));
     } catch (error) {
       console.error('[ISC] Falha ao carregar índice da videoaula:', error.message);
       return res.status(503).json({ success: false, msg: 'Não foi possível carregar o índice curricular da videoaula.' });
+    }
+  });
+
+  app.post('/api/isc/video-index/request', async (req, res) => {
+    if (!ready(res)) return;
+    const username = String(req.user?.username || '').trim().toLowerCase();
+    if (!username) return res.status(401).json({ success: false, msg: 'Não autenticado.' });
+    const resourceId = String(req.body?.id || '').trim().slice(0, 180);
+    if (!safeId(resourceId)) return res.status(400).json({ success: false, msg: 'Identificador de videoaula inválido.' });
+    if (typeof getVideoMediaInfo !== 'function' || typeof openVideoMedia !== 'function' || !videoIndexProvider.geminiVideoIndexAvailable?.()) {
+      return res.status(503).json({ success: false, msg: 'A indexação sob demanda exige Gemini e acesso de mídia configurados no servidor.' });
+    }
+    const resourceKey = `video:${resourceId}`;
+    const catalog = getCatalog?.();
+    const video = findCatalogVideo(catalog, resourceId);
+    if (!video) return res.status(404).json({ success: false, msg: 'Esta videoaula não foi encontrada no acervo atual.' });
+
+    let jobId = '';
+    try {
+      const mediaInfo = await getVideoMediaInfo(resourceId);
+      const sizeBytes = Number(mediaInfo?.sizeBytes);
+      const durationSeconds = Number(mediaInfo?.durationSeconds);
+      if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0) return res.status(422).json({ success: false, msg: 'O Drive não informou um tamanho válido para esta videoaula.' });
+      const sourceHash = String(mediaInfo.sourceHash || hashIsc([resourceId, mediaInfo.version, mediaInfo.modifiedTime, sizeBytes]));
+      const existingIndex = await loadVideoIndex(resourceKey);
+      if (existingIndex?.sourceHash === sourceHash && ['content_indexed', 'insufficient_evidence'].includes(existingIndex.indexStatus)) {
+        return res.set('Cache-Control', 'private, no-store').json({ success: true, state: 'completed', videoIndex: existingIndex, reused: true });
+      }
+
+      await ensureVideoMetadataResource(video, catalog);
+      const { data: previousJob, error: previousError } = await supabase.from('isc_video_index_jobs')
+        .select('job_id,resource_key,source_hash,requested_by,status,gemini_file_name,gemini_file_uri,gemini_mime_type,duration_seconds,interaction_id,result_json,updated_at')
+        .eq('resource_key', resourceKey).eq('source_hash', sourceHash).maybeSingle();
+      if (previousError) throw new Error(previousError.message);
+      if (previousJob && ['media_processing', 'starting_analysis', 'analyzing'].includes(previousJob.status)) {
+        if (previousJob.requested_by !== username) return res.status(409).json({ success: false, msg: 'Esta videoaula já está sendo indexada por outro usuário. Tente buscar novamente quando o processamento terminar.' });
+        return res.status(202).set('Cache-Control', 'private, no-store').json({ success: true, state: previousJob.status, jobId: previousJob.job_id, reused: true });
+      }
+      if (previousJob?.status === 'uploading' && Date.now() - new Date(previousJob.updated_at || 0).getTime() < 10 * 60 * 1000) {
+        if (previousJob.requested_by !== username) return res.status(409).json({ success: false, msg: 'Esta videoaula já está sendo enviada para indexação. Tente novamente em alguns minutos.' });
+        return res.status(202).set('Cache-Control', 'private, no-store').json({ success: true, state: 'uploading', jobId: previousJob.job_id, reused: true });
+      }
+
+      jobId = previousJob?.job_id || randomUUID();
+      const jobRow = {
+        job_id: jobId, resource_key: resourceKey, source_hash: sourceHash, requested_by: username,
+        status: 'uploading', gemini_file_name: null, gemini_file_uri: null, gemini_mime_type: null,
+        duration_seconds: Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : null,
+        interaction_id: null, result_json: null, error_code: null, error_message: null, updated_at: new Date().toISOString()
+      };
+      if (previousJob) {
+        const { error } = await supabase.from('isc_video_index_jobs').update(jobRow).eq('job_id', jobId);
+        if (error) throw new Error(error.message);
+      } else {
+        const { error } = await supabase.from('isc_video_index_jobs').insert(jobRow);
+        if (error) {
+          if (error.code !== '23505') throw new Error(error.message);
+          const { data: raced, error: racedError } = await supabase.from('isc_video_index_jobs')
+            .select('job_id,status,requested_by').eq('resource_key', resourceKey).eq('source_hash', sourceHash).maybeSingle();
+          if (racedError) throw new Error(racedError.message);
+          if (!raced) throw new Error('Não foi possível reservar a indexação desta videoaula.');
+          return res.status(202).set('Cache-Control', 'private, no-store').json({ success: true, state: raced.status, jobId: raced.job_id, reused: true });
+        }
+      }
+
+      const media = await openVideoMedia(resourceId);
+      if (!media?.ok || !media.body) throw Object.assign(new Error('Não foi possível abrir a mídia original no Google Drive.'), { status: 502, code: 'drive_media' });
+      const file = await videoIndexProvider.uploadGeminiVideoFile({
+        stream: media.body, sizeBytes, mimeType: String(mediaInfo.mimeType || 'video/mp4'),
+        displayName: String(video.t || video.title || 'Videoaula Cuscuz-MED').slice(0, 120)
+      });
+      const { error: uploadError } = await supabase.from('isc_video_index_jobs').update({
+        status: 'media_processing', gemini_file_name: file.name, gemini_file_uri: file.uri,
+        gemini_mime_type: file.mimeType || mediaInfo.mimeType || 'video/mp4', error_code: null,
+        error_message: null, updated_at: new Date().toISOString()
+      }).eq('job_id', jobId);
+      if (uploadError) throw new Error(uploadError.message);
+      return res.status(202).set('Cache-Control', 'private, no-store').json({ success: true, state: 'media_processing', jobId });
+    } catch (error) {
+      if (jobId) await supabase.from('isc_video_index_jobs').update({
+        status: 'failed', error_code: String(error.code || 'index_failed').slice(0, 80),
+        error_message: String(error.message || error).slice(0, 400), updated_at: new Date().toISOString()
+      }).eq('job_id', jobId).catch(() => {});
+      console.error('[ISC] Falha ao iniciar índice de conteúdo da videoaula:', error.message);
+      const status = Number(error.status);
+      return res.status(status >= 400 && status < 500 ? status : 503).json({ success: false, msg: String(error.message || 'Não foi possível iniciar a indexação desta videoaula.').slice(0, 400), state: 'failed' });
+    }
+  });
+
+  app.get('/api/isc/video-index/jobs/:jobId', async (req, res) => {
+    if (!ready(res)) return;
+    const username = String(req.user?.username || '').trim().toLowerCase();
+    if (!username) return res.status(401).json({ success: false, msg: 'Não autenticado.' });
+    const jobId = String(req.params?.jobId || '').trim();
+    if (!safeId(jobId)) return res.status(400).json({ success: false, msg: 'Identificador de processamento inválido.' });
+    try {
+      const { data: job, error } = await supabase.from('isc_video_index_jobs')
+        .select('job_id,resource_key,source_hash,requested_by,status,gemini_file_name,gemini_file_uri,gemini_mime_type,duration_seconds,interaction_id,result_json,error_code,error_message,updated_at')
+        .eq('job_id', jobId).eq('requested_by', username).maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!job) return res.status(404).json({ success: false, msg: 'Este processamento não está disponível para esta conta.' });
+      if (job.status === 'completed') {
+        const videoIndex = await loadVideoIndex(job.resource_key);
+        return res.set('Cache-Control', 'private, no-store').json({ success: true, state: 'completed', videoIndex });
+      }
+      if (job.status === 'failed') return res.json({ success: false, state: 'failed', msg: job.error_message || 'A indexação desta videoaula falhou.', retryable: true });
+      if (job.status === 'uploading') return res.set('Cache-Control', 'private, no-store').json({ success: true, state: 'uploading', jobId });
+
+      if (job.status === 'starting_analysis') {
+        const staleBefore = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+        const updatedAt = Date.parse(job.updated_at || '');
+        if (Number.isFinite(updatedAt) && updatedAt < Date.parse(staleBefore)) {
+          const { data: reclaimed, error: reclaimError } = await supabase.from('isc_video_index_jobs').update({
+            status: 'media_processing', updated_at: new Date().toISOString()
+          }).eq('job_id', jobId).eq('status', 'starting_analysis').lt('updated_at', staleBefore).select('job_id').maybeSingle();
+          if (reclaimError) throw new Error(reclaimError.message);
+          if (reclaimed) return res.set('Cache-Control', 'private, no-store').json({ success: true, state: 'media_processing', jobId });
+        }
+        return res.set('Cache-Control', 'private, no-store').json({ success: true, state: 'starting_analysis', jobId });
+      }
+
+      if (job.status === 'media_processing') {
+        const file = await videoIndexProvider.getGeminiVideoFile(job.gemini_file_name);
+        const fileState = String(file.state || '').toUpperCase();
+        if (fileState === 'FAILED') {
+          await supabase.from('isc_video_index_jobs').update({ status: 'failed', error_code: 'media_processing_failed', error_message: 'O Gemini não conseguiu preparar o arquivo de vídeo.', updated_at: new Date().toISOString() }).eq('job_id', jobId);
+          await videoIndexProvider.deleteGeminiVideoFile(job.gemini_file_name).catch(() => {});
+          return res.json({ success: false, state: 'failed', msg: 'O Gemini não conseguiu preparar o arquivo de vídeo.', retryable: true });
+        }
+        if (fileState !== 'ACTIVE') return res.set('Cache-Control', 'private, no-store').json({ success: true, state: 'media_processing', jobId });
+        const { data: claimed, error: claimError } = await supabase.from('isc_video_index_jobs').update({
+          status: 'starting_analysis', updated_at: new Date().toISOString()
+        }).eq('job_id', jobId).eq('status', 'media_processing').select('job_id').maybeSingle();
+        if (claimError) throw new Error(claimError.message);
+        if (!claimed) return res.set('Cache-Control', 'private, no-store').json({ success: true, state: 'starting_analysis', jobId });
+        const { data: resource, error: resourceError } = await supabase.from('isc_resources')
+          .select('title,course,source_path').eq('resource_key', job.resource_key).maybeSingle();
+        if (resourceError) throw new Error(resourceError.message);
+        const catalogVideo = findCatalogVideo(getCatalog?.(), job.resource_key.slice('video:'.length));
+        try {
+          const interaction = await videoIndexProvider.startGeminiVideoIndex({
+            fileUri: job.gemini_file_uri || file.uri, mimeType: job.gemini_mime_type || file.mimeType,
+            title: resource?.title || catalogVideo?.t, course: resource?.course || catalogVideo?.course,
+            sourcePath: resource?.source_path || catalogVideo?.path, durationSeconds: job.duration_seconds
+          });
+          const interactionId = String(interaction?.id || '').trim();
+          if (!interactionId) throw new Error('O Gemini não devolveu um identificador para a análise da videoaula.');
+          const { data: updated, error: updateError } = await supabase.from('isc_video_index_jobs').update({
+            status: 'analyzing', interaction_id: interactionId, updated_at: new Date().toISOString()
+          }).eq('job_id', jobId).eq('status', 'starting_analysis').select('job_id').maybeSingle();
+          if (updateError) throw new Error(updateError.message);
+          if (!updated) return res.set('Cache-Control', 'private, no-store').json({ success: true, state: 'starting_analysis', jobId });
+        } catch (error) {
+          await supabase.from('isc_video_index_jobs').update({
+            status: 'failed', error_code: String(error.code || 'analysis_start_failed').slice(0, 80),
+            error_message: String(error.message || error).slice(0, 400), updated_at: new Date().toISOString()
+          }).eq('job_id', jobId).eq('status', 'starting_analysis');
+          await videoIndexProvider.deleteGeminiVideoFile(job.gemini_file_name).catch(() => {});
+          throw error;
+        }
+        return res.set('Cache-Control', 'private, no-store').json({ success: true, state: 'analyzing', jobId });
+      }
+
+      let parsed = job.result_json;
+      if (!parsed) {
+        const interaction = await videoIndexProvider.getGeminiVideoIndexInteraction(job.interaction_id);
+        const interactionState = String(interaction.status || '').toLowerCase();
+        if (interactionState === 'failed' || interactionState === 'cancelled' || interactionState === 'incomplete') {
+          const message = 'A análise da videoaula não foi concluída. Você pode tentar novamente.';
+          await supabase.from('isc_video_index_jobs').update({ status: 'failed', error_code: `gemini_${interactionState}`, error_message: message, updated_at: new Date().toISOString() }).eq('job_id', jobId);
+          await videoIndexProvider.deleteGeminiVideoFile(job.gemini_file_name).catch(() => {});
+          return res.json({ success: false, state: 'failed', msg: message, retryable: true });
+        }
+        if (interactionState !== 'completed') return res.set('Cache-Control', 'private, no-store').json({ success: true, state: 'analyzing', jobId });
+        try {
+          parsed = videoIndexProvider.parseGeminiVideoIndexText(videoIndexProvider.extractGeminiVideoIndexText(interaction));
+        } catch (parseError) {
+          await supabase.from('isc_video_index_jobs').update({ status: 'failed', error_code: 'invalid_model_output', error_message: 'A IA não devolveu um índice estruturado válido. Você pode tentar novamente.', updated_at: new Date().toISOString() }).eq('job_id', jobId);
+          await videoIndexProvider.deleteGeminiVideoFile(job.gemini_file_name).catch(() => {});
+          return res.json({ success: false, state: 'failed', msg: parseError.message || 'A IA devolveu um índice inválido.', retryable: true });
+        }
+        const { error: resultError } = await supabase.from('isc_video_index_jobs').update({ result_json: parsed, updated_at: new Date().toISOString() }).eq('job_id', jobId);
+        if (resultError) throw new Error(resultError.message);
+      }
+
+      const taxonomy = await getTaxonomy(supabase);
+      const durationSeconds = job.duration_seconds == null ? Number.NaN : Number(job.duration_seconds);
+      const { topics, unmapped } = canonicalVideoTopicRows(parsed.topics, taxonomy, job.resource_key, job.source_hash, durationSeconds);
+      const { data: resource, error: resourceError } = await supabase.from('isc_resources')
+        .select('resource_key,resource_id,resource_kind,title,course,source_path,metadata').eq('resource_key', job.resource_key).maybeSingle();
+      if (resourceError) throw new Error(resourceError.message);
+      if (!resource) throw new Error('A videoaula não está mais disponível no catálogo.');
+      const confidences = topics.map(topic => topic.confidence).filter(Number.isFinite);
+      const metadata = {
+        ...(resource.metadata || {}), videoIndexModel: String(process.env.GEMINI_VIDEO_INDEX_MODEL || 'gemini-3.8-flash'),
+        videoIndexGeneratedAt: new Date().toISOString(), confidenceBasis: 'estimativa do modelo, não calibrada',
+        videoSourceVersion: job.source_hash, unmappedTopics: unmapped.slice(0, 40),
+        providerLimitations: parsed.limitations || []
+      };
+      const { error: persistError } = await supabase.rpc('replace_isc_video_content_index', {
+        p_resource: {
+          resource_key: resource.resource_key, resource_id: resource.resource_id, resource_kind: 'video',
+          source_hash: job.source_hash, indexer_version: ISC_INDEX_VERSION, source_kind: 'video_analysis',
+          scope: 'catalog', metadata_confidence: confidences.length ? confidences.reduce((sum, value) => sum + value, 0) / confidences.length : null,
+          taxonomy_topic_ids: topics.map(topic => topic.topic_id), metadata
+        },
+        p_topics: topics
+      });
+      if (persistError) throw new Error(persistError.message);
+      const { error: completedError } = await supabase.from('isc_video_index_jobs').update({ status: 'completed', error_code: null, error_message: null, updated_at: new Date().toISOString() }).eq('job_id', jobId);
+      if (completedError) throw new Error(completedError.message);
+      await videoIndexProvider.deleteGeminiVideoFile(job.gemini_file_name).catch(() => {});
+      const videoIndex = await loadVideoIndex(job.resource_key);
+      return res.set('Cache-Control', 'private, no-store').json({ success: true, state: 'completed', videoIndex });
+    } catch (error) {
+      console.error('[ISC] Falha ao atualizar índice da videoaula:', error.message);
+      return res.status(Number(error.status) >= 400 ? Number(error.status) : 503).json({ success: false, msg: String(error.message || 'Não foi possível verificar a indexação desta videoaula.').slice(0, 400) });
     }
   });
 

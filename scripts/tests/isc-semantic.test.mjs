@@ -172,6 +172,8 @@ const migrations = await readFile(new URL('../../supabase/migrations/20261024053
 const filterMigration = await readFile(new URL('../../supabase/migrations/20261024053636_isc_search_filters.sql', import.meta.url), 'utf8');
 const userContentMigration = await readFile(new URL('../../supabase/migrations/20261024134824_isc_user_content_keyword_search.sql', import.meta.url), 'utf8');
 const slidesMigration = await readFile(new URL('../../supabase/migrations/20261025180328_isc_slides_source_kind.sql', import.meta.url), 'utf8');
+const onDemandVideoMigration = await readFile(new URL('../../supabase/migrations/20261025234500_isc_video_on_demand_metadata.sql', import.meta.url), 'utf8');
+const videoJobsMigration = await readFile(new URL('../../supabase/migrations/20261026010910_isc_video_index_jobs_on_demand.sql', import.meta.url), 'utf8');
 for (const table of ['isc_taxonomy_nodes', 'isc_resources', 'isc_resource_topics', 'isc_segments']) {
   assert.match(migrations, new RegExp(`create table if not exists public\\.${table}`));
   assert.match(migrations, new RegExp(`alter table public\\.${table} enable row level security`));
@@ -184,7 +186,17 @@ assert.match(userContentMigration, /create or replace function public\.replace_i
 assert.match(userContentMigration, /create or replace function public\.search_isc_user_resources/);
 assert.match(slidesMigration, /source_kind in \('catalog_metadata', 'transcript', 'pdf_text', 'slides'\)/);
 assert.match(userContentMigration, /revoke all on function public\.replace_isc_user_resource[\s\S]+from public, anon, authenticated/);
-
+assert.match(onDemandVideoMigration, /create or replace function public\.ensure_isc_video_metadata_index/);
+assert.match(onDemandVideoMigration, /on conflict \(resource_key\) do nothing/);
+assert.match(onDemandVideoMigration, /if inserted_key is null then return false; end if/);
+assert.doesNotMatch(onDemandVideoMigration, /delete from public\.isc_(resource_topics|segments)/, 'a geração sob demanda nunca apaga evidências existentes');
+assert.match(videoJobsMigration, /create table if not exists public\.isc_video_index_jobs/);
+assert.match(videoJobsMigration, /starting_analysis/, 'o job reserva uma única inicialização da análise paga');
+assert.match(videoJobsMigration, /alter table public\.isc_video_index_jobs enable row level security/);
+assert.match(videoJobsMigration, /grant select, insert, update on table public\.isc_video_index_jobs to service_role/);
+assert.match(videoJobsMigration, /source_kind in \([^)]*video_analysis/);
+assert.match(videoJobsMigration, /create or replace function public\.replace_isc_video_content_index/);
+assert.match(videoJobsMigration, /delete from public\.isc_resource_topics where resource_key = target_key/);
 const rpcCalls = [];
 const fakeSupabase = {
   from(table) {
