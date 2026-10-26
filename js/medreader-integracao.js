@@ -822,7 +822,7 @@ async function medreaderCarregarMateriaisDaAula(aula) {
   if (boxPdf) {
     if (pdfs.length) {
       boxPdf.innerHTML = pdfs.map((m) =>
-        `<a class="material-chip" href="#" onclick="event.preventDefault(); cuscuzAbrirPdf('${escapeHtml(m.id)}');return false" title="Abrir ${escapeHtml(m.nome)}">
+        `<a class="material-chip" href="${escapeHtml(window.cuscuzPdfViewerHref(m.id,m.nome))}" target="_blank" rel="noopener noreferrer" title="Abrir ${escapeHtml(m.nome)}">
           <span class="pdf-icon"><i class="ph ph-file-pdf"></i></span>
           <div class="mat-info">
             <span class="mat-title">${escapeHtml(m.nome)}</span>

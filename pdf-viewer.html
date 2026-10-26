@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#080e17">
+  <title>PDF · Cuscuz-MED</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #080e17; color: #e5e7eb; font: 14px/1.45 system-ui, sans-serif; }
+    header { min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 16px; border-bottom: 1px solid #263241; }
+    header strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    header span { color: #94a3b8; font-size: 12px; text-align: right; }
+    main { min-height: calc(100vh - 54px); min-height: calc(100dvh - 54px); }
+    #pdf-frame { display: block; width: 100%; height: calc(100vh - 54px); height: calc(100dvh - 54px); border: 0; background: #111827; }
+    #pdf-frame[hidden] { display: none; }
+    #pdf-status { max-width: 520px; margin: 12vh auto 0; padding: 24px; text-align: center; color: #cbd5e1; }
+    #pdf-status a { color: #7dd3c7; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong id="pdf-title">PDF · Cuscuz-MED</strong>
+    <span>Feche esta guia para voltar à aula</span>
+  </header>
+  <main>
+    <p id="pdf-status" role="status" aria-live="polite">Verificando seu acesso ao PDF…</p>
+    <iframe id="pdf-frame" title="Visualizador de PDF" referrerpolicy="no-referrer" hidden></iframe>
+  </main>
+  <script src="/js/pdf-viewer.js"></script>
+</body>
+</html>

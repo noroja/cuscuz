@@ -12,7 +12,7 @@ fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 
 const arquivos = [
-  'index.html', 'aula.html', 'home.html', 'liquid-glass.html', 'app-cuscuzmed.html',
+  'index.html', 'aula.html', 'pdf-viewer.html', 'home.html', 'liquid-glass.html', 'app-cuscuzmed.html',
   'planner-v2.js', 'aula-dia.js',
   'manifest.webmanifest', 'icon-512.png', 'apple-touch-icon.png',
   '3457_False_a.png', '3457_True_a.png'

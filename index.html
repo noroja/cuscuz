@@ -17,6 +17,7 @@
 <meta property="og:title" content="Cuscuz-MED">
 <meta property="og:description" content="Planejador de estudos médicos, cronograma inteligente, acervo completo de videoaulas, flashcards SRS e simulados.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif&display=swap" rel="stylesheet">
+<script src="/js/pdf-links.js"></script>
 <script>
 /* Auth da API: anexa o token em /api/* e volta ao login se o servidor responder 401 */
 (function(){
@@ -30,14 +31,6 @@
     return fetch('/api/media/ticket', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + t }, body: JSON.stringify({ id: id, kind: kind }) })
       .then(function (r) { return r.json(); })
       .then(function (d) { if (!d.url) throw new Error('ticket'); _tk[k] = { u: d.url, e: Date.now() + 6 * 3600 * 1000 }; return d.url; });
-  };
-  window.cuscuzAbrirPdf = function (id) {
-    cuscuzTicket(id, 'p').then(function (u) {
-      // Abre o PDF na mesma aba para evitar bloqueio de pop-up
-      location.href = u;
-    }).catch(function (err) {
-      toast('⚠️ Não foi possível abrir o arquivo: ' + (err && err.message || err), 'error');
-    });
   };
   window.cuscuzPauseAll = function () {
     try { document.querySelectorAll('video,audio').forEach(function (v) { try { v.pause(); } catch (e) {} }); } catch (e) {}
@@ -1794,7 +1787,7 @@ mark.exam-highlight {
 .acervo-search-filters select:focus,.acervo-search-filters input:focus,.acervo-search-clear-filters:focus-visible,.acervo-search-result:focus-visible,.acervo-search-recent:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 .acervo-search-clear-filters{grid-column:1/-1;justify-self:end;border:0;background:transparent;color:var(--text-secondary);font:inherit;font-size:11px;cursor:pointer;padding:2px 4px}
 .acervo-search-status{padding:10px 2px 6px;color:var(--text-muted);font-size:12px}
-.acervo-search-result{display:flex;width:100%;gap:10px;align-items:flex-start;padding:10px 8px;border:0;border-top:1px solid var(--border-subtle);border-radius:8px;background:transparent;color:inherit;text-align:left;cursor:pointer}
+.acervo-search-result{display:flex;width:100%;gap:10px;align-items:flex-start;padding:10px 8px;border:0;border-top:1px solid var(--border-subtle);border-radius:8px;background:transparent;color:inherit;text-align:left;text-decoration:none;cursor:pointer}
 .acervo-search-result:hover{background:var(--bg-hover)}
 .acervo-search-result-icon{flex:0 0 30px;height:30px;display:grid;place-items:center;border-radius:8px;background:rgba(0,190,170,.12);color:var(--teal);font-size:16px}
 .acervo-search-result-copy{min-width:0;flex:1}
@@ -3982,9 +3975,7 @@ function printApostila() {
 
 function downloadApostilaPdf() {
   if (!apostilaState.currentId) return;
-  // Usa o endpoint de PDF do Drive
-  const url = `/api/drive/pdf/${encodeURIComponent(apostilaState.currentId)}`;
-  window.open(url, '_blank');
+  window.cuscuzAbrirPdf(apostilaState.currentId, apostilaState.currentName);
 }
 
 function trackApostilaScroll(frame) {
@@ -5721,7 +5712,12 @@ function openDriveItemById(fileId) {
     openApostilaReader(item.id, item.name || item.rawName || 'Apostila');
     return;
   }
-const type = isVideo ? 'v' : 'a';
+  const isPdf = item.isPdf || /application\/pdf/i.test(item.mimeType || '') || /\.pdf(?:$|[?#])/i.test(item.name || item.rawName || '');
+  if (isPdf) {
+    window.cuscuzAbrirPdf(item.id, item.name || item.rawName || 'PDF');
+    return;
+  }
+  const type = isVideo ? 'v' : 'a';
   const u = '';
   const k = 'drive:' + item.id;
 
@@ -6049,13 +6045,16 @@ function saveResumo(){const t=cleanStr($('rs-title').value.trim()),c=cleanStr($(
  lsSet('acv_resumos',RESUMOS);saveCloud();closeModals();renderAcervo();addXP(3,'resumo arquivado');toast('Resumo salvo','success')}
 function delResumo(i){RESUMOS[CUR_MOD.id].splice(i,1);lsSet('acv_resumos',RESUMOS);saveCloud();renderAcervo()}
 function openItem(mid,type,idx){const m=MOD(mid);if(!m)return;const it=type==='v'?m.videos[idx]:m.apostilas[idx];if(!it)return;
-  // Se for apostila HTML, abre no Leitor de Apostilas (MedReader)
-  const isHtml = (it.u && /\.(html?|htm)(\?.*)?$/i.test(it.u)) || 
-                 (it.rawName && /\.(html?|htm)(\?.*)?$/i.test(it.rawName)) || 
+  const isHtml = (it.u && /\.(html?|htm)(\?.*)?$/i.test(it.u)) ||
+                 (it.rawName && /\.(html?|htm)(\?.*)?$/i.test(it.rawName)) ||
                  (it.mimeType && it.mimeType.includes('html'));
   if (type === 'a' && isHtml && it.id) {
     openApostilaReader(it.id, it.t);
     return;
+  }
+  const isPdf = type === 'a' && (/application\/pdf/i.test(it.mimeType || '') || /\.pdf(?:$|[?#])/i.test(it.t || it.rawName || it.u || ''));
+  if (isPdf) {
+    window.cuscuzAbrirPdf(it.u || it.id, it.t || it.rawName || 'PDF');
   }
 }
 function closePlayer(){
@@ -11799,7 +11798,7 @@ async function ac2Materiais(v) {
   if (boxPdf) {
     boxPdf.removeAttribute('aria-busy');
     boxPdf.innerHTML = displayPdfs.map(m =>
-      '<a class="material-chip" href="#" onclick="cuscuzAbrirPdf(\'' + esc(m.id) + '\');return false" title="Abrir ' + esc(m.nome) + '">' +
+      '<a class="material-chip" href="' + esc(window.cuscuzPdfViewerHref(m.id, m.nome)) + '" target="_blank" rel="noopener noreferrer" title="Abrir ' + esc(m.nome) + '">' +
         '<span class="pdf-icon"><i class="ph ph-file-pdf"></i></span>' +
         '<div class="mat-info">' +
           '<span class="mat-title">' + esc(m.nome) + '</span>' +
@@ -11936,16 +11935,25 @@ function globalSearchResultMarkup(item) {
   const provider = item.courseLabels.find(label => normalize(label) !== normalize(item.course)) || item.course;
   const courseLine = [provider, item.discipline].filter(Boolean).join(' · ');
   const done = item.type === 'video' && DONE.has('drive:' + item.id);
-  return '<button type="button" class="acervo-search-result" aria-label="Abrir ' + esc(item.title) + ' — ' + esc(courseLine || item.course) + '" data-global-search-open data-id="' + esc(item.id) + '" data-type="' + item.type + '" data-format="' + esc(item.format) + '" data-title="' + esc(item.title) + '">' +
+  const isPdf = item.type !== 'video' && String(item.format || '').toLowerCase() === 'pdf';
+  const tag = isPdf ? 'a' : 'button';
+  const attrs = isPdf
+    ? ' href="' + esc(window.cuscuzPdfViewerHref(item.id, item.title)) + '" target="_blank" rel="noopener noreferrer"'
+    : ' type="button" data-global-search-open data-id="' + esc(item.id) + '" data-type="' + item.type + '" data-format="' + esc(item.format) + '" data-title="' + esc(item.title) + '"';
+  return '<' + tag + ' class="acervo-search-result" aria-label="Abrir ' + esc(item.title) + ' — ' + esc(courseLine || item.course) + '"' + attrs + '>' +
     '<span class="acervo-search-result-icon"><i class="ph ' + (done ? 'ph-check-circle' : item.type === 'video' ? 'ph-play-circle' : 'ph-file-text') + '"></i></span>' +
     '<span class="acervo-search-result-copy"><span class="acervo-search-result-title">' + esc(item.title) + '</span>' +
     '<span class="acervo-search-result-meta">' + esc(courseLine || item.course) + ' · ' + (item.type === 'video' ? 'Videoaula' : 'Material') + '</span>' +
     '<span class="acervo-search-result-location">' + esc(item.location) + '</span></span>' +
-    '<span class="acervo-search-result-type">' + esc(globalSearchFormatLabel(item.format) || 'Acervo') + '</span></button>';
+    '<span class="acervo-search-result-type">' + esc(globalSearchFormatLabel(item.format) || 'Acervo') + '</span></' + tag + '>';
 }
 
 async function abrirResultadoBuscaGlobal(item) {
   if (!item || !item.id) return;
+  if (/pdf/i.test(String(item.format || ''))) {
+    window.cuscuzAbrirPdf(item.id, item.title || 'PDF');
+    return;
+  }
   rememberGlobalSearch(bgInput.value);
   globalSearchPage = 1;
   bgResult.style.display = 'none';

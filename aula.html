@@ -594,35 +594,12 @@
     border: 1px solid var(--border);
     background: var(--card);
     color: var(--muted);
-    cursor: pointer;
+    text-decoration: none;
     transition: transform .15s, opacity .15s;
   }
   .pdf-chip-btn:hover { color: var(--text); border-color: var(--border-strong); }
-  .pdf-chip-btn.ativo {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-    color: var(--accent);
-    font-weight: 600;
-  }
-  .pdf-viewport {
-    position: relative;
-    width: 100%;
-    height: 720px;
-    background: #080d14;
-    transition: height .2s ease;
-  }
-  .pdf-viewport iframe {
-    width: 100%;
-    height: 100%;
-    border: 0;
-    display: block;
-    background: #080d14;
-  }
-  .pdf-viewport.expandido {
-    height: 920px;
-  }
   .pdf-placeholder {
-    height: 380px;
+    min-height: 220px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -813,6 +790,7 @@
   }
 </style>
 <link rel="stylesheet" href="/css/cuscuz-brand.css">
+  <script src="/js/pdf-links.js"></script>
 </head>
 <body class="aula-page">
 
@@ -908,7 +886,7 @@
         </div>
         <button class="btn" id="btn-salvar"><i class="ph ph-bookmark-simple"></i> Salvar</button>
         <button class="btn" id="btn-vista" role="checkbox" aria-checked="false"><i class="ph ph-check-circle"></i> Marcar como vista</button>
-        <a class="btn" id="btn-drive" href="#" target="_blank" rel="noopener" title="Abrir no Drive"><i class="ph ph-arrow-square-out"></i> Drive</a>
+        <a class="btn" id="btn-drive" href="#" target="_blank" rel="noopener noreferrer" title="Abrir no Drive"><i class="ph ph-arrow-square-out"></i> Drive</a>
         <button class="btn primario espaco" id="btn-proxima"><i class="ph ph-skip-forward"></i> Próxima aula</button>
       </div>
 
@@ -936,7 +914,7 @@
           <i class="ph ph-exam"></i> Questões da aula <span class="tab-badge" id="badge-questoes-count">20</span>
         </button>
         <button class="hub-tab-btn" id="tab-btn-pdf" onclick="trocarHubTab('pdf')">
-          <i class="ph ph-file-pdf"></i> Apostila / PDF Interativo <span class="tab-badge" id="badge-pdf-count">0</span>
+          <i class="ph ph-file-pdf"></i> Apostila / PDF <span class="tab-badge" id="badge-pdf-count">0</span>
         </button>
         <button class="hub-tab-btn" id="tab-btn-materiais" onclick="trocarHubTab('materiais')">
           <i class="ph ph-folders"></i> Materiais & Downloads
@@ -976,31 +954,20 @@
         </div>
       </div>
 
-      <!-- PAINEL 2: VISUALIZADOR DE PDF INTERATIVO EMBUTIDO (PDF.js / Drive Preview) -->
+      <!-- PAINEL 2: PDFs DA AULA — links para o visualizador seguro em nova guia -->
       <div class="hub-painel" id="painel-pdf">
         <div class="pdf-viewer-wrap">
           <div class="pdf-toolbar">
             <div class="pdf-seletor-materiais" id="pdf-seletor-materiais">
-              <!-- Botoes de materiais disponiveis -->
-              <span style="font-size:12px;color:var(--muted)">Apostila:</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px">
-              <button class="btn" id="btn-pdf-zoom-out" onclick="zoomPdf(-0.2)" title="Diminuir Zoom" aria-label="Diminuir zoom do PDF" style="padding:6px 10px;font-size:12px"><i class="ph ph-magnifying-glass-minus" aria-hidden="true"></i></button>
-              <button class="btn" id="btn-pdf-zoom-reset" onclick="resetZoomPdf()" title="Zoom 100%" style="padding:6px 10px;font-size:12px">100%</button>
-              <button class="btn" id="btn-pdf-zoom-in" onclick="zoomPdf(0.2)" title="Aumentar Zoom" aria-label="Aumentar zoom do PDF" style="padding:6px 10px;font-size:12px"><i class="ph ph-magnifying-glass-plus" aria-hidden="true"></i></button>
-              <button class="btn" id="btn-pdf-expand" onclick="toggleExpandPdf()" title="Expandir visualizador" aria-label="Expandir visualizador de PDF" style="padding:6px 10px;font-size:12px"><i class="ph ph-arrows-out" aria-hidden="true"></i></button>
-              <a class="btn" id="btn-pdf-externo" href="#" target="_blank" rel="noopener" title="Abrir em aba externa" style="padding:6px 10px;font-size:12px"><i class="ph ph-arrow-square-out"></i></a>
+              <span style="font-size:12px;color:var(--muted)">PDFs da aula:</span>
             </div>
           </div>
-          <div class="pdf-viewport" id="pdf-viewport">
-            <div class="pdf-placeholder" id="pdf-placeholder">
-              <i class="ph ph-file-pdf"></i>
-              <div>
-                <b>Nenhum PDF selecionado</b>
-                <p style="font-size:12.5px;color:var(--muted);margin-top:4px">Selecione uma apostila nos botões acima ou consulte a aba de materiais.</p>
-              </div>
+          <div class="pdf-placeholder" id="pdf-placeholder">
+            <i class="ph ph-file-pdf"></i>
+            <div>
+              <b>Os PDFs abrem em uma nova guia</b>
+              <p style="font-size:12.5px;color:var(--muted);margin-top:4px">Feche a guia do material para voltar à aula com seu vídeo e sua posição preservados.</p>
             </div>
-            <iframe id="pdf-frame" style="display:none" allow="autoplay; fullscreen"></iframe>
           </div>
         </div>
       </div>
@@ -1056,7 +1023,6 @@ let selectedResolution = 'auto'; // 'auto' por padrão, prevenindo travamento de
 let hlsInstance = null;
 let currentQuestions = [];
 let questionAnswers = {};
-let activePdfMaterialId = null;
 
 async function carregarAcervo() {
   const resp = await fetch('/acervo-manifest.json');
@@ -1524,115 +1490,26 @@ function atualizarScoreTreino() {
   }
 }
 
-/* ════════════ 3. VISUALIZADOR DE PDF INTERATIVO EMBUTIDO ════════════ */
+/* ════════════ 3. LINKS DE PDF DA AULA ════════════ */
 function inicializarVisualizadorPdf(v) {
   let mats = MATERIAIS.get(v.curso + '||' + v.disc) || [];
   if (!mats.length) mats = MATERIAIS.get(v.curso + '||Geral') || [];
 
   $('badge-pdf-count').textContent = mats.length;
   const seletor = $('pdf-seletor-materiais');
-
   if (!mats.length) {
-    seletor.innerHTML = '<span style="font-size:12px;color:var(--muted)">Nenhuma apostila cadastrada para esta disciplina.</span>';
-    $('pdf-frame').style.display = 'none';
-    $('pdf-placeholder').style.display = 'flex';
+    seletor.innerHTML = '<span style="font-size:12px;color:var(--muted)">Nenhum PDF cadastrado para esta disciplina.</span>';
     return;
   }
 
-  // Renderiza botões para escolher o material a ser exibido no PDF viewer
-  seletor.innerHTML = '<span style="font-size:12px;color:var(--muted)">Apostila:</span>' +
-    mats.map((m, idx) => `
-      <button class="pdf-chip-btn ${idx === 0 ? 'ativo' : ''}" data-id="${m.id}" onclick="carregarPdfNoViewer('${m.id}', this)" title="${esc(m.nome)}">
-        <i class="ph ph-file-pdf"></i> ${esc(m.nome.slice(0, 24))}${m.nome.length > 24 ? '…' : ''}
-      </button>
-    `).join('');
-
-  // Carrega automaticamente o primeiro material
-  carregarPdfNoViewer(mats[0].id);
+  seletor.innerHTML = '<span style="font-size:12px;color:var(--muted)">PDFs da aula:</span>' +
+    mats.map(function (m) {
+      const nome = m.nome || 'Material PDF';
+      const label = nome.length > 24 ? nome.slice(0, 24) + '…' : nome;
+      return '<a class="pdf-chip-btn" href="' + esc(window.cuscuzPdfViewerHref(m.id, nome)) + '" target="_blank" rel="noopener noreferrer" title="' + esc(nome) + '">' +
+        '<i class="ph ph-file-pdf"></i> ' + esc(label) + '</a>';
+    }).join('');
 }
-
-window.carregarPdfNoViewer = function(materialId, btnEl) {
-  activePdfMaterialId = materialId;
-  if (btnEl) {
-    document.querySelectorAll('#pdf-seletor-materiais .pdf-chip-btn').forEach(b => b.classList.remove('ativo'));
-    btnEl.classList.add('ativo');
-  }
-
-  const frame = $('pdf-frame');
-  const ph = $('pdf-placeholder');
-  const extBtn = $('btn-pdf-externo');
-
-  if (ph) ph.style.display = 'none';
-  if (frame) {
-    frame.style.display = 'block';
-
-    // Se estiver fixado offline no IndexedDB, abre localmente sem precisar de internet
-    try {
-      if (window.indexedDB) {
-        const req = indexedDB.open('cuscuz_med_storage', 2);
-        req.onsuccess = () => {
-          const db = req.result;
-          if (db.objectStoreNames.contains('pinned_pdfs')) {
-            const tx = db.transaction('pinned_pdfs', 'readonly');
-            const getReq = tx.objectStore('pinned_pdfs').get(materialId);
-            getReq.onsuccess = () => {
-              if (getReq.result && getReq.result.blob) {
-                frame.src = URL.createObjectURL(getReq.result.blob);
-                return;
-              }
-              frame.src = typeof cuscuzMediaUrl === 'function' ? cuscuzMediaUrl(`/api/drive/pdf/${encodeURIComponent(materialId)}`) : `/api/drive/pdf/${encodeURIComponent(materialId)}`;
-            };
-            getReq.onerror = () => {
-              frame.src = typeof cuscuzMediaUrl === 'function' ? cuscuzMediaUrl(`/api/drive/pdf/${encodeURIComponent(materialId)}`) : `/api/drive/pdf/${encodeURIComponent(materialId)}`;
-            };
-            return;
-          }
-          frame.src = typeof cuscuzMediaUrl === 'function' ? cuscuzMediaUrl(`/api/drive/pdf/${encodeURIComponent(materialId)}`) : `/api/drive/pdf/${encodeURIComponent(materialId)}`;
-        };
-        req.onerror = () => {
-          frame.src = typeof cuscuzMediaUrl === 'function' ? cuscuzMediaUrl(`/api/drive/pdf/${encodeURIComponent(materialId)}`) : `/api/drive/pdf/${encodeURIComponent(materialId)}`;
-        };
-      } else {
-        frame.src = typeof cuscuzMediaUrl === 'function' ? cuscuzMediaUrl(`/api/drive/pdf/${encodeURIComponent(materialId)}`) : `/api/drive/pdf/${encodeURIComponent(materialId)}`;
-      }
-    } catch (_) {
-      frame.src = typeof cuscuzMediaUrl === 'function' ? cuscuzMediaUrl(`/api/drive/pdf/${encodeURIComponent(materialId)}`) : `/api/drive/pdf/${encodeURIComponent(materialId)}`;
-    }
-  }
-  if (extBtn) {
-    extBtn.href = `https://drive.google.com/file/d/${materialId}/view`;
-  }
-};
-
-let pdfZoomLevel = 1.0;
-window.zoomPdf = function(delta) {
-  pdfZoomLevel = Math.max(0.6, Math.min(2.0, pdfZoomLevel + delta));
-  const f = $('pdf-frame');
-  if (f) {
-    f.style.transform = `scale(${pdfZoomLevel})`;
-    f.style.transformOrigin = 'top center';
-    f.style.width = `${100 / pdfZoomLevel}%`;
-    f.style.height = `${100 / pdfZoomLevel}%`;
-  }
-  toast(`Zoom: ${Math.round(pdfZoomLevel * 100)}%`);
-};
-
-window.resetZoomPdf = function() {
-  pdfZoomLevel = 1.0;
-  const f = $('pdf-frame');
-  if (f) {
-    f.style.transform = 'scale(1)';
-    f.style.width = '100%';
-    f.style.height = '100%';
-  }
-  toast('Zoom resetado para 100%');
-};
-
-window.toggleExpandPdf = function() {
-  const vp = $('pdf-viewport');
-  const expandido = vp.classList.toggle('expandido');
-  toast(expandido ? 'Visualizador expandido para leitura' : 'Tamanho padrão restaurado');
-};
 
 /* ════════════ Troca de Abas do Hub Interativo ════════════ */
 window.trocarHubTab = function(tabName) {
@@ -1892,7 +1769,7 @@ function renderMateriaisLista(v) {
   }
   box.innerHTML = '<span style="font-size:11.5px;color:var(--muted);width:100%;margin-bottom:-4px">' + mats.length + ' material(is) de ' + esc(v.curso) + ' · ' + esc(origem) + '</span>' +
     mats.map(m =>
-      '<a class="material-chip" href="https://drive.google.com/file/d/' + m.id + '/view" target="_blank" rel="noopener">' +
+      '<a class="material-chip" href="' + esc(window.cuscuzPdfViewerHref(m.id, m.nome)) + '" target="_blank" rel="noopener noreferrer">' +
         '<span class="pdf"><i class="ph ph-file-pdf"></i></span>' +
         '<span class="nome"><span>' + esc(m.nome) + '</span><small>PDF · Google Drive</small></span>' +
         '<i class="ph ph-download-simple"></i></a>').join('');
