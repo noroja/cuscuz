@@ -15,7 +15,6 @@ const __dirname = path.dirname(__filename);
 
 // ── Variáveis de ambiente (obrigatórias ou opcionais) ──────────────────────
 const GOOGLE_DRIVE_FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID || '';
-const GOOGLE_DRIVE_RECORDINGS_FOLDER_ID = process.env.GOOGLE_DRIVE_RECORDINGS_FOLDER_ID || '';
 const GOOGLE_DRIVE_API_KEY = process.env.GOOGLE_DRIVE_API_KEY || '';
 const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '';
 const GOOGLE_TOKEN_URL = process.env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token';
@@ -31,11 +30,6 @@ if (!driveReady) {
   console.error(`❌ Drive não configurado. Variáveis faltando: ${missing.join(', ')}`);
 } else {
   console.log(`✅ Drive configurado. Pasta principal: ${GOOGLE_DRIVE_FOLDER_ID}`);
-  if (GOOGLE_DRIVE_RECORDINGS_FOLDER_ID) {
-    console.log(`   Pasta de gravações: ${GOOGLE_DRIVE_RECORDINGS_FOLDER_ID}`);
-  } else {
-    console.log('   Pasta de gravações: (não definida — usará subpasta da principal)');
-  }
 }
 
 // ── Conta de serviço ───────────────────────────────────────────────────────
@@ -172,115 +166,3 @@ export async function getDriveStatus() {
     };
   }
 }
-
-/* ── Upload resumable para gravações ──
-   GRAVAÇÕES DEVEM IR ESTRICTAMENTE PARA A PASTA DESTINADA (shared drive / pasta compartilhada).
-   Service Accounts NÃO têm cota de armazenamento própria → sempre usar parents com a pasta de gravações. */
-export async function uploadToDrive(fileBuffer, fileName, mimeType = 'audio/webm', folderId = null) {
-  if (!driveReady) throw new Error('Drive não configurado');
-
-  // TRAVA DE SEGURANÇA (fail-fast): gravações só sobem para a pasta dedicada configurada no .env
-  const recordingsFolderId = GOOGLE_DRIVE_RECORDINGS_FOLDER_ID || '';
-  if (!recordingsFolderId) {
-    console.warn('[Aviso] Upload cancelado: GOOGLE_DRIVE_RECORDINGS_FOLDER_ID não configurada.');
-    throw new Error('GOOGLE_DRIVE_RECORDINGS_FOLDER_ID não configurada');
-  }
-
-  const targetFolderId = cleanDriveId(folderId || recordingsFolderId);
-  if (!targetFolderId) throw new Error('Nenhuma pasta de destino configurada');
-
-  // Iniciar upload resumable — parents ESTRICTAMENTE a pasta de gravações
-  const initUrl = `https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true`;
-  const initResp = await fetch(initUrl, {
-    method: 'POST',
-    headers: {
-      ...(await authHeaders()),
-      'Content-Type': 'application/json',
-      'X-Upload-Content-Type': mimeType,
-      'X-Upload-Content-Length': String(fileBuffer.length)
-    },
-    body: JSON.stringify({
-      name: fileName,
-      mimeType: mimeType,
-      parents: [targetFolderId]
-    }),
-    signal: AbortSignal.timeout(15000)
-  });
-
-  if (!initResp.ok) {
-    const texto = await initResp.text().catch(() => '');
-    throw new Error('Falha ao iniciar upload no Drive: ' + initResp.status + ' ' + texto);
-  }
-
-  const uploadUrl = initResp.headers.get('Location');
-  if (!uploadUrl) throw new Error('Não foi possível obter URL de upload resumable');
-
-  // Fazer upload dos dados
-  const uploadResp = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': mimeType,
-      'Content-Length': String(fileBuffer.length)
-    },
-    body: fileBuffer,
-    signal: AbortSignal.timeout(120000)
-  });
-
-  if (!uploadResp.ok) {
-    const texto = await uploadResp.text().catch(() => '');
-    throw new Error('Falha ao enviar arquivo ao Drive: ' + uploadResp.status + ' ' + texto);
-  }
-
-  const resultado = await uploadResp.json();
-  return {
-    id: resultado.id,
-    name: resultado.name,
-    webViewLink: `https://drive.google.com/file/d/${resultado.id}/preview`,
-    mimeType: resultado.mimeType,
-    size: resultado.size,
-    createdTime: resultado.createdTime
-  };
-}
-
-/* ── Criar pasta no Drive ── */
-export async function createFolder(folderName, parentFolderId = null) {
-  if (!driveReady) throw new Error('Drive não configurado');
-  const targetParentId = parentFolderId || GOOGLE_DRIVE_FOLDER_ID;
-  const cleanParentId = cleanDriveId(targetParentId);
-  if (!cleanParentId) throw new Error('Nenhuma pasta pai configurada');
-
-  const resp = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
-    method: 'POST',
-    headers: {
-      ...(await authHeaders()),
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      name: folderName,
-      mimeType: 'application/vnd.google-apps.folder',
-      parents: [cleanParentId]
-    }),
-    signal: AbortSignal.timeout(15000)
-  });
-
-  if (!resp.ok) {
-    const texto = await resp.text().catch(() => '');
-    throw new Error('Falha ao criar pasta no Drive: ' + resp.status + ' ' + texto);
-  }
-
-  const resultado = await resp.json();
-  return { id: resultado.id, name: resultado.name };
-}
-
-/* ── Buscar pasta por nome dentro de uma pasta pai ── */
-export async function findFolderByName(folderName, parentFolderId) {
-  const files = await listFolder(parentFolderId);
-  const nomeNorm = String(folderName || '').toLowerCase().trim();
-  return files.find(f => {
-    const isFolder = f.mimeType === 'application/vnd.google-apps.folder' || f.isFolder;
-    if (!isFolder) return false;
-    return String(f.name || '').toLowerCase().trim() === nomeNorm;
-  });
-}
-
-export { driveReady, GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_RECORDINGS_FOLDER_ID, missing };

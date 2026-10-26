@@ -34,6 +34,8 @@ export const diffDias = (a, b) => Math.round((parseIso(b) - parseIso(a)) / 86400
 const wdOf = iso => parseIso(iso).getUTCDay(); // 0=dom … 6=sáb
 const brDate = iso => iso.slice(8, 10) + '/' + iso.slice(5, 7);
 const DIAS_NOME = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+// parseData works on normalized text, so month names must be accent-free too.
+const MESES = ['janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 
 /* ───────────────────────── Disciplinas ───────────────────────── */
 // peso = incidência aproximada em provas de residência (ENARE/USP/UNIFESP etc.)
@@ -209,7 +211,8 @@ export const PERFIL_VAZIO = () => ({
   objetivo: '', alvo: '', dataProva: '', semData: false,
   provasFaculdade: [], semProvas: false, aulasFaculdade: [], manualNome: '', semConteudo: false,
   horas: null, dificuldades: [], fortes: [], semDificuldades: false,
-  metodo: '', cursos: [], anseios: '', materiais: [], conteudoConfirmado: false, disciplinasConfirmadas: []
+  metodo: '', cursos: [], anseios: '', materiais: [], conteudoConfirmado: false, disciplinasConfirmadas: [], conteudosPendentes: [],
+  cronogramaResidencia: []
 });
 
 
@@ -329,9 +332,19 @@ export function sanePerfil(atual, patch) {
     })).filter(o => o.disciplina && o.data).sort((a, b) => a.data.localeCompare(b.data)).slice(0, 40);
     if (novas.length) { p.provasFaculdade = novas; p.semProvas = false; }
   }
+  if (Array.isArray(x.conteudosPendentes)) {
+    p.conteudosPendentes = x.conteudosPendentes.map(o => ({
+      disciplina: str(o && o.disciplina, 80), assuntos: Array.isArray(o && o.assuntos) ? limparAssuntos(o.assuntos.map(a => str(a, 160)), '').slice(0, 80) : []
+    })).filter(o => o.disciplina && o.assuntos.length).slice(0, 80);
+  }
   if (Array.isArray(x.aulasFaculdade)) {
     const au = x.aulasFaculdade.map(o => ({ disciplina: str(o && o.disciplina, 60), data: /^\d{4}-\d{2}-\d{2}$/.test(o && o.data) ? o.data : '', tema: str(o && o.tema, 140), detalhe: str(o && o.detalhe, 600) })).filter(o => o.disciplina && o.data && o.tema).slice(0, 500);
     if (au.length) p.aulasFaculdade = au;
+  }
+  if (Array.isArray(x.cronogramaResidencia)) {
+    // cronograma de preparação para residência enviado/criado pelo aluno (já conferido por ele); lista vazia limpa
+    p.cronogramaResidencia = x.cronogramaResidencia.map(o => ({ data: /^\d{4}-\d{2}-\d{2}$/.test(o && o.data) ? o.data : '', tema: str(o && o.tema, 140), disciplina: str(o && o.disciplina, 60) }))
+      .filter(o => o.data && o.tema).sort((m, n) => m.data.localeCompare(n.data)).slice(0, 600);
   }
   if (typeof x.semConteudo === 'boolean') p.semConteudo = x.semConteudo;
   if (typeof x.conteudoConfirmado === 'boolean') p.conteudoConfirmado = x.conteudoConfirmado;
@@ -585,7 +598,7 @@ export function parseData(txt, hoje) {
     return addDias(hoje, un.startsWith('mes') ? q * 30 : un.startsWith('sem') ? q * 7 : q);
   }
   for (let i = 0; i < 12; i++) {
-    const re = new RegExp('(?:dia\\s*(\\d{1,2})\\s*(?:de)?\\s*)?' + MESES[i] + '(?:\\s*(?:de|\\/)?\\s*(\\d{4}))?');
+    const re = new RegExp('\\b(?:(?:dia\\s*)?(\\d{1,2})\\s*(?:de\\s*)?)?' + MESES[i] + '\\b(?:\\s*(?:de|\\/)?\\s*(\\d{4}))?');
     if ((r = n.match(re))) {
       const dia = r[1] ? +r[1] : 15;
       return mk(dia, i + 1, r[2] ? +r[2] : 0);
@@ -655,7 +668,7 @@ export function parseFaculdade(txt, hoje) {
 const NEGA = /^(nao|não|nenhum[a]?|nada|sem|n\/a|ainda nao|nao sei|nao tenho|pular|pula)\b/;
 
 // Interpreta a resposta do aluno para o campo que foi perguntado e devolve o patch do perfil
-export function interpretarResposta(campo, texto, hoje, provasAtuais) {
+export function interpretarResposta(campo, texto, hoje, provasAtuais, disciplinasConfirmadas, conteudosPendentesAtuais = []) {
   const n = norm(texto).trim();
   const patch = {};
   if (campo === 'objetivo') {
@@ -681,16 +694,30 @@ export function interpretarResposta(campo, texto, hoje, provasAtuais) {
     if (NEGA.test(n)) patch.semConteudo = true;
     else {
       const provas = (provasAtuais || []).map(x => ({ ...x }));
-      const linhas = String(texto).split(/\n/).map(l => l.trim()).filter(Boolean);
+      const linhas = String(texto).replace(/[«»]/g, '').split(/\n/).map(l => l.trim()).filter(Boolean);
       const lista = a => a.split(/[,;]|\s+e\s+/).map(x => x.trim()).filter(x => x.length > 2);
-      let mudou = false;
+      let mudou = false; const semProva = []; const pendentes = (conteudosPendentesAtuais || []).map(x => ({ ...x, assuntos: [...(x.assuntos || [])] }));
       for (const l of linhas) {
         const segs = l.split(/;\s*(?=[^;:]{3,60}:)/);
         for (const sg of segs) {
           const m = sg.match(/^([^:\-–]{3,60})\s*[:\-–]\s*(.+)$/);
           if (m) {
             const alvo = provas.find(pr => norm(pr.disciplina).includes(norm(m[1]).trim()) || norm(m[1]).includes(norm(pr.disciplina)));
-            if (alvo) { alvo.assuntos = [...new Set([...(alvo.assuntos || []), ...lista(m[2])])]; mudou = true; }
+            if (alvo) {
+              const assuntos = [];
+              for (const item of lista(m[2])) {
+                const sec = pendentes.find(x => mesmaDisc(x.disciplina, item));
+                if (sec) { assuntos.push(...sec.assuntos); pendentes.splice(pendentes.indexOf(sec), 1); }
+                else assuntos.push(item);
+              }
+              alvo.assuntos = [...new Set([...(alvo.assuntos || []), ...assuntos])]; mudou = true;
+            } else {
+              const assuntos = lista(m[2]);
+              const existente = pendentes.find(x => mesmaDisc(x.disciplina, m[1]));
+              if (existente) existente.assuntos = [...new Set([...existente.assuntos, ...assuntos])];
+              else pendentes.push({ disciplina: m[1].trim(), assuntos });
+              semProva.push(m[1].trim());
+            }
           } else {
             const vazias = provas.filter(pr => !(pr.assuntos || []).length);
             if (vazias.length === 1) { vazias[0].assuntos = lista(sg); mudou = true; }
@@ -698,6 +725,8 @@ export function interpretarResposta(campo, texto, hoje, provasAtuais) {
         }
       }
       if (mudou) patch.provasFaculdade = provas;
+      if (semProva.length || pendentes.length || (conteudosPendentesAtuais || []).length) patch.conteudosPendentes = pendentes;
+      if (semProva.length) patch._conteudosSemProva = [...new Set(semProva)];
     }
   } else if (campo === 'conteudoOk') {
     const d = proximaConferencia({ provasFaculdade: provasAtuais || [], disciplinasConfirmadas: arguments[4] || [] }, hoje);
@@ -720,7 +749,7 @@ export function interpretarResposta(campo, texto, hoje, provasAtuais) {
         }
         conf.push(prs[0].disciplina);
       }
-      if (conf.length >= 2) { patch.provasFaculdade = provas; patch.disciplinasConfirmadas = [...new Set(conf)]; patch.anseios = 'Conteúdo conferido em bloco pelo aluno.'; return patch; }
+      if (new Set(conf.map(norm)).size >= 2) { patch.provasFaculdade = provas; patch.disciplinasConfirmadas = [...new Set(conf)]; patch.anseios = 'Conteúdo conferido em bloco pelo aluno.'; return patch; }
     }
     for (const ln of String(texto).split(/\n|;\s*(?=(?:incluir|tirar|remover|adicionar|falta)\b)/i)) {
       const m = ln.match(/^\s*(incluir|adicionar|falta(?:m)?|tirar|remover|nao cai|não cai)\s*[:\-–]?\s*(.+)$/i);
@@ -1012,6 +1041,7 @@ export function gerarTarefas({ perfil, hoje, inicio, dias, retidas = [], banco =
   retidas.forEach(t => { if (t && t.cobre && t.status === 'feito') cobertas.add(t.cobre); });
   pool.forEach(e => (e.fila || []).forEach(it => { if (cobertas.has(chave(e.nome, it.assunto))) it.coberto = true; }));
   const aulasPend = (p.aulasFaculdade || []).filter(a => a.data >= ini).map(a => ({ ...a, feita: false }));
+  const resPend = p.objetivo === 'graduacao' ? [] : (p.cronogramaResidencia || []).filter(a => a.data >= ini).map(a => ({ ...a, feita: false }));
   const temasCache = new Map();
   const getTemas = nome => { if (!temasCache.has(nome)) temasCache.set(nome, temasDaDisc(nome, p.cursos)); return temasCache.get(nome); };
   const temaAtual = nome => getTemas(nome).find(t => t.videos.some(v => !usados.has(v.id)));
@@ -1038,7 +1068,7 @@ export function gerarTarefas({ perfil, hoje, inicio, dias, retidas = [], banco =
     const tarefasDia = [];
     // provas da faculdade: evento + modo prova
     const provaHoje = provas.find(x => x.data === d);
-    if (provaHoje) tarefasDia.push({ id: mkId(d), data: d, tipo: 'prova', titulo: `PROVA — ${provaHoje.disciplina}`, materia: provaHoje.disciplina, tema: 'Prova', minutos: 0, passos: [{ n: 1, acao: 'prova', minutos: 0, texto: 'Dia de prova: só uma passada de 15 min no seu resumo de 1 página pela manhã. Durma bem ontem, coma bem hoje e chegue com folga.', recursos: [] }], recursos: [], estrategia: {}, observacoes: 'Nada novo hoje. Depois da prova, descanse — o cronograma volta amanhã.', status: 'pendente' });
+    if (provaHoje) tarefasDia.push({ id: mkId(d), data: d, trilha: 'faculdade', tipo: 'prova', titulo: `PROVA — ${provaHoje.disciplina}`, materia: provaHoje.disciplina, tema: 'Prova', minutos: 0, passos: [{ n: 1, acao: 'prova', minutos: 0, texto: 'Dia de prova: só uma passada de 15 min no seu resumo de 1 página pela manhã. Durma bem ontem, coma bem hoje e chegue com folga.', recursos: [] }], recursos: [], estrategia: {}, observacoes: 'Nada novo hoje. Depois da prova, descanse — o cronograma volta amanhã.', status: 'pendente' });
     let avail = horas[wd] || 0;
     if (provaHoje) avail = 0;
     const provaProx = provas.find(x => { const dd = diffDias(d, x.data); return dd >= 1 && dd <= 10; });
@@ -1095,8 +1125,26 @@ export function gerarTarefas({ perfil, hoje, inicio, dias, retidas = [], banco =
         if (tc) { passos.push({ n: 1, acao: 'aula', minutos: 0, texto: `Se quiser reforço, há aula do acervo sobre este assunto: "${tituloAula(tc.videos[0]) || a.tema}".`, recursos: [recursos.push({ tipo: 'video', id: tc.videos[0].id, titulo: tituloAula(tc.videos[0]) || a.tema, curso: tc.videos[0].course }) - 1] }); passos[0].minutos = 5; }
         passos.push({ n: passos.length + 1, acao: 'resumo', minutos: 20, texto: `Leia no manual a parte de "${a.tema}" antes da aula de ${brDate(a.data)}.${a.detalhe && norm(a.detalhe).replace(/[^a-z0-9]/g, '') !== norm(a.tema).replace(/[^a-z0-9]/g, '') ? ' O roteiro da aula: ' + a.detalhe.replace(/[.;\s]+$/, '').slice(0, 300) + '.' : ''} Anote 3 perguntas que você espera que o professor responda e os termos que não conhece.`, recursos: [] });
         passos.push({ n: passos.length + 1, acao: 'questoes', minutos: mn - 20 - (tc ? 5 : 0), texto: `Faça 4–5 questões sobre "${a.tema}" para testar o que já sabe antes da aula.`, recursos: [recursos.push({ tipo: 'questoes', titulo: `Questões: ${a.tema}`, tema: a.tema, disc: nomeD }) - 1] });
-        tarefasDia.push({ id: mkId(d), data: d, tipo: 'estudo', contexto: `Aula de ${brDate(a.data)}: ${a.detalhe || a.tema}`.slice(0, 900), titulo: `Prévia da aula — ${a.disciplina}: ${a.tema}`, materia: nomeD, tema: a.tema, minutos: passos.reduce((x, s) => x + s.minutos, 0), passos, recursos, estrategia: Object.fromEntries(passos.map(s => [s.acao, s.minutos])), observacoes: `Aula/TBL da faculdade em ${brDate(a.data)}, conforme o manual. Chegar com leitura prévia aumenta muito o aproveitamento.`, cobre: chave(nomeD, a.tema), status: 'pendente', _semRevisao: true });
+        tarefasDia.push({ id: mkId(d), data: d, trilha: 'faculdade', tipo: 'estudo', contexto: `Aula de ${brDate(a.data)}: ${a.detalhe || a.tema}`.slice(0, 900), titulo: `Prévia da aula — ${a.disciplina}: ${a.tema}`, materia: nomeD, tema: a.tema, minutos: passos.reduce((x, s) => x + s.minutos, 0), passos, recursos, estrategia: Object.fromEntries(passos.map(s => [s.acao, s.minutos])), observacoes: `Aula/TBL da faculdade em ${brDate(a.data)}, conforme o manual. Chegar com leitura prévia aumenta muito o aproveitamento.`, cobre: chave(nomeD, a.tema), status: 'pendente', _semRevisao: true });
         usado += passos.reduce((x, s) => x + s.minutos, 0); previas++;
+      }
+      // 2c) cronograma de preparação para residência do próprio aluno: o que está marcado para hoje (ou ficou sem tempo antes) vira tarefa
+      for (const c of resPend.filter(x => !x.feita && x.data <= d).slice(0, 2)) {
+        if (avail - usado < 40) break;
+        c.feita = true;
+        const dd = detectDisc(c.disciplina || c.tema);
+        const nomeD = dd ? (dd.go ? 'Obstetrícia' : dd.nome) : (c.disciplina || 'Residência');
+        const tc = acharAulas(dd ? nomeD : null, c.tema, p.cursos, usados);
+        const mn = clamp(r5(avail - usado), 40, 75);
+        const m1 = r5(mn * 0.5), m2 = r5(mn * 0.2), m3 = Math.max(5, mn - m1 - m2);
+        const recursos = [], passos = [];
+        if (tc) passos.push({ n: 1, acao: 'aula', minutos: m1, texto: `Assista à aula do acervo sobre "${c.tema}": "${tituloAula(tc.videos[0]) || c.tema}".`, recursos: [recursos.push({ tipo: 'video', id: tc.videos[0].id, titulo: tituloAula(tc.videos[0]) || c.tema, curso: tc.videos[0].course }) - 1] });
+        else passos.push({ n: 1, acao: 'resumo', minutos: m1, texto: `Estude "${c.tema}" no seu material principal (sem aula correspondente no acervo) e anote os pontos que mais caem em prova.`, recursos: [] });
+        passos.push({ n: passos.length + 1, acao: 'resumo', minutos: m2, texto: `Faça um resumo de 1 página de "${c.tema}": critérios, conduta e armadilhas.`, recursos: [] });
+        passos.push({ n: passos.length + 1, acao: 'questoes', minutos: m3, texto: `Resolva questões de "${c.tema}" e anote o motivo de cada erro.`, recursos: [recursos.push({ tipo: 'questoes', titulo: `Questões: ${c.tema}`, tema: c.tema, disc: nomeD }) - 1] });
+        const tkRes = { id: mkId(d), data: d, trilha: 'residencia', tipo: 'estudo', titulo: `${nomeD} — ${c.tema}`, materia: nomeD, tema: c.tema, minutos: mn, passos, recursos, estrategia: Object.fromEntries(passos.map(x => [x.acao, x.minutos])), observacoes: `Do seu cronograma de residência (marcado para ${brDate(c.data)}).${c.data < d ? ' Atrasou por falta de tempo nos dias anteriores.' : ''}`, cobre: chaveCob(nomeD, c.tema), status: 'pendente' };
+        tarefasDia.push(tkRes); agendarRevisoes(tkRes);
+        usado += mn; if (tc) (tc.videos || []).forEach(v => usados.add(v.id));
       }
       // 3) blocos principais de estudo
       let resto = avail - usado;
@@ -1131,12 +1179,12 @@ export function gerarTarefas({ perfil, hoje, inicio, dias, retidas = [], banco =
         const escolhidas = new Set();
         for (let b = 0; b < nBlocos; b++) {
           // modo prova: se há prova da faculdade em até 10 dias, a disciplina dela domina
-          let escolha = null;
+          let escolha = null, porProva = false;
           if (provaProx) {
             const dn = detectDisc(provaProx.disciplina);
             const nm = dn ? (dn.go ? 'Obstetrícia' : dn.nome) : provaProx.disciplina;
             const e = pool.find(x => x.nome === nm);
-            if (e && (b === 0 || (b === 1 && diffDias(d, provaProx.data) <= 5 && nBlocos > 1) )) escolha = e;
+            if (e && (b === 0 || (b === 1 && diffDias(d, provaProx.data) <= 5 && nBlocos > 1) )) { escolha = e; porProva = true; }
           }
           if (!escolha) {
             const ativos = pool.filter(x => x.peso > 0);
@@ -1151,7 +1199,7 @@ export function gerarTarefas({ perfil, hoje, inicio, dias, retidas = [], banco =
           const reps = escolha.fila && tam >= 90 && (escolha._need || 0) > 0.8 ? 2 : 1;
           for (let q = 0; q < reps; q++) {
             const t = montarBloco(escolha, reps > 1 ? r5(tam / 2) : tam, d, p, usados, temaAtual, assuntoIdx, provaProx);
-            if (t) { trimTask(t, reps > 1 ? r5(tam / 2) : tam); t.id = mkId(d); t.data = d; tarefasDia.push(t); if (t.tipo === 'estudo') { (t._vids || []).forEach(id => usados.add(id)); agendarRevisoes(t); } }
+            if (t) { trimTask(t, reps > 1 ? r5(tam / 2) : tam); t.id = mkId(d); t.data = d; if (porProva) t.trilha = 'faculdade'; tarefasDia.push(t); if (t.tipo === 'estudo') { (t._vids || []).forEach(id => usados.add(id)); agendarRevisoes(t); } }
           }
         }
       }
@@ -1179,7 +1227,7 @@ export function gerarTarefas({ perfil, hoje, inicio, dias, retidas = [], banco =
 function buildEstudoRevisaoProva(nome, prova, mn, disc0) {
   const foco = (disc0 && disc0.foco) || 'o que você mais errou nos materiais da matéria';
   return {
-    tipo: 'estudo', titulo: `Véspera da prova — ${prova.disciplina}`, materia: nome, tema: 'Revisão final', minutos: mn,
+    trilha: 'faculdade', tipo: 'estudo', titulo: `Véspera da prova — ${prova.disciplina}`, materia: nome, tema: 'Revisão final', minutos: mn,
     passos: [
       { n: 1, acao: 'resumo', minutos: r5(mn * 0.5), texto: (prova.assuntos && prova.assuntos.length) ? `Releia seus resumos dos tópicos da prova, na ordem do manual: ${prova.assuntos.slice(0, 10).join('; ')}${prova.assuntos.length > 10 ? '…' : ''}. Marque o que ainda não está firme. Não abra conteúdo novo.` : `Releia apenas seus resumos e anotações de ${prova.disciplina}, focando em ${foco}. Não abra conteúdo novo.`, recursos: [] },
       { n: 2, acao: 'questoes', minutos: r5(mn * 0.4), texto: 'Refaça as questões que você errou antes. Só as erradas.', recursos: [0] },

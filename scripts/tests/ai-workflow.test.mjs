@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import { runAiJob, workflowStatus, taskOrder, taskModels } from '../../src/ai-workflow.js';
+const tick = () => new Promise(resolve => setImmediate(resolve));
+const events = [], releases = [];
+let total = 0, peak = 0; const current = { groq:0, gemini:0, openrouter:0 }, max = {...current};
+const providers = ['groq','groq','gemini','gemini','openrouter','openrouter'];
+const jobs = providers.map((provider, index) => runAiJob(provider, () => new Promise(resolve => {
+  total++; current[provider]++; peak = Math.max(peak,total); max[provider] = Math.max(max[provider],current[provider]); events.push(index);
+  releases.push(() => { total--; current[provider]--; resolve(index); });
+})));
+await tick(); assert.equal(workflowStatus().fila.ativos,3); assert.equal(events.length,3);
+while (events.length < jobs.length || total) { const batch = releases.splice(0); batch.forEach(release => release()); await tick(); }
+await Promise.all(jobs); await tick();
+assert.ok(peak <= 3); assert.equal(max.groq,1); assert.ok(max.gemini<=2 && max.openrouter<=2);
+await assert.rejects(runAiJob('groq', () => {throw Error('Falha simulada');})); await tick();
+assert.equal(await runAiJob('groq',async()=>42),42); await tick();
+assert.equal(workflowStatus().fila.ativos,0);
+process.env.AI_QUEUE_WAIT_MS='10'; let release;
+const held=runAiJob('groq',()=>new Promise(resolve=>{release=resolve})); await tick();
+await assert.rejects(runAiJob('groq',async()=>null),error=>error.code==='ai_queue_busy');
+assert.equal(workflowStatus().fila.aguardando,0); release(); await held; delete process.env.AI_QUEUE_WAIT_MS; await tick();
+assert.deepEqual(taskModels('aula_flashcards',['nvidia/a','google/gemma-b','modelo/custom']),['google/gemma-b','nvidia/a','modelo/custom']);
+assert.deepEqual(taskOrder('aula_mapa'),['gemini','openrouter','groq']);
+assert.equal(workflowStatus().fila.ativos,0);
+const priority=[];let unlock;
+const first=runAiJob('groq',()=>new Promise(resolve=>{unlock=resolve}));await tick();
+const background=runAiJob('groq',async()=>{priority.push('background')},{background:true});
+const foreground=runAiJob('groq',async()=>{priority.push('foreground')});
+unlock();await Promise.all([first,background,foreground]);await tick();
+assert.deepEqual(priority,['foreground','background']);
+console.log('OK — fila global limitada, limites por provedor, falha libera vaga, espera expira e tarefas selecionam funções.');

@@ -14,11 +14,11 @@
    No boot lê os dois e JÁ FAZ apenas Delta Sync (pula a varredura do zero).
    Fallback de disco: data/ local (efêmero) quando o volume não estiver montado.
    ═══════════════════════════════════════════════════════════════════════════════ */
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { temConta, emailConta, driveFetch, driveFetchWithRetry } from './drive-auth.js';
-import { uploadCatalogToSupabase, supabaseCatalogReady } from './supabase-catalog.js';
+import { uploadCatalogToSupabase, downloadDriveChangeToken, uploadDriveChangeToken, supabaseCatalogReady } from './supabase-catalog.js';
+import { writableDir, TMP_DIR, safeReadJson, safeWriteJson } from './fs-safe.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const API = (process.env.DRIVE_API_BASE || 'https://www.googleapis.com').replace(/\/$/, '');
@@ -37,17 +37,9 @@ export const EXTRA_IDS = () => [...new Set(String(process.env.GOOGLE_DRIVE_EXTRA
 export const STATUS = { running: false, at: null, erro: '', pastas: 0, videos: 0, materiais: 0, falhas: 0, modo: '' };
 
 /* ── PERSISTÊNCIA DE ESTADO (Anti-Zero) ───────────────────────────────────────
-   Volume persistente do Railway montado em /app/data → sobrevive a deploys.   */
-function detectarVolume() {
-  const unix = process.platform !== 'win32';
-  const candidatos = unix ? ['/app/data', '/data'] : [];
-  candidatos.push(path.join(__dirname, '..', 'data'));
-  for (const d of candidatos) {
-    try { fs.mkdirSync(d, { recursive: true }); fs.accessSync(d, fs.constants.W_OK); return d; } catch (e) {}
-  }
-  return path.join(__dirname, '..', 'data');
-}
-export const VOLUME_DIR = detectarVolume();
+   Volume persistente (Railway) quando existe; na Vercel o projeto é read-only
+   e o estado cai para /tmp (efêmero). O durável é o Supabase (catálogo).      */
+export const VOLUME_DIR = writableDir(path.join(__dirname, '..', 'data')) || TMP_DIR;
 export const CATALOG_FILE = path.join(VOLUME_DIR, 'acervo-manifest.json'); // catálogo gerado
 export const TOKEN_FILE = path.join(VOLUME_DIR, 'sync-token.json');        // StartPageToken
 
@@ -73,35 +65,34 @@ export function setCatalogo(catalogo) {
 
 /* Lê volume no boot: se existem catálogo + token → PULA a varredura do zero */
 export function carregarEstado() {
-  try {
-    const salvo = JSON.parse(fs.readFileSync(CATALOG_FILE, 'utf8'));
-    if (salvo && (salvo.videos || []).length + (salvo.materials || []).length > 0) {
-      CAT = { generatedAt: salvo.generatedAt || null, roots: salvo.roots || [], videos: salvo.videos || [], materials: salvo.materials || [], folders: salvo.folders || {} };
-      console.log(`📦 [Acervo] Catálogo restaurado do volume: ${CAT.videos.length} vídeos, ${CAT.materials.length} materiais (gerado em ${CAT.generatedAt || '?'})`);
-    }
-  } catch (e) { /* sem catálogo salvo → vai de Full Sync */ }
-  try {
-    const tk = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8'));
-    if (tk && tk.pageToken) { TOKEN = tk.pageToken; console.log('🔑 [Acervo] StartPageToken restaurado do volume — a próxima rodada é Delta Sync.'); }
-  } catch (e) { /* sem token → Full Sync */ }
+  // Cold start no Vercel: /tmp vazio → safeReadJson devolve null em vez de ENOENT.
+  const salvo = safeReadJson(CATALOG_FILE, null);
+  if (salvo && (salvo.videos || []).length + (salvo.materials || []).length > 0) {
+    CAT = { generatedAt: salvo.generatedAt || null, roots: salvo.roots || [], videos: salvo.videos || [], materials: salvo.materials || [], folders: salvo.folders || {} };
+    console.log(`📦 [Acervo] Catálogo restaurado do volume: ${CAT.videos.length} vídeos, ${CAT.materials.length} materiais (gerado em ${CAT.generatedAt || '?'})`);
+  }
+  const tk = safeReadJson(TOKEN_FILE, null);
+  if (tk && tk.pageToken) { TOKEN = tk.pageToken; console.log('🔑 [Acervo] StartPageToken restaurado do volume — a próxima rodada é Delta Sync.'); }
   return { restaurado: !!TOKEN || !!CAT.generatedAt, modo: TOKEN ? 'delta-pronto' : (CAT.generatedAt ? 'full-pronto' : 'vazio') };
 }
 carregarEstado(); // roda no import: o 1º request já tem dados (se houver volume)
 
 function salvarEstado() {
   CAT.generatedAt = CAT.generatedAt || new Date().toISOString();
-  try {
-    fs.writeFileSync(CATALOG_FILE, JSON.stringify(CAT)); // compacto: nó grande
-    fs.writeFileSync(TOKEN_FILE, JSON.stringify({ pageToken: TOKEN, savedAt: new Date().toISOString() }));
-  } catch (e) { console.warn('⚠️ [Acervo] Falha ao persistir estado:', e.message); }
+  // /tmp no Vercel. safeWriteJson nunca lança: EROFS apenas devolve false.
+  const okCatalogo = safeWriteJson(CATALOG_FILE, CAT); // compacto: nó grande
+  const okToken = safeWriteJson(TOKEN_FILE, { pageToken: TOKEN, savedAt: new Date().toISOString() });
+  if (!okCatalogo && !okToken) {
+    console.warn('⚠️ [Acervo] Estado local não gravável — mantendo apenas em memória + Supabase.');
+  }
 }
 
 /* Ler manifest antigo (modo legado: catálogo fixo + pastas extras) */
-export const EXTRA_FILE = path.join(__dirname, '..', 'data', 'extra-manifest.json');
+export const EXTRA_FILE = path.join(VOLUME_DIR, 'extra-manifest.json');
 function lerLegado() {
   if (MEMLEGADO) return MEMLEGADO;
-  try { MEMLEGADO = JSON.parse(fs.readFileSync(EXTRA_FILE, 'utf8')); } catch (_) { return { videos: [], materials: [], roots: [] }; }
-  return MEMLEGADO;
+  MEMLEGADO = safeReadJson(EXTRA_FILE, null);
+  return MEMLEGADO || { videos: [], materials: [], roots: [] };
 }
 export function lerExtra() {
   if (USA_BASE()) return lerLegado();
@@ -188,15 +179,64 @@ function removerSubtree(folderId) {
   for (const fid of apagar) delete CAT.folders[fid];
   CAT.videos = CAT.videos.filter(v => !apagar.has(v.pid));
   CAT.materials = CAT.materials.filter(m => !apagar.has(m.pid));
+  CAT.roots = CAT.roots.filter(root => !apagar.has(root.id));
+}
+async function recalcularCaminhosSubarvore(folderId) {
+  const descendants = new Set([folderId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [id, folder] of Object.entries(CAT.folders)) {
+      if (folder?.parent && descendants.has(folder.parent) && !descendants.has(id)) { descendants.add(id); changed = true; }
+    }
+  }
+  for (const item of [...CAT.videos, ...CAT.materials]) {
+    if (!descendants.has(item.pid)) continue;
+    const pathInfo = await partesDe([item.pid], item.d);
+    item.course = pathInfo.course;
+    item.path = pathInfo.path;
+  }
+}
+async function dentroDasRaizes(parentIds) {
+  const roots = new Set([MAIN_ID(), ...EXTRA_IDS()].filter(Boolean));
+  const queue = [...(parentIds || [])];
+  const visited = new Set();
+  const discovered = [];
+  while (queue.length && visited.size < 32) {
+    const id = queue.shift();
+    if (!id || visited.has(id)) continue;
+    if (roots.has(id) || CAT.folders[id]) {
+      for (const folder of discovered) CAT.folders[folder.id] = { name: folder.name, parent: folder.parent };
+      return true;
+    }
+    visited.add(id);
+    try {
+      const meta = await get(`${API}/drive/v3/files/${encodeURIComponent(id)}?fields=id,name,parents&supportsAllDrives=true&includeItemsFromAllDrives=true`);
+      discovered.push({ id, name: limpaParte(meta.name), parent: (meta.parents || [])[0] || null });
+      queue.push(...(meta.parents || []));
+    } catch (_) { return null; }
+  }
+  return false;
 }
 async function aplicarMudanca(ch) {
   const removido = ch.removed || !ch.file;
   if (removido) {
-    removerRegistro(ch.fileId);
+    const existed = !!CAT.folders[ch.fileId] || [...CAT.videos, ...CAT.materials].some(item => item.id === ch.fileId);
     if (CAT.folders[ch.fileId]) removerSubtree(ch.fileId);
-    return;
+    else if (existed) removerRegistro(ch.fileId);
+    return existed;
   }
   const f = ch.file;
+  const tracked = CAT.folders[f.id] || [...CAT.videos, ...CAT.materials].some(item => item.id === f.id);
+  const inScope = await dentroDasRaizes(f.parents);
+  if (inScope !== true) {
+    if (inScope === false && tracked) {
+      if (CAT.folders[f.id]) removerSubtree(f.id);
+      else removerRegistro(f.id);
+      return true;
+    }
+    return false;
+  }
   const ehAtalho = !!(f.shortcutDetails && f.shortcutDetails.targetId);
   const alvoId = ehAtalho ? f.shortcutDetails.targetId : f.id;
   const mime = ehAtalho ? (f.shortcutDetails && f.shortcutDetails.targetMimeType) : f.mimeType;
@@ -205,27 +245,32 @@ async function aplicarMudanca(ch) {
   if (f.trashed) { // lixeira → remove registro (folha ou subárvore)
     removerRegistro(alvoId);
     if (CAT.folders[alvoId]) removerSubtree(alvoId);
-    return;
+    return tracked;
   }
   if (mime === 'application/vnd.google-apps.folder') {
     removerRegistro(alvoId);
     if (ehAtalho) { // atalho p/ pasta: registra a pasta com o nome do atalho; sem pai, sem raiz
       CAT.folders[alvoId] = { name: limpa(nome), parent: null };
       if ((f.parents && f.parents[0]) === MAIN_ID()) CAT.roots.push({ id: alvoId, name: limpa(nome) });
-      return;
+      return true;
     }
-    CAT.folders[alvoId] = { name: limpa(nome), parent: (f.parents && f.parents[0]) || null };
-    if ((f.parents && f.parents[0]) === MAIN_ID() && !CAT.roots.some(r => r.id === alvoId)) {
-      CAT.roots.push({ id: alvoId, name: limpa(nome) });
-    }
-    return;
+    const parentId = (f.parents && f.parents[0]) || null;
+    CAT.folders[alvoId] = { name: limpa(nome), parent: parentId };
+    if (parentId === MAIN_ID()) {
+      const root = CAT.roots.find(r => r.id === alvoId);
+      if (root) root.name = limpa(nome); else CAT.roots.push({ id: alvoId, name: limpa(nome) });
+    } else CAT.roots = CAT.roots.filter(root => root.id !== alvoId);
+    await recalcularCaminhosSubarvore(alvoId);
+    return true;
   }
   // Arquivo novo/modificado → ressincroniza só ele
+  const existed = [...CAT.videos, ...CAT.materials].some(item => item.id === alvoId);
   removerRegistro(alvoId);
   const { course, path } = await partesDe(f.parents, limpa(nome));
   const reg = { d: nome, t: limpa(nome), id: alvoId, course, path, pid: (f.parents && f.parents[0]) || null };
   if (/^video\//.test(mime || '') || VIDEO.test(nome)) CAT.videos.push(reg);
   else if (/pdf|document|presentation|spreadsheet|text/.test(mime || '') || DOC.test(nome)) CAT.materials.push(reg);
+  return existed || /^video\//.test(mime || '') || VIDEO.test(nome) || /pdf|document|presentation|spreadsheet|text/.test(mime || '') || DOC.test(nome);
 }
 
 /* ═══ GOOGLE DRIVE CHANGES API — PONTO DE INJEÇÃO do Delta Sync ═════════════════
@@ -243,24 +288,27 @@ async function deltaSync(key) {
   if (STATUS.running) return null;
   STATUS.running = true;
   const t0 = Date.now();
-  let tok = TOKEN, novoToken = null, processadas = 0;
+  let tok = TOKEN, novoToken = null, processadas = 0, catalogChanged = false;
+  const changeRecords = [];
   try {
     while (tok) {
-      const campos = 'nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,trashed,parents,shortcutDetails))';
+      const campos = 'nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,size,modifiedTime,webViewLink,trashed,parents,shortcutDetails))';
       const d = await get(`${API}/drive/v3/changes?pageToken=${encodeURIComponent(tok)}&includeRemoved=true&restrictToMyDrive=false&spaces=drive&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=${encodeURIComponent(campos)}`);
-      for (const ch of (d.changes || [])) { await aplicarMudanca(ch); processadas++; }
+      for (const ch of (d.changes || [])) { catalogChanged = (await aplicarMudanca(ch)) || catalogChanged; changeRecords.push(ch); processadas++; }
       if (d.newStartPageToken) { novoToken = d.newStartPageToken; break; }
       tok = d.nextPageToken || '';
     }
     if (novoToken) TOKEN = novoToken;        // avança a âncora p/ próximo delta
+    if (catalogChanged) CAT.generatedAt = new Date().toISOString();
     STATUS.at = new Date().toISOString(); Object.assign(STATUS, { modo: 'delta', erro: '' });
     salvarEstado();
+    if (novoToken) await uploadDriveChangeToken(TOKEN);
     // Persiste no Supabase (Single Source of Truth) — não bloqueia o fluxo principal
-    if (supabaseCatalogReady()) {
-      uploadCatalogToSupabase(CAT).catch(() => {}); // fire-and-forget
+    if (catalogChanged && supabaseCatalogReady()) {
+      await uploadCatalogToSupabase(CAT);
     }
     console.log(`🔄 [Acervo] Delta Sync OK: ${processadas} mudança(s) em ${((Date.now() - t0) / 1000).toFixed(1)}s → ${CAT.videos.length} vídeos, ${CAT.materials.length} materiais`);
-    return { videos: CAT.videos.length, materials: CAT.materials.length, mudancas: processadas, modo: 'delta' };
+    return { videos: CAT.videos.length, materials: CAT.materials.length, mudancas: processadas, catalogChanged, changes: changeRecords, modo: 'delta' };
   } catch (e) {
     /* Fallback e Resiliência: token expirado/invalidado (410 Gone, 404) →
        descarta a âncora e refaz Full Sync automaticamente, gravando o novo token. */
@@ -280,6 +328,8 @@ async function varrerFull(key) {
   const t0 = Date.now();
   STATUS.running = true; STATUS.erro = ''; STATUS.pastas = 0;
   try {
+    // Fixa a âncora antes do crawl para não perder mudanças feitas durante a carga.
+    await getStartPageToken();
     const videos = [], materials = [], roots = [];
     const folders = {}; // id → { name, parent } — árvore reconstruída (usada pelo Delta)
     const alvos = [];
@@ -338,16 +388,17 @@ async function varrerFull(key) {
     const pronto = { generatedAt: new Date().toISOString(), roots, videos, materials, folders };
 
     CAT = pronto;
-    try { await getStartPageToken(); salvarEstado(); } // ⬅ CHANGES API injetada aqui (âncora p/ deltas)
-    catch (e) { console.warn('⚠️ [Acervo] Sem token de changes (fará Full sempre):', e.message); salvarEstado(); }
+    salvarEstado();
+    await uploadDriveChangeToken(TOKEN);
     // Persiste no Supabase (Single Source of Truth) — não bloqueia o fluxo principal
     if (supabaseCatalogReady()) {
-      uploadCatalogToSupabase(CAT).catch(() => {}); // fire-and-forget
+      await uploadCatalogToSupabase(CAT);
     }
     STATUS.at = new Date().toISOString(); Object.assign(STATUS, { modo: 'full', erro: '' });
     console.log(`✅ [Acervo] Full Sync: ${videos.length} vídeos, ${materials.length} materiais, ${roots.length} cursos em ${((Date.now() - t0) / 1000).toFixed(0)}s. Delta Sync ativo.`);
     return { videos: videos.length, materials: materials.length, mudancas: 0, modo: 'full' };
   } catch (e) {
+    TOKEN = null; // o crawl não fechou, então a nova âncora não pode ser usada
     STATUS.erro = String(e.message || e).slice(0, 260);
     return null;
   } finally { STATUS.running = false; }
@@ -388,7 +439,7 @@ async function varrerLegado(key) {
       STATUS.erro = falhas.length + ' pasta(s) não puderam ser lidas; mantive a lista anterior';
       return { videos: antes.videos.length, materials: antes.materials.length };
     }
-    fs.writeFileSync(EXTRA_FILE, JSON.stringify(pronto)); MEMLEGADO = pronto;
+    safeWriteJson(EXTRA_FILE, pronto); MEMLEGADO = pronto;
     Object.assign(STATUS, { at: new Date().toISOString(), videos: videos.length, materiais: materials.length });
     return { videos: videos.length, materials: materials.length };
   } catch (e) { STATUS.erro = String(e.message || e).slice(0, 260); return null; }
@@ -402,18 +453,24 @@ async function varrerLegado(key) {
 export async function varrerExtras(key = process.env.GOOGLE_DRIVE_API_KEY || '') {
   if (!USA_BASE()) {
     if (!key && !temConta()) { STATUS.erro = 'falta GOOGLE_SERVICE_ACCOUNT_JSON (pasta privada) ou GOOGLE_DRIVE_API_KEY (pasta com link público)'; return null; }
-    if (!TOKEN && !CAT.generatedAt) return await varrerFull(key);
+    if (!TOKEN && supabaseCatalogReady()) {
+      const saved = await downloadDriveChangeToken();
+      if (saved?.pageToken) TOKEN = saved.pageToken;
+    }
+    if (!TOKEN) return await varrerFull(key);
     return await deltaSync(key);
   }
   if (!key && !temConta()) { STATUS.erro = 'falta GOOGLE_SERVICE_ACCOUNT_JSON (pasta privada) ou GOOGLE_DRIVE_API_KEY (pasta com link público)'; return null; }
   return await varrerLegado(key);
 }
 
+export function getDriveChangeToken() { return TOKEN; }
+
 /* ═══ Junta o catálogo principal com o das pastas extras (ids repetidos valem o principal) ═══ */
 export function juntar(base0) {
   const base = USA_BASE() ? base0 : { ...base0, videos: [], materials: [], courses: [] };
   const ex = lerExtra();
-  if (!ex.videos.length && !ex.materials.length) return base;
+  if (!ex.videos.length && !ex.materials.length) return { ...base, generatedAt: ex.generatedAt || base.generatedAt };
   const vi = new Set((base.videos || []).map(v => v.id)), mi = new Set((base.materials || []).map(m => m.id));
-  return { ...base, videos: [...(base.videos || []), ...ex.videos.filter(v => !vi.has(v.id))], materials: [...(base.materials || []), ...ex.materials.filter(m => !mi.has(m.id))], courses: [...(base.courses || []), ...(ex.roots || []).filter(r => !(base.courses || []).some(c => c.id === r.id))] };
+  return { ...base, generatedAt: ex.generatedAt || base.generatedAt, videos: [...(base.videos || []), ...ex.videos.filter(v => !vi.has(v.id))], materials: [...(base.materials || []), ...ex.materials.filter(m => !mi.has(m.id))], courses: [...(base.courses || []), ...(ex.roots || []).filter(r => !(base.courses || []).some(c => c.id === r.id))] };
 }

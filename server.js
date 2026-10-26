@@ -1,4 +1,7 @@
-import { selecionar as selecionarQuestoes, norm, acharDoencas } from './src/questoes-aula.js';
+import './src/load-env.js';
+import { selecionar as selecionarQuestoes, selecionarComCobertura as selecionarQuestoesComCobertura, norm, acharDoencas } from './src/questoes-aula.js';
+import { filterQuestionsByIndexRows, getQuestionIndexPlan, searchPersistedQuestionIndex } from './src/question-index.js';
+import { embedIscTexts, semanticEmbeddingConfig } from './src/isc-embeddings.js';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -9,45 +12,41 @@ import zlib from 'zlib';
 import { Readable } from 'stream';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type, generateAI, aiConfigured, aiStatus } from './src/ai-provider.js';
 import * as cheerio from 'cheerio';
 import { plGerarPlanSinergia as plEngineGerarPlan } from './smart_scheduler.js';
 import { registerPlanner } from './src/planner-routes.js';
+import { registerPlannerV3 } from './src/planner-v3-routes.js';
 
 import { registerAula } from './src/aula.js';
+import { registerAcervoSemantic } from './src/acervo-semantic.js';
+import { registerIscRoutes, retrieveIscUserContext } from './src/isc-routes.js';
 import { registerApostilaReader } from './src/apostila-reader.js';
-import { registerAuthRoutes, authMiddleware, getUserFilePath, getUserDataDir, validateSession, updateUserProfile } from './src/auth-multiuser.js';
+import { registerMedreaderMarcas } from './src/medreader-marcas.js';
+import { materiaisDeIrmaos } from './src/materiais-irmaos.js';
+import { registerAuthRoutes, registerAdminRoutes, authMiddleware, getUserFilePath, getUserDataDir, getRequestSessionToken, validateSession, updateUserProfile } from './src/auth-multiuser.js';
 import { varrerExtras, juntar as juntarExtras, lerExtra, STATUS as EXTRA_STATUS, EXTRA_IDS, setCatalogo, CAT } from './src/extra-drive.js';
 import { resetCatalogo } from './src/planner-engine.js';
-import { temConta, emailConta, erroConta, driveFetch, authHeaders, driveFetchWithRetry, cleanDriveId } from './src/drive-auth.js';
-import { uploadToDrive, createFolder, findFolderByName, GOOGLE_DRIVE_RECORDINGS_FOLDER_ID as DRIVE_RECORDINGS_ID } from './src/drive.js';
-import { downloadCatalogFromSupabase, supabaseCatalogReady, ensureSupabaseBucket } from './src/supabase-catalog.js';
+import { driveToken, temConta, emailConta, erroConta, driveFetch, authHeaders, driveFetchWithRetry, cleanDriveId } from './src/drive-auth.js';
+
+import { downloadCatalogFromSupabase, downloadQuestionsBankFromSupabase, uploadQuestionsBankToSupabase, supabaseCatalogReady, ensureSupabaseBucket } from './src/supabase-catalog.js';
+import { IS_SERVERLESS, TMP_DIR, writableDir, safeReadJson, safeWriteJson } from './src/fs-safe.js';
+import { getSystemConfig, setSystemConfig, systemConfigHealth } from './src/system-config.js';
+import { getFlashcardSyncStatus, readFlashcardManifest, readFlashcardPage, readFlashcardMedia, startFlashcardSyncScheduler, syncDriveFlashcards } from './src/drive-flashcards.js';
+import { acceptDriveNotification, queueDriveChange, renewDrivePushChannel, startDrivePushRenewal } from './src/drive-push.js';
+import { detectMediaContainer } from './src/media-format.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Carrega o .env sem dependência externa — variáveis já definidas no ambiente têm prioridade
-function loadDotEnv() {
-  try {
-    const envPath = path.join(__dirname, '.env');
-    if (!fs.existsSync(envPath)) return;
-    const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
-    for (const line of lines) {
-      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
-      if (!m) continue;
-      let value = m[2].trim();
-      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-      }
-      if (!(m[1] in process.env)) process.env[m[1]] = value;
-    }
-  } catch (err) {
-    console.warn('⚠️ Não foi possível carregar o .env:', err.message);
-  }
-}
-loadDotEnv();
+/* ═══ DIRETÓRIO DE ESTADO GRAVÁVEL ═══════════════════════════════════════════════
+   Na Vercel (serverless) o bundle é somente leitura (/var/task). Todo estado
+   efêmero (caches, tokens, bancos de trabalho) vai para /tmp. O estado durável
+   continua no Supabase (catálogo/usuários) e no GitHub (.json.gz do banco). */
+const DATA_DIR = writableDir(process.env.APP_DATA_DIR || path.join(__dirname, 'data')) || TMP_DIR;
 
 const app = express();
+const catalogEventClients = new Set();
 // Em hospedagens (Render, Railway...) a porta vem do ambiente; 3000 é o padrão local
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const HOST = '0.0.0.0';
@@ -55,8 +54,35 @@ const HOST = '0.0.0.0';
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Secret for media ticket encryption (links /m/...)
-const AUTH_SECRET = crypto.createHash('sha256').update('cuscuz-media-ticket|' + (process.env.APP_PASSWORD || 'default-secret-change-me')).digest();
+// Google Drive chama este webhook sem sessão do Cuscuz. O segredo do canal e
+// o ID persistido do canal autenticam a notificação; seu conteúdo só dispara o delta.
+app.post('/webhooks/google-drive', async (req, res) => {
+  if (!acceptDriveNotification(req.headers)) return res.status(403).end();
+  const state = String(req.headers['x-goog-resource-state'] || '');
+  if (state === 'change' || state === 'update' || state === 'trash') {
+    if (IS_SERVERLESS) {
+      try { await processDriveUpdate(); }
+      catch (error) { console.error('[Drive Push] Falha processando notificação:', error.message); return res.status(500).end(); }
+    } else {
+      queueDriveChange(processDriveUpdate);
+    }
+  }
+  res.status(204).end();
+});
+
+// Secret for media ticket encryption. Fail closed when no secret is configured;
+// a public, hard-coded fallback would let anyone forge a media URL.
+const mediaTicketSecret = process.env.MEDIA_TICKET_SECRET || process.env.APP_PASSWORD || '';
+const AUTH_SECRET = mediaTicketSecret ? crypto.createHash('sha256').update('cuscuz-media-ticket|' + mediaTicketSecret).digest() : null;
+
+// ── Mídia pesada fora da Vercel (economiza a "Transferência rápida de origem" do plano Hobby) ──
+// MEDIA_ORIGIN = endereço https público de OUTRO processo deste mesmo app (ex.: seu PC via túnel) que serve
+//   vídeos/PDFs; aqui o app só redireciona (poucos bytes). Os dois lados precisam do MESMO APP_PASSWORD
+//   (é a chave que assina os links /m/...) e das credenciais do Drive.
+// MEDIA_ONLY=1 = esse processo só serve /m/* e /api/health (todo o resto responde 404): seguro para expor num túnel.
+const MEDIA_ONLY = process.env.MEDIA_ONLY === '1';
+const MEDIA_ORIGIN = /^https?:\/\//i.test(process.env.MEDIA_ORIGIN || '') ? String(process.env.MEDIA_ORIGIN).trim().replace(/\/+$/, '') : '';
+if (MEDIA_ONLY) app.use((req, res, next) => (/^\/m\//.test(req.path) || req.path === '/api/health') ? next() : res.status(404).send('Not found'));
 
 /* ═══ AUTENTICAÇÃO MULTI-USUÁRIO (scrypt + sessões) ═══ */
 app.set('trust proxy', 1);
@@ -65,23 +91,56 @@ app.set('trust proxy', 1);
 registerAuthRoutes(app);
 
 // Health check endpoint (sempre acessível, sem autenticação)
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    openaiConfigured: !!openai,
-    supabaseConfigured: !!supabase,
-    geminiConfigured: !!process.env.GEMINI_API_KEY,
-    authConfigured: true,
-    drive: driveStatus
-  });
-});
-
 // Middleware de autenticação para todas as rotas /api/*
 app.use('/api', authMiddleware);
+registerAdminRoutes(app);
+
+app.get('/api/health', async (req, res) => {
+  res.set('Cache-Control', 'no-store, max-age=0');
+  const payload = { status: 'ok', timestamp: new Date().toISOString() };
+  const isAdmin = ['admin', 'super_admin'].includes(req.user?.role);
+
+  // Uptime checks are public; operational details and active diagnostics are admin-only.
+  if (isAdmin) {
+    Object.assign(payload, {
+      openaiConfigured: !!openai,
+      supabaseConfigured: !!supabase,
+      aiConfigured: aiConfigured(),
+      aiProvider: aiStatus().provider,
+      aiModel: aiStatus().model,
+      aiProvedores: aiStatus().provedores,
+      aiFluxo: aiStatus().workflow,
+      geminiConfigured: false,
+      authConfigured: !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
+      drive: driveStatus
+    });
+  }
+
+  if (req.query.deep === '1') {
+    if (!isAdmin) return res.status(403).json({ status: 'forbidden' });
+    try { payload.systemConfig = await systemConfigHealth(); } catch (err) { payload.systemConfig = { error: err.message }; }
+    try {
+      const auth = await hwqEnsureToken();
+      payload.hardworq = {
+        authMode: (HWQ.email && HWQ.senha) ? 'login' : (HWQ.cookie ? 'cookie' : 'nenhum'),
+        emailConfigured: !!HWQ.email,
+        userTokenActive: !!HWQ_STATE.userToken,
+        tokenStore: HWQ_STATE.tokenStore || 'none',
+        lastLoginOk: HWQ_STATE.lastLoginOk,
+        lastLoginAt: HWQ_STATE.lastLoginAt,
+        lastLoginStatus: HWQ_STATE.lastLoginStatus || null,
+        loginTest: { ok: !!auth.ok, status: auth.status || null, error: auth.error ? String(auth.error).slice(0, 240) : null }
+      };
+    } catch (err) {
+      payload.hardworq = { loginTest: { ok: false, error: err.message } };
+    }
+  }
+
+  res.json(payload);
+});
 
 /* ═══ ARQUIVOS ESTÁTICOS: nunca expor código, dados internos ou segredos ═══ */
-const BLOCKED_STATIC = /^\/(server\.js|package(-lock)?\.json|render\.yaml|DEPLOY\.md|README\.md|supabase-schema\.sql|metadata\.json|drive-tree-snapshot\.json|data(\/|$)|scripts(\/|$)|src(\/|$)|node_modules(\/|$)|\.)/i;
+const BLOCKED_STATIC = /^\/(server\.js|api\/index\.js$|vercel\.json|package(-lock)?\.json|render\.yaml|DEPLOY\.md|README\.md|supabase-schema\.sql|metadata\.json|drive-tree-snapshot\.json|data(\/|$)|scripts(\/|$)|src(\/|$)|node_modules(\/|$)|\.)/i;
 app.use((req, res, next) => {
   let p = '';
   try { p = decodeURIComponent(req.path); } catch (_) { return res.status(400).end(); }
@@ -89,62 +148,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Initialize Google Gemini Client with official @google/genai SDK
-const geminiApiKey = process.env.GEMINI_API_KEY;
-let ai = null;
-function getGeminiClient() {
-  if (ai) return ai;
-  const key = process.env.GEMINI_API_KEY;
-  if (key) {
-    try {
-      ai = new GoogleGenAI({
-        apiKey: key,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build'
-          }
-        }
-      });
-      console.log('✅ Google Gemini client initialized (@google/genai)');
-    } catch (err) {
-      console.warn('⚠️ Could not initialize Gemini:', err.message);
-    }
-  }
-  return ai;
-}
-getGeminiClient();
-
-// Resilient Gemini model caller with retry and fallback cascade
-async function generateWithGemini(params) {
-  const client = getGeminiClient();
-  if (!client) throw new Error('GEMINI_API_KEY não configurada no servidor.');
-  const models = ['gemini-3.8-flash'];
-  let lastErr = null;
-
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    for (const m of models) {
-      try {
-        const res = await client.models.generateContent({
-          model: m,
-          ...params
-        });
-        return res;
-      } catch (err) {
-        lastErr = err;
-        const msg = String(err.message || '');
-        if (msg.includes('API key not valid') || msg.includes('API_KEY_INVALID') || msg.includes('UNAUTHENTICATED')) {
-          throw new Error('A chave GEMINI_API_KEY configurada não é válida para este serviço.');
-        }
-        const is503 = err.status === 503 || msg.includes('503');
-        if (attempt === 1) {
-          console.warn(`[Gemini] Modelo ${m} temporariamente ocupado (503/alta demanda), tentando novamente...`);
-        }
-        await new Promise(r => setTimeout(r, 400 * attempt));
-      }
-    }
-  }
-  throw lastErr;
-}
+// IA generativa: provedor único (Groq) em src/ai-provider.js — chave só no servidor, sem fallback silencioso.
 
 // In-memory conversations store (fallback if Supabase credentials are not provided)
 const memoryConversations = new Map();
@@ -300,33 +304,27 @@ const DRIVE_OK = !!DRIVE_API_KEY || temConta();
 if (!DRIVE_OK) console.warn('⚠️ Nem GOOGLE_SERVICE_ACCOUNT_JSON nem GOOGLE_DRIVE_API_KEY definidas: o acervo do Drive não vai carregar.');
 const DRIVE_ROOT_FOLDER_ID = cleanDriveId(process.env.GOOGLE_DRIVE_FOLDER_ID || '');
 
-// Persistent disk cache for Drive folder listings
-const DRIVE_CACHE_DIR = path.join(__dirname, 'data');
+// Cache de pastas do Drive. Na Vercel o projeto é somente leitura: gravamos em /tmp
+// (efêmero, por invocação) e o estado durável vive no Supabase. Nunca quebra se não houver disco.
+const DRIVE_CACHE_DIR = DATA_DIR || TMP_DIR;
 const DRIVE_CACHE_FILE = path.join(DRIVE_CACHE_DIR, 'drive-folder-cache.json');
 let driveCache = new Map();
 try {
-  if (fs.existsSync(DRIVE_CACHE_FILE)) {
-    const raw = fs.readFileSync(DRIVE_CACHE_FILE, 'utf8');
-    const obj = JSON.parse(raw);
-    for (const [k, v] of Object.entries(obj)) {
-      driveCache.set(k, v);
-    }
-    console.log(`📂 Cache permanente de pastas do Drive carregado (${driveCache.size} pastas).`);
+  const obj = safeReadJson(DRIVE_CACHE_FILE, null);
+  if (obj && typeof obj === 'object') {
+    for (const [k, v] of Object.entries(obj)) driveCache.set(k, v);
+    console.log(`📂 Cache de pastas do Drive carregado (${driveCache.size} pastas).`);
   }
 } catch (e) {
   console.warn('⚠️ Falha ao carregar cache de pastas do Drive:', e.message);
 }
 
 function saveDriveCacheToDisk() {
-  try {
-    if (!fs.existsSync(DRIVE_CACHE_DIR)) fs.mkdirSync(DRIVE_CACHE_DIR, { recursive: true });
-    const obj = {};
-    for (const [k, v] of driveCache.entries()) {
-      obj[k] = v;
-    }
-    fs.writeFileSync(DRIVE_CACHE_FILE, JSON.stringify(obj), 'utf8');
-  } catch (e) {
-    console.warn('⚠️ Falha ao salvar cache de pastas do Drive no disco:', e.message);
+  // Cache é best-effort: falha silenciosa quando o FS é somente leitura.
+  const obj = {};
+  for (const [k, v] of driveCache.entries()) obj[k] = v;
+  if (!safeWriteJson(DRIVE_CACHE_FILE, obj) && !IS_SERVERLESS) {
+    console.warn('⚠️ Falha ao salvar cache de pastas do Drive no disco.');
   }
 }
 
@@ -347,7 +345,10 @@ function driveErrorInfo(status, bodyText) {
   else if (/service_disabled|accessnotconfigured|has not been used|is disabled|api_key_service_blocked|blocked/.test(blob)) hint = 'A Google Drive API não está ativada ou a chave não a permite. Ative em APIs e serviços > Biblioteca e marque "Google Drive API" nas restrições da chave.';
   else if (/ratelimit|quota|userratelimit/.test(blob)) hint = 'Cota do Google atingida. Tente de novo em alguns minutos.';
   else if (status === 404 || /notfound/.test(blob)) hint = 'Pasta não encontrada. Confira GOOGLE_DRIVE_FOLDER_ID e se a pasta está como "Qualquer pessoa com o link".';
-  else if (status === 403) hint = 'Acesso negado pelo Google. Confira se a pasta está como "Qualquer pessoa com o link" e as permissões da chave.';
+  else if (status === 403) {
+    if (/storageQuotaExceeded|do not have storage quota/.test(blob)) hint = 'Service Account não tem cota de armazenamento própria no Google Drive. Use uma pasta dentro de um Shared Drive (Google Workspace) como GOOGLE_DRIVE_FOLDER_ID, ou configure OAuth delegation (domain-wide delegation) em vez de Service Account.';
+    else hint = 'Acesso negado pelo Google. Confira se a pasta está como "Qualquer pessoa com o link" e as permissões da chave.';
+  }
   else hint = 'Erro do Google Drive (' + status + '). Veja os logs do Render.';
   return { reason: reason || ('http_' + status), hint };
 }
@@ -402,6 +403,22 @@ async function inicializarCatalogoNuvem() {
     }
   } catch (e) {
     console.error('❌ [Boot] Full Sync de emergência falhou:', e.message);
+  }
+
+  // Fallback de Segurança Máxima: se Supabase e Full Sync falharem, usa o acervo-manifest.json empacotado na raiz
+  if ((CAT.videos || []).length === 0 && (CAT.materials || []).length === 0) {
+    try {
+      const fallbackPath = path.join(__dirname, 'acervo-manifest.json');
+      if (fs.existsSync(fallbackPath)) {
+        const localCat = JSON.parse(fs.readFileSync(fallbackPath, 'utf8'));
+        if ((localCat.videos || []).length > 0 || (localCat.materials || []).length > 0) {
+          setCatalogo(localCat);
+          console.log(`🛡️ [Boot] Fallback ativado: catálogo local carregado com ${localCat.videos?.length || 0} vídeos e ${localCat.materials?.length || 0} materiais.`);
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ [Boot] Falha ao ler catálogo local de fallback:', err.message);
+    }
   }
 }
 
@@ -470,7 +487,7 @@ function initSnapshotIndex() {
     console.warn('⚠️ Falha ao inicializar snapshot local do Drive:', err.message);
   }
 }
-inicializarCatalogoNuvem().then(() => initSnapshotIndex());
+const catalogoBootPromise = inicializarCatalogoNuvem().then(() => initSnapshotIndex());
 
 function getFilesFromSnapshot(folderId) {
   if (!snapshotIndex) return null;
@@ -657,8 +674,23 @@ async function materiaisContexto(res, videoId, parentIdQ) {
       if (reg && reg.pid) parent = reg.pid;
     }
     if (!parent) return res.json({ success: false, hint: 'vídeo sem pasta-pai conhecida', videoId, parent: '', total: 0, pdfs: [], apostilas: [] });
-    // 1) catálogo (0 cota) → 2) files.list com cache por pasta
-    const val = materiaisDoCatalogoPorPasta(parent) || await materiaisDoDrivePorPasta(parent).catch(() => ({ pdfs: [], apostilas: [], fonte: 'drive-erro' }));
+    // 1) catálogo (0 cota): pasta do vídeo + pastas irmãs de material (ex.: "Apostila", "Resumo")
+    //    → 2) files.list com cache por pasta
+    const propria = materiaisDoCatalogoPorPasta(parent);
+    const cat0 = lerExtra() || {};
+    const vizinhas = materiaisDeIrmaos(cat0.folders || CAT.folders, cat0.materials, parent);
+    let val = null;
+    if (propria || vizinhas) {
+      const vistos = new Set();
+      const junta = (a, b) => [...a, ...b].filter((m) => { const k = m.nome.toLowerCase(); if (vistos.has(k)) return false; vistos.add(k); return true; });
+      val = {
+        pdfs: junta((propria || {}).pdfs || [], (vizinhas || {}).pdfs || []),
+        apostilas: junta((propria || {}).apostilas || [], (vizinhas || {}).apostilas || []),
+        fonte: propria ? (vizinhas ? 'catalogo+irmas' : 'catalogo') : 'catalogo-irmas',
+      };
+    } else {
+      val = await materiaisDoDrivePorPasta(parent).catch(() => ({ pdfs: [], apostilas: [], fonte: 'drive-erro' }));
+    }
     return res.json({ success: true, videoId, parent, total: val.pdfs.length + val.apostilas.length, pdfs: val.pdfs, apostilas: val.apostilas, source: val.fonte });
   } catch (e) {
     console.warn('⚠️ [Materials ctx]', e.message);
@@ -699,19 +731,19 @@ app.get('/api/drive/materials', async (req, res) => {
   }
   // Now moduleId is the grandparent if possible, else parent, else video's parent
   const pdfs = [], apostilas = [];
-  const vistosPdf = new Set(), vistosHtml = new Set(); // evita o mesmo nome repetido (ex.: "Apostila - PED 1.pdf" em varias subpastas)
+  const vistos = new Set();
   for (const m of (cat.materials || [])) {
     if (!isDescendantOf(m.pid, moduleId)) continue;
+    const id = String(m.id || '');
+    if (!id || vistos.has(id)) continue;
     const nome = String(m.d || '');
     const lower = nome.toLowerCase();
     if (lower.endsWith('.pdf')) {
-      if (vistosPdf.has(lower)) continue;
-      vistosPdf.add(lower);
-      pdfs.push({ id: m.id, nome, isHtml: false, aulaNome: '', url: '' });
+      vistos.add(id);
+      pdfs.push({ id, nome, isHtml: false, aulaNome: '', url: '' });
     } else if (lower.endsWith('.html') || lower.endsWith('.htm')) {
-      if (vistosHtml.has(lower)) continue;
-      vistosHtml.add(lower);
-      apostilas.push({ id: m.id, nome, isHtml: true, aulaNome: '', url: '' });
+      vistos.add(id);
+      apostilas.push({ id, nome, isHtml: true, aulaNome: '', url: '' });
     }
   }
   return res.json({ success: true, videoId, parent: moduleId, total: pdfs.length + apostilas.length, pdfs, apostilas });
@@ -720,12 +752,8 @@ app.get('/api/drive/materials', async (req, res) => {
 // Endpoint para alterar nome de exibição do usuário
 app.post('/api/auth/update-profile', async (req, res) => {
   try {
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : req.body?.token;
-    if (!token) return res.status(401).json({ success: false, error: 'Token não fornecido' });
-
-    const username = await validateSession(token);
-    if (!username) return res.status(401).json({ success: false, error: 'Sessão expirada' });
+    const username = req.user?.username;
+    if (!username) return res.status(401).json({ success: false, error: 'Não autenticado' });
 
     const { displayName } = req.body;
     if (!displayName || !displayName.trim()) {
@@ -743,15 +771,12 @@ app.post('/api/auth/update-profile', async (req, res) => {
 });
 
 // Metadados de vídeo do Drive (tamanho/duração/resolução) — base do buffer inteligente da página de aula
-const DRIVE_INFO_CACHE_FILE = path.join(__dirname, 'data', 'drive-info-cache.json');
+const DRIVE_INFO_CACHE_FILE = path.join(DRIVE_CACHE_DIR, 'drive-info-cache.json');
 let driveInfoCache = new Map();
 try {
-  if (fs.existsSync(DRIVE_INFO_CACHE_FILE)) {
-    const raw = fs.readFileSync(DRIVE_INFO_CACHE_FILE, 'utf8');
-    const obj = JSON.parse(raw);
-    for (const [k, v] of Object.entries(obj)) {
-      driveInfoCache.set(k, v);
-    }
+  const obj = safeReadJson(DRIVE_INFO_CACHE_FILE, null);
+  if (obj && typeof obj === 'object') {
+    for (const [k, v] of Object.entries(obj)) driveInfoCache.set(k, v);
     console.log(`📹 Cache de info de vídeos carregado (${driveInfoCache.size} itens).`);
   }
 } catch (e) {
@@ -759,14 +784,9 @@ try {
 }
 
 function saveDriveInfoCache() {
-  try {
-    if (!fs.existsSync(path.dirname(DRIVE_INFO_CACHE_FILE))) fs.mkdirSync(path.dirname(DRIVE_INFO_CACHE_FILE), { recursive: true });
-    const obj = {};
-    for (const [k, v] of driveInfoCache.entries()) obj[k] = v;
-    fs.writeFileSync(DRIVE_INFO_CACHE_FILE, JSON.stringify(obj), 'utf8');
-  } catch (e) {
-    console.warn('⚠️ Falha ao salvar cache de info de vídeos:', e.message);
-  }
+  const obj = {};
+  for (const [k, v] of driveInfoCache.entries()) obj[k] = v;
+  safeWriteJson(DRIVE_INFO_CACHE_FILE, obj);
 }
 
 // Metadados de vídeo do Drive (tamanho/duração/resolução) — base do buffer inteligente da página de aula
@@ -774,26 +794,37 @@ app.get('/api/drive/video-info', async (req, res) => {
   const ids = String(req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 6);
   if (!ids.length) return res.status(400).json({ error: 'Informe ids separados por vírgula' });
   const out = {};
-  await Promise.all(ids.map(id => new Promise(resolve => {
-    if (driveInfoCache.has(id)) { out[id] = driveInfoCache.get(id); return resolve(); }
-    driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=size,videoMediaMetadata,mimeType&supportsAllDrives=true`)
-      .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
-      .then(j => {
-        const sizeB = parseInt(j.size || '0', 10);
-        const ms = parseInt((j.videoMediaMetadata && j.videoMediaMetadata.durationMillis) || '0', 10);
-        const info = {
-          mimeType: j.mimeType || '',
-          sizeMB: sizeB ? Math.round(sizeB / 1048576 * 10) / 10 : 0,
-          durLabel: ms ? (Math.floor(ms / 60000) + ':' + String(Math.floor(ms / 1000) % 60).padStart(2, '0')) : '',
-          res: j.videoMediaMetadata ? (j.videoMediaMetadata.height || 0) + 'p' : ''
+  await Promise.all(ids.map(async (id, index) => {
+    try {
+      let info = driveInfoCache.get(id) || null;
+      if (!info) {
+        const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=size,videoMediaMetadata,mimeType&supportsAllDrives=true`);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const file = await response.json();
+        const sizeBytes = parseInt(file.size || '0', 10);
+        const durationMs = parseInt((file.videoMediaMetadata && file.videoMediaMetadata.durationMillis) || '0', 10);
+        info = {
+          mimeType: file.mimeType || '',
+          sizeBytes,
+          sizeMB: sizeBytes ? Math.round(sizeBytes / 1048576 * 10) / 10 : 0,
+          durationMs,
+          durLabel: durationMs ? (Math.floor(durationMs / 60000) + ':' + String(Math.floor(durationMs / 1000) % 60).padStart(2, '0')) : '',
+          res: file.videoMediaMetadata ? (file.videoMediaMetadata.height || 0) + 'p' : ''
         };
-        driveInfoCache.set(id, info);
-        saveDriveInfoCache();
-        out[id] = info;
-      })
-      .catch(err => { out[id] = { erro: String(err.message || err).slice(0, 60) }; })
-      .finally(resolve);
-  })));
+      }
+      // O primeiro ID é a aula aberta. Confere os bytes reais porque o MIME do Drive
+      // pode dizer MP4 mesmo quando o conteúdo é MPEG-TS.
+      if (index === 0 && !info.container) {
+        const detected = await sniffDriveMediaContainer(id);
+        if (detected) info = { ...info, container: detected };
+      }
+      driveInfoCache.set(id, info);
+      out[id] = info;
+    } catch (err) {
+      out[id] = { ...(driveInfoCache.get(id) || {}), erro: String(err.message || err).slice(0, 60) };
+    }
+  }));
+  saveDriveInfoCache();
   res.json({ info: out });
 });
 
@@ -823,6 +854,15 @@ async function driveOpen(fileId, start, end, method, client) {
       const resp = await fetch(url, { method, headers, signal: ac.signal });
       clearTimeout(timer);
       const ct = resp.headers.get('content-type') || '';
+      if (start != null && resp.status === 416) return { resp, ac, url };
+      if (start != null) {
+        const cr = /^bytes (\d+)-(\d+)\/(\d+|\*)$/.exec(resp.headers.get('content-range') || '');
+        if (resp.status !== 206 || !cr || Number(cr[1]) !== start) {
+          try { ac.abort(); } catch (_) {}
+          lastErr = new Error('HTTP ' + resp.status + ' (Google Drive não respeitou o intervalo solicitado)');
+          continue;
+        }
+      }
       if ((resp.ok || resp.status === 206) && !ct.includes('text/html')) return { resp, ac, url };
       try { ac.abort(); } catch (_) {}
       lastErr = new Error('HTTP ' + resp.status + (ct.includes('text/html') ? ' (página HTML — arquivo sem link público?)' : ''));
@@ -835,10 +875,38 @@ async function driveOpen(fileId, start, end, method, client) {
   return null;
 }
 
+async function sniffDriveMediaContainer(fileId) {
+  const client = new AbortController();
+  let opened = null, reader = null;
+  try {
+    opened = await driveOpen(fileId, 0, 376, 'GET', client);
+    if (!opened || !opened.resp.body) return null;
+    reader = opened.resp.body.getReader();
+    const chunks = [];
+    let size = 0;
+    while (size < 377) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+      chunks.push(chunk);
+      size += chunk.length;
+    }
+    return detectMediaContainer(Buffer.concat(chunks, size).subarray(0, 377));
+  } catch (err) {
+    console.warn(`[VideoInfo] Não foi possível identificar o contêiner de ${fileId}: ${err.message}`);
+    return null;
+  } finally {
+    if (reader) { try { await reader.cancel(); } catch (_) {} }
+    client.abort();
+    if (opened && opened.ac) { try { opened.ac.abort(); } catch (_) {} }
+  }
+}
+
 
 // ── Links opacos de mídia: o navegador nunca vê o ID do Google Drive nem uma URL do Drive ──
 // O app pede um "ticket" (criptografado, vale 12 h) e usa /m/<ticket> como endereço do vídeo/PDF.
 function ticketSeal(id, kind) {
+  if (!AUTH_SECRET) throw new Error('MEDIA_TICKET_SECRET or APP_PASSWORD is required to issue media tickets.');
   const iv = crypto.randomBytes(12);
   const c = crypto.createCipheriv('aes-256-gcm', AUTH_SECRET, iv);
   const ct = Buffer.concat([c.update(JSON.stringify({ i: id, k: kind, e: Date.now() + 12 * 3600 * 1000 }), 'utf8'), c.final()]);
@@ -853,19 +921,65 @@ function ticketOpen(t) {
   } catch (_) { return null; }
 }
 app.post('/api/media/ticket', (req, res) => {
+  if (!AUTH_SECRET) return res.status(503).json({ success: false, error: 'Links de mídia indisponíveis: configure MEDIA_TICKET_SECRET no servidor.' });
   const id = cleanDriveId((req.body || {}).id), kind = (req.body || {}).kind === 'p' ? 'p' : 'v';
   if (!id) return res.status(400).json({ success: false, msg: 'ID inválido' });
   res.json({ success: true, url: '/m/' + ticketSeal(id, kind) });
 });
+// Redireciona para o host de mídia (sem proxiar bytes). Só quando MEDIA_ORIGIN está definido e não somos nós mesmos.
+function midiaRemota(req) {
+  if (!MEDIA_ORIGIN || MEDIA_ONLY) return false;
+  try { return new URL(MEDIA_ORIGIN).host !== String(req.headers.host || ''); } catch (_) { return false; }
+}
+function redirecionarMidia(req, res, id, kind) {
+  if (!AUTH_SECRET) return res.status(503).json({ success: false, error: 'Links de mídia indisponíveis: configure MEDIA_TICKET_SECRET no servidor.' });
+  res.setHeader('Cache-Control', 'private, max-age=600');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  return res.redirect(307, MEDIA_ORIGIN + '/m/' + ticketSeal(id, kind));
+}
+const DRIVE_DIRECT = /^(1|true|on)$/i.test(process.env.DRIVE_DIRECT || '');
 app.all('/m/:ticket', (req, res) => {
+  if (!AUTH_SECRET) return res.status(404).send('Link expirado');
   const t = ticketOpen(req.params.ticket);
   if (!t) return res.status(404).send('Link expirado');
+  if (midiaRemota(req)) { res.setHeader('Access-Control-Allow-Origin', '*'); return res.redirect(307, MEDIA_ORIGIN + '/m/' + req.params.ticket); }
+  if (req.method === 'OPTIONS') { res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS'); res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept'); return res.sendStatus(204); }
+  // DRIVE_DIRECT=1: vídeo vai do Google direto ao navegador (não conta na Vercel). ?via=app força o proxy.
+  if (DRIVE_DIRECT && t.k === 'v' && temConta() && req.query.via !== 'app' && (req.method === 'GET' || req.method === 'HEAD')) {
+    const fid = cleanDriveId(t.i);
+    if (fid) return driveToken().then(tok => {
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      res.redirect(307, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fid)}?alt=media&supportsAllDrives=true&access_token=${encodeURIComponent(tok)}`);
+    }).catch(() => { req.params.id = t.i; res.setHeader('Cache-Control', 'private, no-store'); return driveStreamHandler(req, res); });
+  }
   req.params.id = t.i;
   res.setHeader('Cache-Control', 'private, no-store');
   return (t.k === 'p' ? drivePdfHandler : driveStreamHandler)(req, res);
 });
 
 // Streaming de vídeo com HTTP Range. Se a conexão com o Drive cair no meio, retoma sozinho do byte onde parou.
+const MAX_MEDIA_RANGE_BYTES = 8 * 1024 * 1024;
+const MAX_MEDIA_QUEUE_BYTES = 2 * 1024 * 1024;
+const MAX_MEDIA_QUEUE_CHUNK_BYTES = 256 * 1024;
+
+function parseSingleMediaRange(header) {
+  if (header == null) return { type: 'none' };
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(String(header).trim());
+  if (!match || (!match[1] && !match[2])) return { type: 'invalid' };
+  if (!match[1]) {
+    const suffixLength = Number(match[2]);
+    return Number.isSafeInteger(suffixLength) && suffixLength > 0
+      ? { type: 'suffix', suffixLength }
+      : { type: 'invalid' };
+  }
+  const start = Number(match[1]);
+  const end = match[2] ? Number(match[2]) : null;
+  if (!Number.isSafeInteger(start) || start < 0 || (end != null && (!Number.isSafeInteger(end) || end < start))) {
+    return { type: 'invalid' };
+  }
+  return { type: 'range', start, end };
+}
+
 async function driveStreamHandler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -875,17 +989,52 @@ async function driveStreamHandler(req, res) {
   }
   const fileId = cleanDriveId(req.params.id);
   if (!fileId) return res.status(400).send('ID de arquivo inválido');
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.setHeader('Allow', 'GET, HEAD, OPTIONS');
+    return res.status(405).end();
+  }
 
+  const parsedRange = parseSingleMediaRange(req.headers.range);
+  if (parsedRange.type === 'invalid') {
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Range', 'bytes */*');
+    return res.status(416).end();
+  }
   const client = new AbortController();
   res.on('close', () => client.abort());
-  const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range || '');
-  const hasRange = !!(m && m[1] !== '');
-  const reqStart = hasRange ? parseInt(m[1], 10) : 0;
-  const reqEnd = hasRange && m[2] !== '' ? parseInt(m[2], 10) : null;
   const isHead = req.method === 'HEAD';
+  const hasRange = parsedRange.type !== 'none';
+  let reqStart = parsedRange.type === 'range' ? parsedRange.start : 0;
+  let requestedEnd = parsedRange.type === 'range' ? parsedRange.end : null;
+  if (parsedRange.type === 'suffix') {
+    const metadata = await driveOpen(fileId, null, null, 'HEAD', client);
+    if (!metadata) return res.status(502).json({ error: 'Não foi possível consultar o tamanho do vídeo no Google Drive.' });
+    const contentRange = /^bytes \d+-\d+\/(\d+)$/.exec(metadata.resp.headers.get('content-range') || '');
+    const totalBytes = Number(metadata.resp.headers.get('content-length')) || (contentRange ? Number(contentRange[1]) : 0);
+    try { metadata.ac.abort(); } catch (_) {}
+    if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0) {
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Content-Range', 'bytes */*');
+      return res.status(416).end();
+    }
+    reqStart = Math.max(0, totalBytes - parsedRange.suffixLength);
+    requestedEnd = totalBytes - 1;
+  }
+  // Só limitamos intervalos fechados muito grandes. Intervalos abertos precisam continuar
+  // até o cliente pausar/cancelar; MPEG-TS usa isso para retomar sem travar após um bloco.
+  const maxRangeEnd = reqStart + Math.min(MAX_MEDIA_RANGE_BYTES - 1, Number.MAX_SAFE_INTEGER - reqStart);
+  const reqEnd = parsedRange.type === 'range' && requestedEnd != null
+    ? Math.min(requestedEnd, maxRangeEnd)
+    : requestedEnd;
 
   let up = await driveOpen(fileId, hasRange ? reqStart : null, hasRange ? reqEnd : null, isHead ? 'HEAD' : 'GET', client);
   if (!up) return res.status(502).json({ error: 'Não foi possível conectar ao Google Drive para reproduzir este vídeo.' });
+  if (up.resp.status === 416) {
+    const contentRange = up.resp.headers.get('content-range');
+    try { up.ac.abort(); } catch (_) {}
+    if (contentRange) res.setHeader('Content-Range', contentRange);
+    return res.status(416).end();
+  }
 
   const cr = /bytes (\d+)-(\d+)\/(\d+|\*)/.exec(up.resp.headers.get('content-range') || '');
   const cl = parseInt(up.resp.headers.get('content-length') || '0', 10);
@@ -920,10 +1069,10 @@ async function driveStreamHandler(req, res) {
   res.setHeader('Content-Length', outEnd - outStart + 1);
   if (isHead) { try { up.ac.abort(); } catch (_) {} return res.end(); }
 
-  // Read-ahead: lê do Drive numa fila (até ~8 MB) enquanto o cliente consome, suavizando as oscilações de velocidade
+  // Read-ahead limitado: a fila não cresce com o tamanho total do vídeo e desacelera o Drive
+  // quando o navegador não consome no mesmo ritmo.
   res.setHeader('Cache-Control', 'private, max-age=3600');
   if (res.flushHeaders) res.flushHeaders();
-  const MAX_Q = 8 * 1024 * 1024; // reduzido de 24MB para 8MB
   let pos = outStart; // próximo byte absoluto a enviar
   let tentativas = 0;
   const fila = []; let filaBytes = 0, fim = false, falha = null, aviso = null;
@@ -937,7 +1086,7 @@ async function driveStreamHandler(req, res) {
         try {
           reader = up.resp.body.getReader();
           for (;;) {
-            while (filaBytes >= MAX_Q && !client.signal.aborted) await espera();
+            while (filaBytes >= MAX_MEDIA_QUEUE_BYTES && !client.signal.aborted) await espera();
             if (client.signal.aborted) break;
             const { done, value } = await reader.read();
             if (done) break;
@@ -946,7 +1095,15 @@ async function driveStreamHandler(req, res) {
             if (upAbs <= lido) continue;
             if (chunkStart < lido) buf = buf.subarray(lido - chunkStart);
             if (lido + buf.length - 1 > outEnd) buf = buf.subarray(0, outEnd - lido + 1);
-            lido += buf.length; fila.push(buf); filaBytes += buf.length; acorda();
+            while (buf.length && !client.signal.aborted) {
+              while (filaBytes >= MAX_MEDIA_QUEUE_BYTES && !client.signal.aborted) await espera();
+              if (client.signal.aborted) break;
+              const part = buf.subarray(0, MAX_MEDIA_QUEUE_CHUNK_BYTES);
+              buf = buf.subarray(part.length);
+              lido += part.length;
+              fila.push(part); filaBytes += part.length; acorda();
+            }
+            if (client.signal.aborted) break;
             if (lido > outEnd) break;
           }
         } catch (err) {
@@ -955,6 +1112,7 @@ async function driveStreamHandler(req, res) {
         }
         try { up.ac.abort(); } catch (_) {}
         if (lido > outEnd || client.signal.aborted) break;
+        pos = lido;
         if (++tentativas > 6) throw new Error('Drive não retomou o stream');
         await new Promise(r => setTimeout(r, 400 * tentativas));
         up = await driveOpen(fileId, lido, outEnd, 'GET', client);
@@ -987,7 +1145,11 @@ async function driveStreamHandler(req, res) {
     try { up && up.ac.abort(); } catch (_) {}
   }
 }
-app.all('/api/drive/stream/:id', driveStreamHandler);
+app.all('/api/drive/stream/:id', (req, res, next) => {
+  const id = cleanDriveId(req.params.id);
+  if (id && req.method !== 'OPTIONS' && midiaRemota(req)) return redirecionarMidia(req, res, id, 'v');
+  return driveStreamHandler(req, res, next);
+});
 const clamp0 = n => Math.max(0, n);
 
 // Download direto de PDFs do Google Drive para caching offline no IndexedDB
@@ -1013,7 +1175,47 @@ async function drivePdfHandler(req, res) {
     if (!res.headersSent) res.status(500).send(err.message);
   }
 }
-app.get('/api/drive/pdf/:id', drivePdfHandler);
+// Diagnóstico de reprodução (exige login): mostra, para um arquivo do Drive, o que cada rota de download devolve ao servidor
+// (status, tipo, trecho do corpo se for erro/HTML) e os metadados da API. Serve para descobrir POR QUE um vídeo não abre
+// (cota de download do Drive, arquivo sem permissão, limite do Vercel…). Não grava nada e não devolve chaves.
+app.get('/api/drive/diagnostico/:id', async (req, res) => {
+  const fileId = cleanDriveId(req.params.id);
+  if (!fileId) return res.status(400).json({ success: false, error: 'ID inválido' });
+  const t0 = Date.now();
+  const out = { success: true, fileId, ambiente: { serverless: !!IS_SERVERLESS, contaDeServico: !!temConta(), chaveApi: !!DRIVE_API_KEY, mediaOrigin: !!process.env.MEDIA_ORIGIN, regiaoVercel: process.env.VERCEL_REGION || null }, metadados: null, rotas: [] };
+  const comTimeout = async (url, init, ms = 9000) => { const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), ms); try { return await fetch(url, { ...init, signal: ac.signal }); } finally { clearTimeout(tm); } };
+  if (DRIVE_OK) {
+    try {
+      const h = temConta() ? await authHeaders() : {};
+      const r = await comTimeout(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=name,mimeType,size,trashed,shared,videoMediaMetadata(durationMillis,width,height),capabilities(canDownload)&supportsAllDrives=true${temConta() ? '' : '&key=' + DRIVE_API_KEY}`, { headers: h });
+      const txt = await r.text(); let j = null; try { j = JSON.parse(txt); } catch (_) {}
+      out.metadados = r.ok && j ? j : { status: r.status, erro: j && j.error ? { code: j.error.code, message: j.error.message, motivo: (j.error.errors || []).map(e => e.reason).join(',') } : txt.slice(0, 200) };
+    } catch (e) { out.metadados = { erro: e.name === 'AbortError' ? 'timeout (9 s) consultando a API do Drive' : e.message }; }
+  } else out.metadados = { erro: 'Sem credencial do Drive configurada neste servidor.' };
+  for (const url of driveCandidates(fileId)) {
+    const item = { rota: url.replace(/([?&]key=)[^&]+/, '$1***').replace(/^https:\/\/([^/]+)\/.*/, '$1') + (url.includes('googleapis') ? ' (API)' : url.includes('usercontent') ? ' (usercontent)' : ' (uc)') };
+    const t1 = Date.now();
+    try {
+      const h = { Range: 'bytes=0-1023' }; if (temConta() && url.startsWith('https://www.googleapis.com/')) Object.assign(h, await authHeaders());
+      const r = await comTimeout(url, { headers: h });
+      item.status = r.status; item.tipo = r.headers.get('content-type'); item.contentRange = r.headers.get('content-range'); item.tamanho = r.headers.get('content-length');
+      const ehTexto = /text|json|html/i.test(item.tipo || '');
+      if (ehTexto) { const b = await r.text(); item.corpo = b.replace(/\s+/g, ' ').slice(0, 300); item.motivoProvavel = /quota|too many users|Too many/i.test(b) ? 'cota de download do Drive excedida para este arquivo' : /sign in|login|accounts\.google/i.test(b) ? 'arquivo exige login / sem link público' : /not found|File not found/i.test(b) ? 'arquivo não encontrado ou sem permissão' : 'resposta HTML/JSON em vez de vídeo'; }
+      else { try { await r.body?.cancel(); } catch (_) {} item.ok = (r.status === 206 || r.status === 200); }
+    } catch (e) { item.erro = e.name === 'AbortError' ? 'timeout (9 s)' : e.message; }
+    item.ms = Date.now() - t1; out.rotas.push(item);
+  }
+  const algumaOk = out.rotas.some(x => x.ok);
+  out.conclusao = algumaOk ? 'O servidor consegue ler o início do vídeo. Se o player falha no meio, o problema é a continuidade do download (limite de tempo/transferência da Vercel ou corte do Drive); veja os logs da função /api/drive/stream na Vercel.' : 'Nenhuma rota entregou o vídeo ao servidor: veja "motivoProvavel" e "metadados" abaixo.';
+  out.totalMs = Date.now() - t0;
+  res.set('Cache-Control', 'no-store').json(out);
+});
+
+app.get('/api/drive/pdf/:id', (req, res, next) => {
+  const id = cleanDriveId(req.params.id);
+  if (id && midiaRemota(req)) return redirecionarMidia(req, res, id, 'p');
+  return drivePdfHandler(req, res, next);
+});
 
 // Configuração pública para o frontend (não expõe segredos do servidor, apenas chaves anônimas do Supabase)
 app.get('/api/config', (req, res) => {
@@ -1024,38 +1226,80 @@ app.get('/api/config', (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════
-// RADAR MÉDICO: ATUALIZAÇÕES E EDITAIS (Estratégia MED + Gemini AI)
+// RADAR MÉDICO: ATUALIZAÇÕES E EDITAIS (Estratégia MED + IA)
 // ══════════════════════════════════════════════════════════════════
-const RADAR_CACHE_FILE = path.join(__dirname, 'data', 'radar_medico_cache.json');
-const RADAR_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 horas (atualização 1 a 2x ao dia)
+const RADAR_CACHE_KEY = 'radar_medico_cache';
+const RADAR_AI_KEY = 'radar_medico_last_ai';
+const RADAR_CACHE_FILE = path.join(DATA_DIR, 'radar_medico_cache.json');
+const RADAR_SEED_FILE = path.join(__dirname, 'radar-medico.json');
+const RADAR_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 1x ao dia
+const RADAR_AI_RETRY_MS = 60 * 60 * 1000; // se a IA falhar, tenta de novo em 1h
 let radarMemoryCache = null;
+let radarRefreshPromise = null;
 
-function loadRadarCache() {
+function radarCacheFresh(cache) {
+  return !!(cache && cache.cachedAt && (Date.now() - Number(cache.cachedAt) < RADAR_CACHE_TTL_MS));
+}
+
+/* Fonte da verdade: Supabase (tabela ou bucket privado). /tmp e o seed do
+   repositório são apenas fallback para dev/cold start sem Supabase. */
+async function loadRadarCache() {
   if (radarMemoryCache) return radarMemoryCache;
+
   try {
-    if (fs.existsSync(RADAR_CACHE_FILE)) {
-      const data = JSON.parse(fs.readFileSync(RADAR_CACHE_FILE, 'utf8'));
-      radarMemoryCache = data;
-      return data;
+    const durable = await getSystemConfig(RADAR_CACHE_KEY, null);
+    if (durable && Array.isArray(durable.articles) && durable.articles.length) {
+      radarMemoryCache = durable;
+      return durable;
     }
   } catch (e) {
-    console.warn('⚠️ Erro ao ler cache do Radar Médico:', e.message);
+    console.warn('⚠️ Erro ao ler cache durável do Radar Médico:', e.message);
+  }
+
+  for (const file of [RADAR_CACHE_FILE, RADAR_SEED_FILE]) {
+    try {
+      const data = safeReadJson(file, null);
+      if (data && Array.isArray(data.articles) && data.articles.length) {
+        radarMemoryCache = data;
+        return data;
+      }
+    } catch (e) {
+      console.warn('⚠️ Erro ao ler cache local do Radar Médico:', e.message);
+    }
   }
   return null;
 }
 
-function saveRadarCache(data) {
+async function saveRadarCache(data) {
+  radarMemoryCache = data;
+  try { safeWriteJson(RADAR_CACHE_FILE, data); } catch (_) {}
   try {
-    radarMemoryCache = data;
-    const dir = path.dirname(RADAR_CACHE_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(RADAR_CACHE_FILE, JSON.stringify(data, null, 2), 'utf8');
+    await setSystemConfig(RADAR_CACHE_KEY, data);
   } catch (e) {
-    console.warn('⚠️ Erro ao salvar cache do Radar Médico:', e.message);
+    console.warn('⚠️ Erro ao salvar cache durável do Radar Médico:', e.message);
   }
 }
 
-async function scrapeAndSummarizeRadar() {
+/* Garante no máximo 1 chamada de IA por dia, mesmo com vários cold starts. */
+async function radarAiAllowed() {
+  try {
+    const last = await getSystemConfig(RADAR_AI_KEY, null);
+    const at = Number(last && last.at || 0);
+    if (!at) return true;
+    const wait = last.ok ? RADAR_CACHE_TTL_MS : RADAR_AI_RETRY_MS;
+    return Date.now() - at >= wait;
+  } catch (_) {
+    return true;
+  }
+}
+
+async function markRadarAi(ok) {
+  try {
+    await setSystemConfig(RADAR_AI_KEY, { at: Date.now(), ok: !!ok });
+  } catch (_) { /* best-effort */ }
+}
+
+async function scrapeAndSummarizeRadar(previous = null) {
   console.log('📡 Buscando artigos recentes em med.estrategia.com/portal/atualidades...');
   const res = await fetch('https://med.estrategia.com/portal/atualidades', {
     headers: {
@@ -1095,7 +1339,7 @@ async function scrapeAndSummarizeRadar() {
     throw new Error('Nenhum artigo encontrado na página do Estratégia MED.');
   }
 
-  // Busca o corpo de cada matéria para envio ao Gemini
+  // Busca o corpo de cada matéria para envio ao IA
   for (const art of rawArticles) {
     try {
       const artRes = await fetch(art.link, {
@@ -1120,128 +1364,179 @@ async function scrapeAndSummarizeRadar() {
     if (!art.bodyText) art.bodyText = art.excerpt || art.title;
   }
 
-  // Resumo inteligente com a API do Gemini focado em Diretrizes e Prática Clínica
-  const gemini = getGeminiClient();
-  const processedArticles = [];
-  let geminiUnavailable = false;
+  // Resumo inteligente: UMA única chamada de IA para todas as matérias.
+  // A marca `radar_medico_last_ai` garante no máximo 1 chamada por dia,
+  // mesmo com vários cold starts ou instâncias serverless diferentes.
+  const aiReady = aiConfigured();
+  const summaries = new Map();
+  let aiUsed = false;
 
-  for (const art of rawArticles) {
-    let resumo = null;
-    if (gemini && !geminiUnavailable) {
+  if (aiReady) {
+    if (!(await radarAiAllowed())) {
+      console.log('[Radar Médico] IA já consultada nas últimas 24h; reutilizando resumos/cache.');
+    } else {
+      const materias = rawArticles.map((art, i) => ({
+        id: String(i),
+        titulo: art.title,
+        data: art.date,
+        categoria: art.category,
+        trecho: String(art.bodyText || art.excerpt || '').slice(0, 3500)
+      }));
       const prompt = `Você é um preceptor médico especialista em residência médica e diretrizes clínicas.
-Analise a matéria/diretriz a seguir e elabore um resumo estratégico de alto rendimento estruturado estritamente nestes 3 eixos fundamentais:
+Analise TODAS as matérias abaixo e elabore, para cada uma, um resumo estratégico de alto rendimento estruturado estritamente nestes 3 eixos:
+1. implementacoes: quais novos protocolos, portarias, diretrizes ou normativas foram anunciados.
+2. praticaClinica: o que é essencial para a prática clínica diária, raciocínio diagnóstico, dosagens, rastreios e conduta.
+3. oQueMudou: o que mudou de fato em comparação com recomendações ou condutas prévias.
 
-1. Quais são as implementações: Detalhe quais são os novos protocolos, portarias, diretrizes ou normativas anunciadas.
-2. O que é relevante para a prática clínica: Explique o que é essencial para a prática clínica diária, raciocínio diagnóstico, dosagens, rastreios e conduta médica.
-3. O que mudou de fato: Destaque o que mudou de fato em comparação com as recomendações ou condutas prévias (mudanças práticas, quebra de paradigmas, alertas para pegadinhas de prova).
+Responda APENAS com um objeto JSON no formato:
+{"resumos":[{"id":"0","implementacoes":"...","praticaClinica":"...","oQueMudou":"..."}]}
 
-Título: ${art.title}
-Conteúdo da matéria: ${art.bodyText}
+Use exatamente o mesmo "id" de cada matéria. Seja conciso, claro e técnico.
 
-Retorne estritamente o objeto JSON com os 3 campos solicitados. Seja conciso, claro e técnico para médicos e estudantes de medicina.`;
+MATÉRIAS:
+${JSON.stringify(materias)}`;
 
       try {
-        const aiRes = await gemini.models.generateContent({
-          model: 'gemini-3.8-flash',
+        const aiRes = await generateAI({ task: "resumo_rapido",
           contents: prompt,
           config: {
+            temperature: 0.2,
             responseMimeType: 'application/json',
             responseSchema: {
               type: Type.OBJECT,
+              required: ['resumos'],
               properties: {
-                implementacoes: {
-                  type: Type.STRING,
-                  description: 'Quais são as implementações e novas diretrizes normatizadas'
-                },
-                praticaClinica: {
-                  type: Type.STRING,
-                  description: 'O que é relevante para a prática clínica e conduta médica'
-                },
-                oQueMudou: {
-                  type: Type.STRING,
-                  description: 'O que mudou de fato em relação aos protocolos ou condutas anteriores'
+                resumos: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    required: ['id', 'implementacoes', 'praticaClinica', 'oQueMudou'],
+                    properties: {
+                      id: { type: Type.STRING },
+                      implementacoes: { type: Type.STRING },
+                      praticaClinica: { type: Type.STRING },
+                      oQueMudou: { type: Type.STRING }
+                    }
+                  }
                 }
-              },
-              required: ['implementacoes', 'praticaClinica', 'oQueMudou']
+              }
             }
           }
         });
 
         if (aiRes.text) {
-          resumo = JSON.parse(aiRes.text);
+          const parsed = JSON.parse(aiRes.text);
+          for (const item of (parsed.resumos || [])) {
+            if (item && item.id != null) summaries.set(String(item.id), item);
+          }
+          aiUsed = summaries.size > 0;
         }
+        await markRadarAi(aiUsed);
       } catch (err) {
-        const msg = String(err.message || '');
-        if (msg.includes('API key not valid') || msg.includes('API_KEY_INVALID') || msg.includes('UNAUTHENTICATED') || msg.includes('503')) {
-          geminiUnavailable = true;
-          console.log('[Radar Médico] Gemini indisponível no momento, aplicando resumos clínicos pré-estruturados.');
-        }
+        await markRadarAi(false);
+        console.log('[Radar Médico] IA indisponível; aplicando resumos clínicos pré-estruturados:', String(err.message || '').slice(0, 160));
       }
     }
+  }
 
-    if (!resumo || !resumo.implementacoes) {
-      resumo = {
-        implementacoes: `Novas diretrizes e atualizações clínicas publicadas oficialmente: ${art.title}.`,
-        praticaClinica: art.excerpt ? art.excerpt.slice(0, 180) + '...' : 'Adoção das recomendações em ambulatório, enfermaria e atendimento primário com foco em segurança do paciente.',
-        oQueMudou: 'Atualização e alinhamento dos critérios de conduta médica e parâmetros para provas de residência médica e Revalida.'
-      };
-    }
+  const oldByLink = new Map(((previous && previous.articles) || []).map(a => [a.link, a]));
+  const processedArticles = rawArticles.map((art, i) => {
+    const old = oldByLink.get(art.link);
+    const resumo = summaries.get(String(i)) || old?.resumoEstrategico || {};
+    const finalResumo = {
+      implementacoes: resumo.implementacoes || `Novas diretrizes e atualizações clínicas publicadas oficialmente: ${art.title}.`,
+      praticaClinica: resumo.praticaClinica || (art.excerpt ? art.excerpt.slice(0, 180) + '...' : 'Adoção das recomendações em ambulatório, enfermaria e atendimento primário com foco em segurança do paciente.'),
+      oQueMudou: resumo.oQueMudou || 'Atualização e alinhamento dos critérios de conduta médica e parâmetros para provas de residência médica e Revalida.'
+    };
 
-    processedArticles.push({
+    return {
       id: Buffer.from(art.link).toString('base64').slice(0, 16),
       title: art.title,
       link: art.link,
       img: art.img || 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&auto=format&fit=crop&q=80',
       date: art.date,
       category: art.category,
-      resumoEstrategico: resumo,
+      resumoEstrategico: finalResumo,
       bullets: [
-        `Implementações: ${resumo.implementacoes}`,
-        `Prática Clínica: ${resumo.praticaClinica}`,
-        `O Que Mudou: ${resumo.oQueMudou}`
+        `Implementações: ${finalResumo.implementacoes}`,
+        `Prática Clínica: ${finalResumo.praticaClinica}`,
+        `O Que Mudou: ${finalResumo.oQueMudou}`
       ]
-    });
-  }
+    };
+  });
 
   const cachePayload = {
     cachedAt: Date.now(),
+    aiAt: aiUsed ? Date.now() : (previous?.aiAt || null),
     articles: processedArticles
   };
 
-  saveRadarCache(cachePayload);
+  await saveRadarCache(cachePayload);
   return cachePayload;
 }
 
-app.get('/api/radar-medico', async (req, res) => {
-  const force = req.query.force === 'true' || req.query.refresh === 'true';
-  const cached = loadRadarCache();
-
-  if (cached && !force && (Date.now() - cached.cachedAt < RADAR_CACHE_TTL_MS)) {
-    return res.json({
-      status: 'cached',
-      cachedAt: cached.cachedAt,
-      articles: cached.articles
-    });
+async function getRadar({ force = false } = {}) {
+  const cached = await loadRadarCache();
+  if (!force && radarCacheFresh(cached)) {
+    return { status: 'cached', cachedAt: cached.cachedAt, aiAt: cached.aiAt || null, articles: cached.articles };
   }
 
+  if (radarRefreshPromise) return radarRefreshPromise;
+
+  radarRefreshPromise = (async () => {
+    try {
+      const fresh = await scrapeAndSummarizeRadar(cached);
+      return { status: 'fresh', ...fresh };
+    } catch (err) {
+      if (cached) {
+        return {
+          status: 'cached_fallback',
+          warning: 'Usando cache prévio devido a erro na extração: ' + err.message,
+          cachedAt: cached.cachedAt,
+          aiAt: cached.aiAt || null,
+          articles: cached.articles
+        };
+      }
+      throw err;
+    } finally {
+      radarRefreshPromise = null;
+    }
+  })();
+
+  return radarRefreshPromise;
+}
+
+function radarNoStore(res) {
+  res.set('Cache-Control', 'no-store, max-age=0');
+}
+
+app.get('/api/radar-medico', async (req, res) => {
+  radarNoStore(res);
+  const force = req.query.force === 'true' || req.query.refresh === 'true';
   try {
-    const result = await scrapeAndSummarizeRadar();
-    res.json({
-      status: 'fresh',
-      cachedAt: result.cachedAt,
-      articles: result.articles
-    });
+    const out = await getRadar({ force });
+    res.json(out);
   } catch (err) {
     console.error('❌ Erro no Radar Médico:', err.message);
-    if (cached) {
-      return res.json({
-        status: 'cached_fallback',
-        warning: 'Usando cache prévio devido a erro na extração: ' + err.message,
-        cachedAt: cached.cachedAt,
-        articles: cached.articles
-      });
-    }
     res.status(500).json({ error: 'Não foi possível carregar as notícias: ' + err.message });
+  }
+});
+
+// Cron diário da Vercel: atualiza somente se o cache estiver vencido.
+// Com o TTL de 24h, isso resulta em no máximo 1 chamada de IA por dia.
+app.get('/api/radar-medico/refresh', async (req, res) => {
+  radarNoStore(res);
+  const expected = String(process.env.CRON_SECRET || '');
+  const supplied = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const a = Buffer.from(expected), b = Buffer.from(supplied);
+  if (!expected || a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+  try {
+    const out = await getRadar({ force: false });
+    return res.json({ success: true, ...out });
+  } catch (err) {
+    return res.status(503).json({ success: false, error: err.message });
   }
 });
 
@@ -1403,18 +1698,62 @@ Se o usuário perguntar sobre o funcionamento da plataforma, funcionalidades, cr
 /* ═══════════════════════════════════════════════════════════════
    SISTEMA DE QUESTÕES (TREINO LIVRE, GERADOR GEMINI & TUTOR)
    ═══════════════════════════════════════════════════════════════ */
-const QUESTIONS_BANK_FILE = path.join(__dirname, 'data', 'questions-bank.json');
+/* O banco empacotado no repositório é a base somente-leitura. O arquivo de
+   trabalho (escrita) vive em DATA_DIR — em serverless, /tmp. */
+const QUESTIONS_BANK_SEED_FILE = path.join(__dirname, 'data', 'questions-bank.json');
+const QUESTIONS_BANK_FILE = path.join(DATA_DIR, 'questions-bank.json');
+const QUESTIONS_BANK_GZ = path.join(__dirname, 'data', 'questions-bank.json.gz');
+const QUESTIONS_BANK_CANDIDATES = [QUESTIONS_BANK_FILE, QUESTIONS_BANK_SEED_FILE];
 
 let _bankCache = null;
 let _bankTimer = null;
 let _bankDirty = false;
 let _bankBase = 0; // quantas questões o repositório já tinha quando o servidor subiu
-const QUESTIONS_BANK_GZ = QUESTIONS_BANK_FILE + '.gz';
+let _lastBankUpload = 0;
+let _bankReadyPromise = null;
+let _bankCloud = null;
+let _bankCloudAt = 0;
+let _bankHydrating = null;
+let _bankUploadPromise = null;
+const BANK_CLOUD_TTL_MS = 60 * 1000;
+
+/* Une dois bancos sem perder questões: prefere os dados de `extra` quando a
+   mesma questão aparece nos dois lados (id ou enunciado). */
+function mergeBankArrays(base, extra) {
+  const byId = new Map();
+  const byStmt = new Map();
+  const out = [];
+  const add = (q, override) => {
+    if (!q) return;
+    const idKey = q.id != null ? String(q.id) : '';
+    const stmtKey = typeof hwqStatementKey === 'function' ? hwqStatementKey(q) : String(q.statement || '').slice(0, 80).toLowerCase();
+    const existing = (idKey && byId.get(idKey)) || (stmtKey && byStmt.get(stmtKey));
+    if (existing) {
+      if (override) Object.assign(existing, q);
+      if (idKey) byId.set(idKey, existing);
+      if (stmtKey) byStmt.set(stmtKey, existing);
+      return;
+    }
+    const copy = { ...q };
+    out.push(copy);
+    if (idKey) byId.set(idKey, copy);
+    if (stmtKey) byStmt.set(stmtKey, copy);
+  };
+  for (const q of base || []) add(q, false);
+  for (const q of extra || []) add(q, true);
+  return out;
+}
+
 // O banco pré-catalogado vem no repositório compactado (.json.gz, gerado pelo GitHub Actions); o .json é o arquivo de trabalho
 function readQuestionsBank() {
   if (_bankCache) return _bankCache;
   try {
-    const lerPlain = () => (fs.existsSync(QUESTIONS_BANK_FILE) ? JSON.parse(fs.readFileSync(QUESTIONS_BANK_FILE, 'utf8')) : []);
+    const lerPlain = () => {
+      for (const f of QUESTIONS_BANK_CANDIDATES) {
+        if (fs.existsSync(f)) return JSON.parse(fs.readFileSync(f, 'utf8'));
+      }
+      return [];
+    };
     const lerGz = () => (fs.existsSync(QUESTIONS_BANK_GZ) ? JSON.parse(zlib.gunzipSync(fs.readFileSync(QUESTIONS_BANK_GZ)).toString('utf8')) : []);
     let a = [], b = [];
     try { a = lerPlain(); } catch (e) { console.warn('banco .json ilegível:', e.message); }
@@ -1427,45 +1766,144 @@ function readQuestionsBank() {
   return (_bankCache = []);
 }
 
-// Carregamento assíncrono não-bloqueante do banco (chamado no startup)
+async function readLocalBankFiles() {
+  const lerPlain = async () => {
+    for (const f of QUESTIONS_BANK_CANDIDATES) {
+      if (fs.existsSync(f)) return JSON.parse(await fs.promises.readFile(f, 'utf8'));
+    }
+    return [];
+  };
+  const lerGz = async () => fs.existsSync(QUESTIONS_BANK_GZ) ? JSON.parse(zlib.gunzipSync(await fs.promises.readFile(QUESTIONS_BANK_GZ)).toString('utf8')) : [];
+  const [a, b] = await Promise.all([lerPlain().catch(() => []), lerGz().catch(() => [])]);
+  return b.length > a.length ? b : a;
+}
+
+// Carregamento durável: seed local + cópia mais completa do Supabase Storage.
+// O resultado é a UNIÃO dos dois (nunca substitui um banco maior pelo seed).
 async function preloadQuestionsBank() {
   try {
-    const lerPlain = async () => fs.existsSync(QUESTIONS_BANK_FILE) ? JSON.parse(await fs.promises.readFile(QUESTIONS_BANK_FILE, 'utf8')) : [];
-    const lerGz = async () => fs.existsSync(QUESTIONS_BANK_GZ) ? JSON.parse(zlib.gunzipSync(await fs.promises.readFile(QUESTIONS_BANK_GZ)).toString('utf8')) : [];
-    const [a, b] = await Promise.all([lerPlain().catch(() => []), lerGz().catch(() => [])]);
-    const data = b.length > a.length ? b : a;
-    if (Array.isArray(data) && data.length) {
-      _bankCache = data;
-      _bankBase = data.length;
-      console.log(`📚 Banco de questões pré-carregado: ${data.length} questões`);
+    const local = await readLocalBankFiles();
+    if (Array.isArray(local) && local.length && (!_bankCache || local.length > _bankCache.length)) {
+      _bankCache = local;
     }
+
+    if (supabaseCatalogReady()) {
+      const nuvem = await downloadQuestionsBankFromSupabase();
+      if (Array.isArray(nuvem) && nuvem.length) {
+        _bankCloud = nuvem;
+        _bankCloudAt = Date.now();
+        const merged = mergeBankArrays(nuvem, _bankCache || []);
+        _bankCache = merged;
+        _bankBase = merged.length;
+        safeWriteJson(QUESTIONS_BANK_FILE, merged);
+        console.log(`📚 Banco de questões pronto: ${nuvem.length} na nuvem + ${merged.length - nuvem.length} locais = ${merged.length} questões`);
+        // Se havia questões locais que a nuvem não tinha, sobe a união para não perdê-las.
+        if (merged.length > nuvem.length) {
+          uploadQuestionsBankToSupabase(merged).catch(() => {});
+        }
+        return merged;
+      }
+    }
+
+    if (Array.isArray(_bankCache) && _bankCache.length) {
+      _bankBase = _bankCache.length;
+      console.log(`📚 Banco de questões pré-carregado: ${_bankCache.length} questões`);
+    }
+    return _bankCache || [];
   } catch (err) {
     console.warn('Pré-carregamento do banco falhou (carregará sob demanda):', err.message);
+    return readQuestionsBank();
   }
 }
 
-// Inicia pré-carregamento em background (não bloqueia o servidor)
-preloadQuestionsBank();
+// Toda rota /api/questions aguarda o banco durável antes de ler/mesclar.
+function ensureQuestionsBankLoaded() {
+  if (!_bankReadyPromise) {
+    _bankReadyPromise = preloadQuestionsBank().catch(err => {
+      console.warn('Banco durável indisponível; seguindo com o seed local:', err.message);
+      return readQuestionsBank();
+    });
+  }
+  return _bankReadyPromise;
+}
+ensureQuestionsBankLoaded();
 
-// Escrita: atualiza a memória na hora e grava o arquivo (compacto) em segundo plano, sem bloquear o servidor
-function flushQuestionsBank() {
-  try {
-    const dir = path.dirname(QUESTIONS_BANK_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const tmp = QUESTIONS_BANK_FILE + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(_bankCache || []), 'utf8');
-    fs.renameSync(tmp, QUESTIONS_BANK_FILE);
+/* Rebaixa a cópia da nuvem em instâncias já aquecidas e une com o banco local.
+   `force` é usado antes de mesclar/sincronizar para nunca sobrescrever a nuvem
+   com um seed antigo de outra instância. */
+async function hydrateQuestionsBank({ force = false } = {}) {
+  await ensureQuestionsBankLoaded();
+  if (!supabaseCatalogReady()) return _bankCloud;
+  if (!force && _bankCloudAt && Date.now() - _bankCloudAt < BANK_CLOUD_TTL_MS) return _bankCloud;
+  if (_bankHydrating) return _bankHydrating;
+
+  _bankHydrating = (async () => {
+    const nuvem = await downloadQuestionsBankFromSupabase();
+    if (Array.isArray(nuvem) && nuvem.length) {
+      _bankCloud = nuvem;
+      _bankCloudAt = Date.now();
+      const merged = mergeBankArrays(nuvem, _bankCache || []);
+      if (merged.length !== (_bankCache?.length || 0)) {
+        _bankCache = merged;
+        safeWriteJson(QUESTIONS_BANK_FILE, merged);
+        console.log(`📚 Banco de questões hidratado da nuvem: ${nuvem.length} na nuvem, ${merged.length} locais.`);
+      }
+    }
+    return _bankCloud;
+  })().finally(() => { _bankHydrating = null; });
+
+  return _bankHydrating;
+}
+
+/* Upload durável aguardável. Antes de subir, garante que a nuvem não tenha
+   mais questões que a memória; se tiver, mescla para não perder nada. */
+async function uploadBankNow() {
+  if (!supabaseCatalogReady() || !Array.isArray(_bankCache) || !_bankCache.length) return false;
+  if (_bankUploadPromise) return _bankUploadPromise;
+
+  _bankUploadPromise = (async () => {
+    const nuvem = _bankCloud || (await hydrateQuestionsBank({ force: false }));
+    if (Array.isArray(nuvem) && nuvem.length > _bankCache.length) {
+      _bankCache = mergeBankArrays(nuvem, _bankCache);
+      safeWriteJson(QUESTIONS_BANK_FILE, _bankCache);
+    }
+    _lastBankUpload = Date.now();
+    return uploadQuestionsBankToSupabase(_bankCache);
+  })().finally(() => { _bankUploadPromise = null; });
+
+  return _bankUploadPromise;
+}
+
+// Escrita: atualiza a memória na hora e grava o arquivo (compacto).
+// Uploads explícitos (sync/import) usam uploadBankNow() e são aguardados;
+// escritas incidentais usam uploadBankSoon() com throttle.
+function uploadBankSoon() {
+  if (!supabaseCatalogReady() || !Array.isArray(_bankCache) || !_bankCache.length) return;
+  if (Date.now() - _lastBankUpload < 60 * 1000) return;
+  uploadBankNow().catch(() => {});
+}
+
+function flushQuestionsBank({ upload = true } = {}) {
+  if (!Array.isArray(_bankCache)) _bankCache = [];
+  // safeWriteJson é atômico (tmp + rename) e NUNCA lança: EROFS/ENOENT viram false.
+  const ok = safeWriteJson(QUESTIONS_BANK_FILE, _bankCache);
+  if (ok) {
     _bankDirty = false;
-    return true;
-  } catch (err) {
-    console.error('Erro ao escrever questions-bank.json:', err.message);
-    return false;
+    if (upload) uploadBankSoon();
+  } else if (!IS_SERVERLESS) {
+    console.error('Erro ao escrever questions-bank.json: sistema de arquivos não gravável.');
   }
+  return ok;
 }
-function writeQuestionsBank(questions) {
+function writeQuestionsBank(questions, { upload = true } = {}) {
   _bankCache = questions; _bankDirty = true;
   clearTimeout(_bankTimer);
-  _bankTimer = setTimeout(flushQuestionsBank, 3000);
+  if (IS_SERVERLESS) {
+    // Não há garantia de que o timer rode depois da resposta: grava já no /tmp.
+    flushQuestionsBank({ upload });
+  } else {
+    _bankTimer = setTimeout(() => flushQuestionsBank({ upload }), 3000);
+  }
   return true;
 }
 const _sairLimpo = () => { clearTimeout(_bankTimer); if (_bankDirty) flushQuestionsBank(); process.exit(0); };
@@ -1479,21 +1917,140 @@ app.get('/api/questions/bank', (req, res) => {
 });
 
 // 1.1 Questões da videoaula: só entram questões que falam do tema/módulo da aula (cobertura mínima de conceitos).
-// Se o banco tiver poucas e houver Gemini, completa com questões inéditas sobre o MESMO tema (marcadas como IA).
+// Se o banco tiver poucas e houver IA, completa com questões inéditas sobre o MESMO tema (marcadas como IA).
 const _qIaCache = new Map();
 const _qVivoCache = new Map();
-app.get('/api/questions/match', async (req, res) => {
+const _qEmbeddingCache = new Map();
+let _questionIndexUnavailableWarned = false;
+async function embedQuestionSearch(query, username, config) {
+  const digest = crypto.createHash('sha256').update(query).digest('hex');
+  const key = `${username}:${config.indexModel}:${digest}`;
+  const cached = _qEmbeddingCache.get(key);
+  if (cached) return cached;
+  const [vector] = await embedIscTexts([query], {
+    purpose: 'query', config, signal: AbortSignal.timeout(15000)
+  });
+  _qEmbeddingCache.set(key, vector);
+  if (_qEmbeddingCache.size > 200) _qEmbeddingCache.delete(_qEmbeddingCache.keys().next().value);
+  return vector;
+}
+const handleQuestionMatch = async (req, res) => {
   try {
-    const disciplina = String(req.query.disciplina || req.query.disc || '').slice(0, 120);
-    const tema = String(req.query.tema || req.query.titulo || '').slice(0, 200);
-    const modulo = String(req.query.modulo || req.query.curso || '').slice(0, 200);
-    const limit = Math.max(1, Math.min(60, parseInt(req.query.limit, 10) || 40));
+    const input = req.method === 'POST' ? (req.body || {}) : (req.query || {});
+    const smart = req.method === 'POST' && input.smart === true;
+    const disciplina = String(input.disciplina || input.disc || '').slice(0, 120);
+    const tema = String(input.tema || input.titulo || '').slice(0, 200);
+    const modulo = String(input.modulo || input.curso || '').slice(0, 200);
+    const limit = Math.max(1, Math.min(60, parseInt(input.limit, 10) || (smart ? 10 : 40)));
     const bank = readQuestionsBank();
-    const r = selecionarQuestoes(bank, { tema, modulo, disc: disciplina, limit });
+    const topics = smart && Array.isArray(input.topics) ? input.topics.slice(0, 30).filter(topic =>
+      topic && typeof topic.name === 'string' && topic.name.length <= 200 && (!topic.topicId || String(topic.topicId).length <= 180))
+      .map(topic => ({
+        topicId: topic.topicId ? String(topic.topicId).slice(0, 180) : '', name: topic.name.trim(),
+        synonyms: Array.isArray(topic.synonyms) ? topic.synonyms.filter(value => typeof value === 'string').slice(0, 12).map(value => value.slice(0, 120)) : [],
+        sourceKind: typeof topic.sourceKind === 'string' ? topic.sourceKind.slice(0, 60) : '',
+        confidence: topic.confidence != null && topic.confidence !== '' && Number.isFinite(Number(topic.confidence)) ? Math.max(0, Math.min(1, Number(topic.confidence))) : null,
+        evidence: Array.isArray(topic.evidence) ? topic.evidence.slice(0, 4).filter(item => item && typeof item === 'object').map(item => ({
+          sourceKind: typeof item.sourceKind === 'string' ? item.sourceKind.slice(0, 60) : '',
+          excerpt: typeof item.excerpt === 'string' ? item.excerpt.slice(0, 500) : '',
+          sourceRef: typeof item.sourceRef === 'string' ? item.sourceRef.slice(0, 180) : '',
+          timestampStart: item.timestampStart != null && item.timestampStart !== '' && Number.isFinite(Number(item.timestampStart)) ? Number(item.timestampStart) : null,
+          timestampEnd: item.timestampEnd != null && item.timestampEnd !== '' && Number.isFinite(Number(item.timestampEnd)) ? Number(item.timestampEnd) : null,
+          page: item.page != null && item.page !== '' && Number.isFinite(Number(item.page)) ? Number(item.page) : null
+        })) : []
+      })) : [];
+    let selectionBank = bank;
+    let questionIndexMode = 'local_full_bank_no_service_role';
+    let indexedCandidateCount = null;
+    if (smart && supabase && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        const indexPlan = await getQuestionIndexPlan(bank);
+        const queryParts = [tema, modulo, disciplina, ...topics.flatMap(topic => [topic.name, ...topic.synonyms])]
+          .map(value => String(value || '').replace(/"/g, ' ').replace(/[\r\n]+/g, ' ').trim())
+          .filter(Boolean);
+        const query = [...new Set(queryParts)].slice(0, 30).map(value => `"${value}"`).join(' OR ').slice(0, 1200);
+        const semanticQuery = [...new Set([tema, modulo, disciplina, ...topics.flatMap(topic => [topic.name, ...topic.synonyms])].filter(Boolean))]
+          .join(' ').slice(0, 1200);
+        let queryEmbedding = null;
+        let embeddingModel = null;
+        if (process.env.ISC_QUESTION_EMBEDDINGS_ENABLED === '1' && semanticQuery) {
+          const config = semanticEmbeddingConfig();
+          if (config.token) {
+            try {
+              queryEmbedding = await embedQuestionSearch(semanticQuery, String(req.user?.username || 'user'), config);
+              embeddingModel = config.indexModel;
+            } catch (error) {
+              if (!_questionIndexUnavailableWarned) {
+                _questionIndexUnavailableWarned = true;
+                console.warn('[Smart Questions] Embedding de consulta indisponível; usando texto e tópicos:', error.message);
+              }
+            }
+          }
+        }
+        const indexed = await searchPersistedQuestionIndex(supabase, {
+          query,
+          topicIds: topics.map(topic => topic.topicId).filter(Boolean),
+          sourceHash: indexPlan.sourceHash,
+          limit: Math.max(100, Math.min(500, limit * 25)), queryEmbedding, embeddingModel
+        });
+        if (indexed.available && indexed.ready && indexed.rows.length) {
+          const candidates = filterQuestionsByIndexRows(bank, indexed.rows);
+          if (candidates.length) {
+            selectionBank = candidates;
+            indexedCandidateCount = candidates.length;
+            questionIndexMode = indexed.semanticEnabled ? 'persistent_hybrid_semantic' : 'persistent_canonical_full_text';
+          }
+        } else if (indexed.available && indexed.ready) {
+          questionIndexMode = 'local_fallback_after_index_no_match';
+        } else {
+          questionIndexMode = `local_fallback_${indexed.reason || 'index_unavailable'}`;
+          if (indexed.error && !_questionIndexUnavailableWarned) {
+            _questionIndexUnavailableWarned = true;
+            console.warn('[Smart Questions] Índice persistente indisponível; usando busca local:', indexed.error.message || 'falha na consulta');
+          }
+        }
+      } catch (indexError) {
+        questionIndexMode = 'local_fallback_index_error';
+        if (!_questionIndexUnavailableWarned) {
+          _questionIndexUnavailableWarned = true;
+          console.warn('[Smart Questions] Não foi possível preparar o índice; usando busca local:', indexError.message);
+        }
+      }
+    }
+    const smartOptions = {
+      tema, modulo, disc: disciplina, limit, topics,
+      mode: ['fixation', 'review', 'proof', 'reinforcement'].includes(input.mode) ? input.mode : 'review',
+      difficulty: ['all', 'easy', 'medium', 'hard'].includes(input.difficulty) ? input.difficulty : 'all',
+      excludeAnswered: input.excludeAnswered === true,
+      excludedIds: Array.isArray(input.excludedIds) ? input.excludedIds : [],
+      prioritizeIds: Array.isArray(input.prioritizeIds) ? input.prioritizeIds : [],
+      includeComplementary: input.includeComplementary !== false
+    };
+    let r = smart
+      ? selecionarQuestoesComCobertura(selectionBank, smartOptions)
+      : selecionarQuestoes(bank, { tema, modulo, disc: disciplina, limit });
+    if (smart && selectionBank !== bank && r.questions.length === 0) {
+      selectionBank = bank;
+      questionIndexMode = 'local_fallback_after_empty_selection';
+      indexedCandidateCount = null;
+      r = selecionarQuestoesComCobertura(bank, smartOptions);
+    }
+    if (smart) {
+      r.diagnostics.retrievalMode = questionIndexMode;
+      if (indexedCandidateCount != null) r.diagnostics.indexedCandidateCount = indexedCandidateCount;
+      if (questionIndexMode.startsWith('persistent_')) {
+        const retrievalSources = questionIndexMode === 'persistent_hybrid_semantic'
+          ? 'tópicos, busca textual e embeddings'
+          : 'o índice curricular persistido e busca textual';
+        r.diagnostics.limitations.push(`A pré-seleção usa ${retrievalSources}; a relação questão–objetivo continua heurística até revisão humana.`);
+      } else {
+        r.diagnostics.limitations.push('O índice persistente não estava pronto para esta consulta; foi usada a busca local sobre o banco disponível.');
+      }
+    }
     let questions = r.questions;
     let iaCount = 0, vivoCount = 0, doencasUsadas = [];
     // Banco completo do Hardworq (30 mil+): acha a(s) doença(s) do catálogo que correspondem à aula e busca só elas
-    if (req.query.vivo !== '0' && (HWQ.email && HWQ.senha || HWQ_STATE.userToken || HWQ.cookie)) {
+    if (!smart && input.vivo !== '0' && (HWQ.email && HWQ.senha || HWQ_STATE.userToken || HWQ.cookie)) {
       try {
         const doencas = await hwqListarDoencas();
         const alvo = acharDoencas(doencas, tema, modulo);
@@ -1501,7 +2058,7 @@ app.get('/api/questions/match', async (req, res) => {
           const key = alvo.map(d => d.id).sort().join(',');
           let vivo = _qVivoCache.get(key);
           if (!vivo || Date.now() - vivo.at > 6 * 3600 * 1000) {
-            if (!HWQ_STATE.userToken) await hwqLogin();
+            await hwqEnsureToken();
             const busca = await Promise.race([
               hwqFetchAll({ ids_doencas: alvo.map(d => d.id), qtd_maxima: Math.min(limit, 60), areas: ['Clínica Médica', 'Cirurgia Geral', 'Pediatria', 'Ginecologia e Obstetrícia', 'Medicina Preventiva'] }),
               new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 25000))
@@ -1524,16 +2081,15 @@ app.get('/api/questions/match', async (req, res) => {
     }
     const MIN = 10;
     const assunto = (tema && r.termos.length ? tema : (modulo || tema)).trim();
-    const gemini = getGeminiClient();
-    if (questions.length < MIN && gemini && assunto.length > 3 && req.query.ia !== '0') {
+    const gemini = aiConfigured();
+    if (!smart && questions.length < MIN && gemini && assunto.length > 3 && input.ia !== '0') {
       const key = norm(assunto) + '|' + norm(disciplina);
       let novas = _qIaCache.get(key);
       if (!novas) {
         try {
           const falta = Math.min(10, MIN + 2 - questions.length);
           const aiRes = await Promise.race([
-            gemini.models.generateContent({
-              model: 'gemini-3.8-flash',
+            generateAI({ task: "questoes",
               contents: `Você é preceptor de residência médica (ENARE, USP, UNIFESP, AMRIGS, Revalida).
 Crie ${falta} questões de múltipla escolha inéditas, estritamente sobre o tema desta videoaula: "${assunto}"${disciplina ? ` (área: ${disciplina})` : ''}.
 Regras: caso clínico objetivo, 4 alternativas ("A) ...", "B) ..."), apenas UMA correta, comentário técnico curto que explique por que a correta está certa e as demais erradas. Não saia do tema. Varie o foco (diagnóstico, conduta, fisiopatologia, exames).`,
@@ -1557,15 +2113,18 @@ Regras: caso clínico objetivo, 4 alternativas ("A) ...", "B) ..."), apenas UMA 
       questions = [...questions, ...novas].slice(0, limit);
     }
     res.json({
-      success: true, count: questions.length, totalAvailable: questions.length,
+      success: true, count: questions.length, totalAvailable: smart ? r.total : questions.length,
       bancoCount: questions.length - iaCount, iaCount, vivoCount, doencas: doencasUsadas, exatas: r.exatas, termos: r.termos,
-      questions, tema, modulo, disciplina
+      questions, tema, modulo, disciplina,
+      ...(smart ? { curriculum: { objectives: r.objectives, coverage: r.coverage, diagnostics: r.diagnostics } } : {})
     });
   } catch (err) {
     console.error('Erro em /api/questions/match:', err.message);
     res.status(500).json({ success: false, msg: err.message });
   }
-});
+};
+app.get('/api/questions/match', handleQuestionMatch);
+app.post('/api/questions/match', handleQuestionMatch);
 
 // Sincronização TOTAL e Bidirecional: mescla todas as questões do cliente com as do servidor
 // sem perda, salvando em sua totalidade no arquivo persistente questions-bank.json
@@ -1651,35 +2210,71 @@ const HWQ = {
   mirror: !/^(0|false|off)$/i.test(process.env.HARDWORQ_MIRROR || ''),
   mirrorMax: Math.max(500, parseInt(process.env.HARDWORQ_MIRROR_MAX, 10) || 2000000) // sem limite prático
 };
-const HWQ_STATE = { userToken: null, lastLoginAt: null, lastLoginOk: null, lastSyncAt: null, lastSyncOk: null, lastSyncResult: null, doencas: null, doencasAt: 0 };
+const HWQ_STATE = { userToken: null, tokenStore: null, lastLoginAt: null, lastLoginOk: null, lastLoginError: '', lastLoginStatus: 0, lastLoginAttemptAt: 0, lastSyncAt: null, lastSyncOk: null, lastSyncResult: null, doencas: null, doencasAt: 0 };
+const HWQ_LOGIN_RETRY_MS = 30 * 1000;
 
-// Login contínuo: o token do aluno é persistido em disco e sobrevive a restarts.
+// Login contínuo: o token do aluno é estado DURÁVEL e vive no Supabase
+// (system_configs → chave `hwq_token`). Na Vercel /tmp é apagado a cada cold
+// start, então arquivo local só serve como cache efêmero de fallback.
 // Só refaz o login de verdade quando a API recusar o token (auth:false) — relogin automático.
-const HWQ_TOKEN_FILE = path.join(__dirname, 'data', 'hwq-token.json');
+const HWQ_TOKEN_KEY = 'hwq_token';
+const HWQ_TOKEN_FILE = path.join(TMP_DIR, 'hwq-token.json'); // legado/dev: NUNCA fonte da verdade
+const HWQ_TOKEN_LEGACY = path.join(DATA_DIR, 'hwq-token.json'); // migração: Render/local
 
-function saveHwqToken(token) {
-  try {
-    const dir = path.dirname(HWQ_TOKEN_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(HWQ_TOKEN_FILE, JSON.stringify({ token, savedAt: new Date().toISOString() }, null, 2), 'utf8');
-  } catch (err) {
-    console.warn('⚠️ [Hardworq] Não foi possível salvar o token em disco:', err.message);
+async function saveHwqToken(token) {
+  if (!token) return false;
+  const record = { token: String(token), savedAt: new Date().toISOString() };
+
+  // UPSERT no Supabase. O helper também grava um cache best-effort em /tmp,
+  // que nunca é considerado persistente.
+  const durable = await setSystemConfig(HWQ_TOKEN_KEY, record);
+  try { safeWriteJson(HWQ_TOKEN_FILE, record); } catch (_) { /* cache opcional */ }
+
+  HWQ_STATE.tokenStore = durable ? 'supabase' : 'tmp';
+  if (durable) {
+    console.log('🔑 [Hardworq] Token persistido no Supabase (system_configs).');
+  } else {
+    console.warn('⚠️ [Hardworq] Token salvo apenas no cache efêmero (/tmp). Configure o Supabase e rode supabase-schema.sql para torná-lo durável.');
   }
+  return durable;
 }
 
-function loadHwqToken() {
+async function loadHwqToken() {
+  // 1) Fonte da verdade: Supabase.
   try {
-    if (!fs.existsSync(HWQ_TOKEN_FILE)) return;
-    const j = JSON.parse(fs.readFileSync(HWQ_TOKEN_FILE, 'utf8'));
+    const j = await getSystemConfig(HWQ_TOKEN_KEY, null);
     if (j && j.token) {
       HWQ_STATE.userToken = String(j.token);
       HWQ_STATE.lastLoginOk = true; // otimista: se estiver vencido, o relogin automático cuida
       HWQ_STATE.lastLoginAt = j.savedAt || null;
-      console.log('🔑 [Hardworq] Token reutilizado do disco — sessão contínua.');
+      HWQ_STATE.tokenStore = 'supabase';
+      console.log('🔑 [Hardworq] Token carregado do Supabase — sessão contínua.');
+      return true;
     }
-  } catch (_) { /* token corrompido: segue sem token, relogin cuida */ }
+  } catch (err) {
+    console.warn('⚠️ [Hardworq] Falha ao carregar token do Supabase:', err.message);
+  }
+
+  // 2) Fallback: cache local de uma execução anterior (dev, Render ou Supabase fora do ar).
+  //    Se veio do arquivo antigo, tenta migrá-lo para o Supabase em background.
+  for (const arquivo of [HWQ_TOKEN_FILE, HWQ_TOKEN_LEGACY]) {
+    try {
+      const j = safeReadJson(arquivo, null);
+      if (j && j.token) {
+        HWQ_STATE.userToken = String(j.token);
+        HWQ_STATE.lastLoginOk = true;
+        HWQ_STATE.lastLoginAt = j.savedAt || null;
+        HWQ_STATE.tokenStore = 'tmp';
+        console.warn(`⚠️ [Hardworq] Token recuperado de cache local (${arquivo}) — tentando migrar para o Supabase.`);
+        saveHwqToken(j.token).catch(() => {});
+        return true;
+      }
+    } catch (_) { /* tenta o próximo */ }
+  }
+  return false;
 }
-loadHwqToken();
+// Promise aguardada por toda chamada ao Hardworq: garante o token antes do request.
+const hwqTokenReady = loadHwqToken();
 
 const HWQ_AREAS_DEFAULT = ['Clínica Médica', 'Cirurgia Geral', 'Pediatria', 'Ginecologia e Obstetrícia', 'Medicina Preventiva'];
 const HWQ_ANOS_DEFAULT = [2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018];
@@ -1706,6 +2301,8 @@ function hwqHeaders(url, { withUserToken = true } = {}) {
 
 // Chamada HTTP crua (sem relogin); normaliza erro de sessão (auth:false / "Invalid User")
 async function hwqFetch(url, { method = 'GET', body = null, timeoutMs = 20000, withUserToken = true } = {}) {
+  // Cold start: carrega o token do Supabase antes de montar os headers.
+  try { await hwqTokenReady; } catch (_) { /* relogin abaixo resolve */ }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -1730,26 +2327,60 @@ async function hwqFetch(url, { method = 'GET', body = null, timeoutMs = 20000, w
 
 // Login email/senha: PUT /login retorna obj.token, que vira o header UserToken das chamadas seguintes
 async function hwqLogin({ force = false } = {}) {
-  if (!HWQ.email || !HWQ.senha) return { ok: false, error: 'HARDWORQ_EMAIL/HARDWORQ_SENHA não configurados no .env do servidor.' };
+  if (!HWQ.email || !HWQ.senha) {
+    HWQ_STATE.lastLoginError = 'HARDWORQ_EMAIL/HARDWORQ_SENHA não configurados no servidor.';
+    HWQ_STATE.lastLoginStatus = 0;
+    return { ok: false, error: HWQ_STATE.lastLoginError, status: 0 };
+  }
+  try { await hwqTokenReady; } catch (_) { /* segue para login manual */ }
   if (!force && HWQ_STATE.userToken && HWQ_STATE.lastLoginOk) return { ok: true, token: HWQ_STATE.userToken, cached: true };
+  // Evita martelar o login em um status/health chamado em sequência quando a senha está errada.
+  if (!force && HWQ_STATE.lastLoginError && Date.now() - HWQ_STATE.lastLoginAttemptAt < HWQ_LOGIN_RETRY_MS) {
+    return { ok: false, error: HWQ_STATE.lastLoginError, status: HWQ_STATE.lastLoginStatus, cooldown: true };
+  }
+
+  HWQ_STATE.lastLoginAttemptAt = Date.now();
   const r = await hwqFetch(`${HWQ.hwqBase}/login`, {
     method: 'PUT',
     body: { email: HWQ.email, senha: HWQ.senha, platform: '', uuid: '' },
     withUserToken: false
   });
   HWQ_STATE.lastLoginAt = new Date().toISOString();
+  HWQ_STATE.lastLoginStatus = r.status || 0;
   const token = r.data && r.data.obj && r.data.obj.token ? String(r.data.obj.token) : '';
   const ok = !!(r.ok && token);
   HWQ_STATE.lastLoginOk = ok;
   HWQ_STATE.userToken = token || null;
   if (ok) {
-    saveHwqToken(token);
-    console.log('🔑 [Hardworq] Login ok — token em cache (memória + disco).');
+    HWQ_STATE.lastLoginError = '';
+    await saveHwqToken(token);
+    console.log('🔑 [Hardworq] Login ok — token em memória + persistência durável.');
   } else {
+    // Não apaga o token durável em falha transitória: o próximo request tenta de novo.
+    HWQ_STATE.lastLoginError = (r.data && (r.data.msg || r.data.raw)) || r.error || `HTTP ${r.status}`;
     try { fs.rmSync(HWQ_TOKEN_FILE, { force: true }); } catch (_) {}
-    console.warn('⚠️ [Hardworq] Login falhou:', (r.data && r.data.msg) || r.error || `HTTP ${r.status}`);
+    console.warn('⚠️ [Hardworq] Login falhou:', HWQ_STATE.lastLoginError);
   }
-  return { ok, token, msg: (r.data && r.data.msg) || r.error || '' };
+  return { ok, token, status: r.status || 0, msg: (r.data && r.data.msg) || r.error || '', error: HWQ_STATE.lastLoginError || '' };
+}
+
+/* Garante um token válido antes de status/sync. Se o token durável não existir
+   (tabela ausente/cold start), faz login na hora em vez de ficar "aguardando". */
+let hwqEnsurePromise = null;
+async function hwqEnsureToken() {
+  if (hwqEnsurePromise) return hwqEnsurePromise;
+  hwqEnsurePromise = (async () => {
+    try { await hwqTokenReady; } catch (_) { /* tenta login abaixo */ }
+    if (HWQ_STATE.userToken && HWQ_STATE.lastLoginOk !== false) {
+      return { ok: true, token: HWQ_STATE.userToken, cached: true };
+    }
+    return hwqLogin();
+  })();
+  try {
+    return await hwqEnsurePromise;
+  } finally {
+    hwqEnsurePromise = null;
+  }
 }
 
 // Chamada com relogin automático: se a sessão cair (auth:false), refaz login e tenta 1× de novo
@@ -1781,16 +2412,20 @@ async function hwqSearchQuestions(opts = {}) {
 }
 
 // Busca em rodadas de 100 até não voltarem questões novas (a API não pagina — repete amostras).
-// qtd_maxima define o teto; "tudo" = 5000 (60 rodadas no máximo, por segurança).
+// qtd_maxima define o teto; budgetMs evita estourar o limite da função serverless.
 async function hwqFetchAll(opts = {}) {
   const target = Math.min(50000, Math.max(1, parseInt(opts.qtd_maxima, 10) || 50000));
+  const budgetMs = Math.max(5000, Math.min(240000, parseInt(opts.budgetMs, 10) || 90000));
+  const startedAt = Date.now();
   const seen = new Map();
   let rounds = 0;
+  let truncated = false;
   while (seen.size < target && rounds < 400) {
+    if (Date.now() - startedAt > budgetMs) { truncated = true; break; }
     rounds++;
     const search = await hwqSearchQuestions({ ...opts, qtd_maxima: 100 });
     if (search.error || search.authFailed || search.status >= 400) {
-      return { ...search, questions: [...seen.values()], rounds };
+      return { ...search, questions: [...seen.values()], rounds, truncated };
     }
     let novas = 0;
     for (const q of search.questions) {
@@ -1799,7 +2434,8 @@ async function hwqFetchAll(opts = {}) {
     }
     if (novas === 0) break; // a API começou a repetir — filtro esgotado
   }
-  return { ok: true, status: 200, authFailed: false, error: null, msg: '', questions: [...seen.values()].slice(0, target), rounds };
+  if (seen.size < target && rounds >= 400) truncated = true;
+  return { ok: true, status: 200, authFailed: false, error: null, msg: '', questions: [...seen.values()].slice(0, target), rounds, truncated };
 }
 
 // Normaliza para busca sem acento/caixa (ex.: "esquizofrenia" == "Esquizofrenia")
@@ -2019,6 +2655,8 @@ repairMojibakeInBank();
 // (HARDWORQ_AUTO_GIT=1 no .env; silencioso e com debounce de 5 min — sem git/GitHub, só ignora)
 let plUltimoAutoGit = 0;
 function autoGitBanco() {
+  // Vercel não tem repositório gravável nem git: a persistência durável é o Supabase.
+  if (IS_SERVERLESS) return;
   if (!/^(1|true|on)$/i.test(process.env.HARDWORQ_AUTO_GIT || '')) return;
   const agora = Date.now();
   if (agora - plUltimoAutoGit < 5 * 60 * 1000) return;
@@ -2040,8 +2678,21 @@ function autoGitBanco() {
 
 // Fluxo principal: busca na API + parse + merge no banco local (usado pelo painel e pelo auto-sync)
 async function runHardworqSync(filters = {}) {
-  if (!HWQ_STATE.userToken) await hwqLogin(); // garante token antes da busca (se falhar, hwqRequest tenta de novo)
-  const search = await hwqFetchAll(filters);
+  const auth = await hwqEnsureToken();
+  if (!auth.ok) {
+    HWQ_STATE.lastSyncAt = new Date().toISOString();
+    HWQ_STATE.lastSyncOk = false;
+    HWQ_STATE.lastSyncResult = { fetched: 0, imported: 0, authFailed: true, status: auth.status || 0 };
+    return {
+      ok: false,
+      authFailed: true,
+      status: auth.status || 401,
+      msg: auth.error || 'Login no Hardworq falhou. Verifique HARDWORQ_EMAIL/HARDWORQ_SENHA no servidor.',
+      fetched: 0
+    };
+  }
+
+  const search = await hwqFetchAll({ ...filters, budgetMs: filters.budgetMs || 90000 });
   HWQ_STATE.lastSyncAt = new Date().toISOString();
 
   if (search.error || search.authFailed || search.status >= 400) {
@@ -2052,7 +2703,7 @@ async function runHardworqSync(filters = {}) {
       authFailed: !!search.authFailed,
       status: search.status,
       msg: search.authFailed
-        ? 'Login no Hardworq falhou (auth:false). Verifique HARDWORQ_EMAIL/HARDWORQ_SENHA no .env do servidor.'
+        ? 'Login no Hardworq falhou (auth:false). Verifique HARDWORQ_EMAIL/HARDWORQ_SENHA no servidor.'
         : (search.msg || search.error || `A API do Hardworq respondeu ${search.status}.`),
       fetched: 0
     };
@@ -2061,20 +2712,24 @@ async function runHardworqSync(filters = {}) {
   const parsed = parseHardworqPayload(search.questions);
   if (!parsed.length) {
     HWQ_STATE.lastSyncOk = true;
-    HWQ_STATE.lastSyncResult = { fetched: search.questions.length, imported: 0, updated: 0 };
-    return { ok: true, fetched: search.questions.length, imported: 0, updated: 0, questions: [], msg: 'A API respondeu sem questões para os filtros escolhidos.' };
+    HWQ_STATE.lastSyncResult = { fetched: search.questions.length, imported: 0, updated: 0, truncated: !!search.truncated };
+    return { ok: true, fetched: search.questions.length, imported: 0, updated: 0, truncated: !!search.truncated, questions: [], msg: 'A API respondeu sem questões para os filtros escolhidos.' };
   }
 
   const merge = mergeQuestionsIntoBank(parsed);
   HWQ_STATE.lastSyncOk = true;
-  HWQ_STATE.lastSyncResult = { fetched: search.questions.length, imported: merge.imported, updated: merge.updated };
-  console.log(`🟣 [Hardworq] Sincronização: ${search.questions.length} buscadas → ${merge.imported} novas, ${merge.updated} atualizadas.`);
+  HWQ_STATE.lastSyncResult = { fetched: search.questions.length, imported: merge.imported, updated: merge.updated, truncated: !!search.truncated };
+  console.log(`🟣 [Hardworq] Sincronização: ${search.questions.length} buscadas → ${merge.imported} novas, ${merge.updated} atualizadas${search.truncated ? ' (parcial; continua na próxima chamada)' : ''}.`);
   autoGitBanco();
-  return { ok: true, fetched: search.questions.length, imported: merge.imported, updated: merge.updated, total: merge.total, questions: parsed };
+  return { ok: true, fetched: search.questions.length, imported: merge.imported, updated: merge.updated, total: merge.total, truncated: !!search.truncated, questions: parsed };
 }
 
 // Status da integração (painel do app)
-app.get('/api/questions/hardworq/status', (req, res) => {
+app.get('/api/questions/hardworq/status', async (req, res) => {
+  res.set('Cache-Control', 'no-store, max-age=0');
+  // Antes de responder, garante o login: sem isso o painel ficava eternamente
+  // em "aguardando login" quando o token não sobrevivia ao cold start.
+  try { await hwqEnsureToken(); } catch (_) { /* status continua válido sem token */ }
   const bank = readQuestionsBank();
   const hwqCount = bank.filter(q => q.source && String(q.source).startsWith('Hardworq')).length;
   res.json({
@@ -2084,9 +2739,12 @@ app.get('/api/questions/hardworq/status', (req, res) => {
     authMode: (HWQ.email && HWQ.senha) ? 'login' : (HWQ.cookie ? 'cookie' : 'nenhum'),
     emailConfigured: !!HWQ.email,
     userTokenActive: !!HWQ_STATE.userToken,
-    tokenPersisted: fs.existsSync(HWQ_TOKEN_FILE),
+    tokenPersisted: HWQ_STATE.tokenStore === 'supabase',
+    tokenStore: HWQ_STATE.tokenStore || 'none',
     lastLoginAt: HWQ_STATE.lastLoginAt,
     lastLoginOk: HWQ_STATE.lastLoginOk,
+    lastLoginError: HWQ_STATE.lastLoginError || null,
+    lastLoginStatus: HWQ_STATE.lastLoginStatus || null,
     cookieConfigured: !!HWQ.cookie,
     autoSync: HWQ.autoSync,
     syncIntervalHours: HWQ.syncIntervalHours,
@@ -2100,7 +2758,17 @@ app.get('/api/questions/hardworq/status', (req, res) => {
 
 // Sincronização com a API do Hardworq (botão "Sincronizar Hardworq" do app)
 const HWQ_BG = { running: false, startedAt: 0, last: null };
-app.get('/api/questions/hardworq/sync-status', (req, res) => res.json({ success: true, ...HWQ_BG, total: readQuestionsBank().length }));
+app.get('/api/questions/hardworq/sync-status', (req, res) => {
+  res.set('Cache-Control', 'no-store, max-age=0');
+  res.json({
+    success: true,
+    ...HWQ_BG,
+    total: readQuestionsBank().length,
+    userTokenActive: !!HWQ_STATE.userToken,
+    lastLoginError: HWQ_STATE.lastLoginError || null,
+    lastLoginStatus: HWQ_STATE.lastLoginStatus || null
+  });
+});
 app.post('/api/questions/hardworq/sync', async (req, res) => {
   try {
     const { areas, anos, grupos_prova, qtd_maxima, cookie, email, senha, idTurma, ids_doencas, salvar = true } = req.body || {};
@@ -2108,8 +2776,11 @@ app.post('/api/questions/hardworq/sync', async (req, res) => {
     if (cookie) HWQ.cookie = String(cookie).trim(); // legado
 
     if (salvar === false) {
-      if (!HWQ_STATE.userToken) await hwqLogin();
-      const search = await hwqFetchAll({ areas, anos, grupos_prova, qtd_maxima, ids_doencas, idTurma });
+      const auth = await hwqEnsureToken();
+      if (!auth.ok) {
+        return res.status(401).json({ success: false, authFailed: true, status: auth.status || 401, msg: auth.error || 'Login no Hardworq falhou.' });
+      }
+      const search = await hwqFetchAll({ areas, anos, grupos_prova, qtd_maxima, ids_doencas, idTurma, budgetMs: 60000 });
       if (search.error || search.authFailed || search.status >= 400) {
         return res.status(search.authFailed ? 401 : 502).json({
           success: false, authFailed: !!search.authFailed, status: search.status,
@@ -2121,17 +2792,31 @@ app.post('/api/questions/hardworq/sync', async (req, res) => {
     }
 
     if ((req.body || {}).background) {
-      // Resposta imediata: o banco espelhado já está no servidor; a busca ao vivo no Hardworq roda por trás
+      // O login é síncrono para o app receber o erro real (401) em vez de um
+      // "success" falso. Na Vercel a busca também roda síncrona: trabalho
+      // disparado depois da resposta não é garantido em serverless.
+      const auth = await hwqEnsureToken();
+      if (!auth.ok) {
+        return res.status(401).json({ success: false, authFailed: true, status: auth.status || 401, msg: auth.error || 'Login no Hardworq falhou.' });
+      }
+      if (IS_SERVERLESS) {
+        const result = await runHardworqSync({ areas, anos, grupos_prova, qtd_maxima, ids_doencas, idTurma, budgetMs: 90000 });
+        // O cliente já baixa o banco por /api/questions/bank; não devolve milhares
+        // de questões no corpo desta resposta de sincronização.
+        const { questions: _questions, ...summary } = result;
+        return res.status(result.ok ? 200 : (result.authFailed ? 401 : 502)).json({ ...summary, background: false });
+      }
+      // Render/local: mantém a resposta imediata e o trabalho em segundo plano.
       if (!HWQ_BG.running) {
         HWQ_BG.running = true; HWQ_BG.startedAt = Date.now();
         runHardworqSync({ areas, anos, grupos_prova, qtd_maxima, ids_doencas, idTurma })
-          .then(r => { HWQ_BG.last = { ok: !!r.ok, imported: r.imported || 0, updated: r.updated || 0, msg: r.msg || '', at: Date.now() }; })
+          .then(r => { HWQ_BG.last = { ok: !!r.ok, imported: r.imported || 0, updated: r.updated || 0, truncated: !!r.truncated, msg: r.msg || '', at: Date.now() }; })
           .catch(e => { HWQ_BG.last = { ok: false, msg: e.message, at: Date.now() }; })
           .finally(() => { HWQ_BG.running = false; });
       }
-      return res.json({ success: true, background: true, running: HWQ_BG.running, total: readQuestionsBank().length });
+      return res.json({ success: true, background: true, auth: true, running: HWQ_BG.running, total: readQuestionsBank().length });
     }
-    const result = await runHardworqSync({ areas, anos, grupos_prova, qtd_maxima, ids_doencas, idTurma });
+    const result = await runHardworqSync({ areas, anos, grupos_prova, qtd_maxima, ids_doencas, idTurma, budgetMs: 90000 });
     res.status(result.ok ? 200 : (result.authFailed ? 401 : 502)).json(result);
   } catch (err) {
     console.error('Erro na sincronização Hardworq:', err);
@@ -2168,7 +2853,7 @@ app.post('/api/questions/import-hardworq', async (req, res) => {
     if (payload || jsonText) {
       parsedQuestions = parseHardworqPayload(payload || jsonText);
     } else if (idTurma || HWQ.email || HWQ.cookie) {
-      if (!HWQ_STATE.userToken) await hwqLogin();
+      await hwqEnsureToken();
       const search = await hwqFetchAll({ idTurma, areas, anos, grupos_prova, qtd_maxima, ids_doencas });
       if (search.error || search.authFailed || search.status >= 400) {
         return res.status(search.authFailed ? 401 : 502).json({
@@ -2209,12 +2894,16 @@ async function autoSyncHardworq() {
     console.warn('⚠️ [Hardworq] Auto-sync erro:', err.message);
   }
 }
-setTimeout(autoSyncHardworq, 20000);
-setInterval(autoSyncHardworq, HWQ.syncIntervalHours * 60 * 60 * 1000);
+// Processos de fundo só fazem sentido em servidor persistente (Railway/Render).
+// Em serverless eles seriam congelados ou multiplicariam execuções.
+if (!IS_SERVERLESS) {
+  setTimeout(autoSyncHardworq, 20000);
+  setInterval(autoSyncHardworq, HWQ.syncIntervalHours * 60 * 60 * 1000);
+}
 
 // ── Espelho contínuo: percorre o catálogo de doenças do Hardworq (~358) e traz as questões de cada uma,
 // uma por vez e com pausa entre elas. Ao terminar a volta, descansa e recomeça (pega questões novas). ──
-const MIRROR_FILE = path.join(__dirname, 'data', 'hwq-mirror.json');
+const MIRROR_FILE = path.join(DATA_DIR, 'hwq-mirror.json');
 const MIRROR = { running: false, idx: 0, total: 0, passes: 0, lastAt: null, lastDoenca: '', novas: 0, erro: '' };
 try { Object.assign(MIRROR, JSON.parse(fs.readFileSync(MIRROR_FILE, 'utf8')), { running: false }); } catch (_) {}
 const saveMirror = () => { try { fs.writeFileSync(MIRROR_FILE, JSON.stringify({ idx: MIRROR.idx, passes: MIRROR.passes, lastAt: MIRROR.lastAt })); } catch (_) {} };
@@ -2251,7 +2940,7 @@ async function mirrorTick() {
   MIRROR.running = true;
   let espera = Math.max(1, parseFloat(process.env.HARDWORQ_MIRROR_PAUSE_S) || 10) * 1000;
   try {
-    if (!HWQ_STATE.userToken) await hwqLogin();
+    await hwqEnsureToken();
     const doencas = await hwqListarDoencas();
     MIRROR.total = doencas.length;
     if (!doencas.length) throw new Error('catálogo de doenças vazio');
@@ -2272,15 +2961,15 @@ async function mirrorTick() {
   MIRROR.running = false;
   setTimeout(mirrorTick, espera);
 }
-setTimeout(mirrorTick, 45000);
+if (!IS_SERVERLESS) setTimeout(mirrorTick, 45000);
 app.get('/api/questions/mirror', (req, res) => {
   res.json({ success: true, ...MIRROR, publicacao: !!(process.env.GITHUB_TOKEN || process.env.GH_TOKEN), baseRepo: _bankBase, ativo: HWQ.mirror && !!(HWQ.email && HWQ.senha), bankCount: readQuestionsBank().length, limite: HWQ.mirrorMax });
 });
 
 // Login no boot apenas se não houver token reutilizável — credenciais certas entram em segundos
-setTimeout(() => { if (!HWQ_STATE.userToken && HWQ.email && HWQ.senha) hwqLogin(); }, 5000);
+if (!IS_SERVERLESS) setTimeout(() => { if (!HWQ_STATE.userToken && HWQ.email && HWQ.senha) hwqLogin(); }, 5000);
 
-// 2. Gerar questões sob demanda com Gemini AI (Aba 2)
+// 2. Gerar questões sob demanda com IA (Aba 2)
 app.post('/api/gemini/generate-questions', async (req, res) => {
   try {
     const { prompt, count = 5, specialty, difficulty = 'Médio', institution } = req.body || {};
@@ -2306,7 +2995,7 @@ ${specialty ? `Especialidade prioritária: ${specialty}` : ''}
 ${institution ? `Estilo de banca / Instituição: ${institution}` : ''}
 Nível de dificuldade: ${difficulty}`;
 
-    const geminiRes = await generateWithGemini({
+    const geminiRes = await generateAI({ task: "questoes",
       contents: userPrompt,
       config: {
         systemInstruction,
@@ -2345,13 +3034,13 @@ Nível de dificuldade: ${difficulty}`;
     try {
       generatedList = JSON.parse(geminiRes.text.trim());
     } catch (parseErr) {
-      console.warn('Erro ao fazer JSON.parse do Gemini, tentando regex fallback:', parseErr.message);
+      console.warn('Erro ao fazer JSON.parse do IA, tentando regex fallback:', parseErr.message);
       const match = geminiRes.text.match(/\[\s*\{[\s\S]*\}\s*\]/);
       if (match) generatedList = JSON.parse(match[0]);
     }
 
     if (!Array.isArray(generatedList) || generatedList.length === 0) {
-      return res.status(500).json({ error: 'Nenhuma questão foi retornada pelo modelo Gemini.' });
+      return res.status(500).json({ error: 'Nenhuma questão foi retornada pelo modelo de IA.' });
     }
 
     // Normalizar questões geradas
@@ -2360,7 +3049,7 @@ Nível de dificuldade: ${difficulty}`;
       id: q.id || `q-gemini-${Date.now()}-${idx + 1}`,
       specialty: q.specialty || specialty || 'Clínica Médica',
       subspecialty: q.subspecialty || 'Geral',
-      institution: institution || 'Gerador Gemini AI',
+      institution: institution || 'Gerador IA',
       year: new Date().getFullYear(),
       statement: q.statement,
       options: q.options,
@@ -2370,7 +3059,7 @@ Nível de dificuldade: ${difficulty}`;
       difficulty: q.difficulty || difficulty,
       tags: Array.isArray(q.tags) ? q.tags : [q.specialty || 'Medicina'],
       createdAt: now,
-      source: 'Gerador Gemini'
+      source: 'Gerador IA'
     }));
 
     // Persistir automaticamente no banco de dados local para manter Aba 1 atualizada
@@ -2384,7 +3073,7 @@ Nível de dificuldade: ${difficulty}`;
 
     res.json({ success: true, count: formatted.length, questions: formatted });
   } catch (err) {
-    console.warn('Erro ao gerar questões com Gemini, utilizando banco de casos clínicos de alta frequência:', err.message);
+    console.warn('Erro ao gerar questões com IA, utilizando banco de casos clínicos de alta frequência:', err.message);
     const bank = readQuestionsBank();
     const n = Math.min(10, Math.max(1, parseInt(req.body?.count, 10) || 5));
     const reqSpec = req.body?.specialty || '';
@@ -2402,7 +3091,7 @@ Nível de dificuldade: ${difficulty}`;
         notice: 'Questões selecionadas da Base Clínica de Alta Frequência (fallback resiliente)'
       });
     }
-    res.status(500).json({ error: err.message || 'Falha ao gerar questões com Gemini' });
+    res.status(500).json({ error: err.message || 'Falha ao gerar questões com IA' });
   }
 });
 
@@ -2446,7 +3135,7 @@ DIRETRIZES DO TUTOR:
       parts: [{ text: userQuestion || 'Olá tutor, pode me orientar sobre este caso clínico?' }]
     });
 
-    const tutorRes = await generateWithGemini({
+    const tutorRes = await generateAI({ task: "tutor",
       contents,
       config: {
         systemInstruction,
@@ -2456,7 +3145,7 @@ DIRETRIZES DO TUTOR:
 
     res.json({ success: true, reply: tutorRes.text.trim() });
   } catch (err) {
-    console.warn('Erro no Tutor Gemini, acionando síntese de tutoria clínica:', err.message);
+    console.warn('Erro no Tutor IA, acionando síntese de tutoria clínica:', err.message);
     const letter = question.correctLetter || ['A','B','C','D','E'][question.correctIndex] || 'A';
     let fallbackReply = '';
     if (!isAnswered) {
@@ -2499,7 +3188,7 @@ async function autoFeedQuestions() {
     const systemInstruction = `Você é um preceptor médico. Crie exatamente 2 questões inéditas de múltipla escolha com casos clínicos profundos.`;
     const prompt = `Gere 2 questões de alto rendimento sobre: ${topic.prompt}. Retorne em JSON array.`;
 
-    const res = await generateWithGemini({
+    const res = await generateAI({ task: "auto_feed",
       contents: prompt,
       config: {
         systemInstruction,
@@ -2561,9 +3250,11 @@ async function autoFeedQuestions() {
   }
 }
 
-// Inicia auto-feed após 15 segundos do boot do servidor e a cada 6 horas
-setTimeout(autoFeedQuestions, 15000);
-setInterval(autoFeedQuestions, 6 * 60 * 60 * 1000);
+// Inicia auto-feed após 15 segundos do boot do servidor e a cada 6 horas (só em servidor persistente)
+if (!IS_SERVERLESS) {
+  setTimeout(autoFeedQuestions, 15000);
+  setInterval(autoFeedQuestions, 6 * 60 * 60 * 1000);
+}
 
 app.post('/api/questions/auto-feed', async (req, res) => {
   await autoFeedQuestions();
@@ -2575,7 +3266,7 @@ app.post('/api/questions/auto-feed', async (req, res) => {
    PLANEJADOR DE CRONOGRAMA IA — graduação + residência
    Regra absoluta: toda revisão é ESTUDO ATIVO (flashcards/questões).
    ═══════════════════════════════════════════════════════════════ */
-const DECKS_FILE = path.join(__dirname, 'data', 'planner-decks.json');
+const DECKS_FILE = path.join(DATA_DIR, 'planner-decks.json');
 function readDecks() { try { return JSON.parse(fs.readFileSync(DECKS_FILE, 'utf8')); } catch { return {}; } }
 function writeDecks(d) { try { fs.mkdirSync(path.dirname(DECKS_FILE), { recursive: true }); fs.writeFileSync(DECKS_FILE, JSON.stringify(d, null, 2), 'utf8'); } catch (err) { console.warn('⚠️ [Planner] Falha ao salvar decks:', err.message); } }
 const plDeckKey = (materia, tema) => hwqNorm(materia) + '::' + hwqNorm(tema);
@@ -2687,15 +3378,15 @@ function plGerarPlan(config, extras = {}) {
 }
 function normLower(s) { return hwqNorm(s); }
 
-// Geração de deck de estudo ativo (10 flashcards + 3 questões) — background via Gemini, fallback no banco
+// Geração de deck de estudo ativo (10 flashcards + 3 questões) — background via IA, fallback no banco
 async function plGerarDeck(materia, tema) {
   const key = plDeckKey(materia, tema);
   const decks = readDecks();
   if (decks[key] && decks[key].pronto) return decks[key];
   let deck = null;
-  if (ai) {
+  if (aiConfigured()) {
     try {
-      const res = await generateWithGemini({
+      const res = await generateAI({ task: "aula_flashcards",
         contents: `Crie 10 flashcards curtos e diretos (frente e verso) e 3 questões de múltipla escolha baseados no tema "${tema}" (matéria: ${materia}), focando nos conceitos mais cobrados em provas.`,
         config: {
           responseMimeType: 'application/json',
@@ -2717,7 +3408,7 @@ async function plGerarDeck(materia, tema) {
       });
       const parsed = JSON.parse(res.text.trim());
       deck = {
-        tema, materia, fonte: 'gemini', pronto: true, criadoEm: new Date().toISOString(),
+        tema, materia, fonte: 'ia', pronto: true, criadoEm: new Date().toISOString(),
         flashcards: (parsed.flashcards || []).slice(0, 12),
         questoes: (parsed.questoes || []).map((q, i) => ({
           id: `q-pl-${key}-${i}`, specialty: materia, subspecialty: tema, institution: 'Cronograma IA', year: new Date().getFullYear(),
@@ -2726,9 +3417,9 @@ async function plGerarDeck(materia, tema) {
           explanation: q.explanation || '', difficulty: 'Médio', tags: [materia, tema], source: 'Cronograma IA'
         }))
       };
-      console.log(`🧠 [Planner] Deck Gemini pronto: "${tema}" (${deck.flashcards.length} cards, ${deck.questoes.length} questões)`);
+      console.log(`🧠 [Planner] Deck IA pronto: "${tema}" (${deck.flashcards.length} cards, ${deck.questoes.length} questões)`);
     } catch (err) {
-      console.warn(`⚠️ [Planner] Gemini falhou para "${tema}":`, err.message?.slice(0, 120));
+      console.warn(`⚠️ [Planner] IA falhou para "${tema}":`, err.message?.slice(0, 120));
     }
   }
   if (!deck) {
@@ -2748,7 +3439,7 @@ async function plGerarDeck(materia, tema) {
       };
       console.log(`🧠 [Planner] Deck do banco local: "${tema}" (${hits.length} questões encontradas)`);
     } else {
-      deck = { tema, materia, fonte: 'nenhuma', pronto: false, msg: 'Configure GEMINI_API_KEY ou sincronize questões deste tema no banco.', criadoEm: new Date().toISOString(), flashcards: [], questoes: [] };
+      deck = { tema, materia, fonte: 'nenhuma', pronto: false, msg: 'Configure GROQ_API_KEY ou sincronize questões deste tema no banco.', criadoEm: new Date().toISOString(), flashcards: [], questoes: [] };
     }
   }
   decks[key] = deck;
@@ -2774,7 +3465,7 @@ async function plBombearDeck() {
   plDeckRodando = false;
 }
 
-// POST /api/planner/generate — gera o cronograma (Gemini para temas se houver chave; motor local sempre funciona)
+// POST /api/planner/generate — gera o cronograma (IA para temas se houver chave; motor local sempre funciona)
 app.post('/api/planner/generate', async (req, res) => {
   try {
     const { horasDia = 4, inicio, provas = [], materias = [], pdfTexto = '' } = req.body || {};
@@ -2787,10 +3478,10 @@ app.post('/api/planner/generate', async (req, res) => {
       materias: materias.filter(m => m.nome)
     };
     let temasPorMateria = null, aviso = null;
-    if (ai && pdfTexto && String(pdfTexto).length > 400) {
+    if (aiConfigured() && pdfTexto && String(pdfTexto).length > 400) {
       try {
         const listaMaterias = config.materias.map(m => `${m.nome} (${m.dificuldade || 'Médio'})`).join('; ');
-        const g = await generateWithGemini({
+        const g = await generateAI({ task: "documento",
           contents: `Analise o material de estudo abaixo (edital/cronograma/ementa) e extraia os temas mais cobrados para cada matéria desta lista: [${listaMaterias}].\nResponda JSON com temasPorMateria (objeto matéria → array de 4 a 8 temas curtos) e resumos (objeto tema → array de 3 a 5 tópicos de estudo).\n\nMATERIAL:\n${String(pdfTexto).slice(0, 12000)}`,
           config: {
             responseMimeType: 'application/json',
@@ -2810,18 +3501,18 @@ app.post('/api/planner/generate', async (req, res) => {
       } catch (err) {
         aviso = 'IA não conseguiu ler o PDF (' + (err.message || '').slice(0, 80) + ') — usando grade padrão de tópicos.';
       }
-    } else if (!ai && pdfTexto) {
-      aviso = 'GEMINI_API_KEY não configurada — o PDF não pôde ser lido pela IA e a grade padrão de tópicos foi usada.';
+    } else if (!aiConfigured() && pdfTexto) {
+      aviso = 'GROQ_API_KEY não configurada — o PDF não pôde ser lido pela IA e a grade padrão de tópicos foi usada.';
     }
     const plan = plGerarPlan(config, { temasPorMateria });
     if (plan.erro) return res.status(400).json({ success: false, msg: plan.erro });
-    plan.geradoCom = ai ? 'gemini' : 'motor-local';
+    plan.geradoCom = aiConfigured() ? 'ia' : 'motor-local';
     if (aviso) plan.aviso = aviso;
     // Dispara geração silenciosa dos decks de estudo ativo para os temas que terão revisão
     const temasRevisao = new Set();
     plan.dias.forEach(d => d.blocos.forEach(b => { if (b.tipo.startsWith('revisao') && b.tema) temasRevisao.add((b.materia || '') + '||' + b.tema); }));
     temasRevisao.forEach(t => { const [materia, tema] = t.split('||'); plEnfileirarDeck(materia, tema); });
-    res.json({ success: true, plan, decksFila: temasRevisao.size, gemini: !!ai });
+    res.json({ success: true, plan, decksFila: temasRevisao.size, gemini: !!aiConfigured() });
   } catch (err) {
     console.error('Erro no planner:', err);
     res.status(500).json({ success: false, msg: err.message });
@@ -3060,8 +3751,8 @@ app.post('/api/planner/synergy-generate', async (req, res) => {
       secaoTextosAluno += `\n\n═══════════════════════════════════════════════════════════════\n[3. ATUALIZAÇÕES DO CRONOGRAMA, OBSERVAÇÕES E INSTRUÇÕES ESPECIAIS DO ESTUDANTE]:\n${rawAtualizacoes}\n`;
     }
 
-    // Conexão direta com Google Gemini (@google/genai)
-    const gemini = getGeminiClient();
+    // Conexão direta com Groq
+    const gemini = aiConfigured();
     if (gemini) {
       try {
         const instrucaoModo = modoEstudo === 'foco_graduacao'
@@ -3124,8 +3815,8 @@ Responda SOMENTE em JSON puro e válido nesta estrutura:
   "ajustesIdentificados": ["Ajustes acatados a partir do texto 3"]
 }`;
 
-        console.log('🤖 Chamando Gemini (@google/genai) para gerar cronograma completo e sinérgico...');
-        const g = await generateWithGemini({
+        console.log('🤖 Chamando Groq para gerar cronograma completo e sinérgico...');
+        const g = await generateAI({ task: "planner_enrich",
           contents: prompt,
           config: {
             responseMimeType: 'application/json',
@@ -3163,13 +3854,13 @@ Responda SOMENTE em JSON puro e válido nesta estrutura:
             }
           });
         }
-        console.log(`✅ Gemini gerou ${sinergiaMatches.length} sinergias e extraiu ${conteudosFaculdade.length} tópicos da faculdade.`);
+        console.log(`✅ IA gerou ${sinergiaMatches.length} sinergias e extraiu ${conteudosFaculdade.length} tópicos da faculdade.`);
       } catch (err) {
-        console.warn('⚠️ Erro ao consultar Gemini:', err.message);
+        console.warn('⚠️ Erro ao consultar IA:', err.message);
         aviso = 'O motor determinístico calibrou o cronograma e distribuiu os temas com precisão de acordo com as ementas enviadas.';
       }
     } else {
-      aviso = 'GEMINI_API_KEY não configurada no servidor — usando motor heurístico de alta precisão.';
+      aviso = 'GROQ_API_KEY não configurada no servidor — usando motor heurístico de alta precisão.';
     }
 
     // Unifica com os tópicos extraídos localmente para garantir 100% de cobertura (sem truncamento)
@@ -3207,7 +3898,7 @@ Responda SOMENTE em JSON puro e válido nesta estrutura:
     const plan = plGerarPlanSinergia(config, { sinergiaMatches, temasPorMateria, conteudosFaculdade, conteudosResidencia, atualizacoesNotas: rawAtualizacoes });
     if (plan.erro) return res.status(400).json({ success: false, msg: plan.erro });
 
-    plan.geradoCom = ai ? 'gemini-rag-sinergia' : 'motor-sinergia-local';
+    plan.geradoCom = aiConfigured() ? 'ia-rag-sinergia' : 'motor-sinergia-local';
     plan.atualizacoesNotas = rawAtualizacoes;
     if (aviso) plan.aviso = aviso;
 
@@ -3232,7 +3923,7 @@ Responda SOMENTE em JSON puro e válido nesta estrutura:
       totalTopicosFaculdade: plan.estatisticas.totalTopicosFaculdade,
       topicosFaculdadeTotal: plan.estatisticas.totalTopicosFaculdade,
       topicosFaculdadeAgendados: plan.estatisticas.topicosFaculdadeAgendados,
-      gemini: !!ai
+      gemini: !!aiConfigured()
     });
   } catch (err) {
     console.error('Erro no synergy-generate:', err);
@@ -3471,15 +4162,128 @@ app.get('/api/planner/deck', async (req, res) => {
   }
 });
 
-registerPlanner(app, { generateWithGemini, getGeminiClient, getBank: () => readQuestionsBank() });
+// POST /api/planner/deck — solicita a geração autenticada de um deck para um tema
+app.post('/api/planner/deck', (req, res) => {
+  try {
+    const materia = String(req.body?.materia || '').trim().slice(0, 160);
+    const tema = String(req.body?.tema || '').trim().slice(0, 200);
+    if (!tema) return res.status(400).json({ success: false, msg: 'tema é obrigatório' });
+    const pronto = readDecks()[plDeckKey(materia, tema)];
+    if (pronto?.pronto) return res.json({ success: true, pronto: true, deck: pronto });
+    plEnfileirarDeck(materia, tema);
+    return res.status(202).json({ success: true, pronto: false, enfileirado: true });
+  } catch (err) {
+    return res.status(500).json({ success: false, msg: err.message });
+  }
+});
 
-registerAula(app, { generateWithGemini, getGeminiClient });
+registerPlanner(app, { generateAI, aiConfigured, getBank: () => readQuestionsBank() });
+
+registerAula(app, {
+  generateAI, aiConfigured, supabaseStorage: supabase, supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+  retrieveIscContext: params => retrieveIscUserContext({ ...params, supabase,
+    supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY, enabled: process.env.ISC_ENABLED === '1' })
+});
+registerAcervoSemantic(app, { getCatalog: () => CAT, supabase, supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY });
+registerIscRoutes(app, { getCatalog: () => CAT, supabase, supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+  enabled: process.env.ISC_ENABLED === '1' });
+
+// Mentor IA acadêmico (Faculdade + Residência) — rotas novas em /api/planner/v3/*
+registerPlannerV3(app, {
+  generateAI, aiConfigured, getBank: () => readQuestionsBank(), getSupabase: () => supabase,
+  // PDFs de cronograma do acervo (não há cronogramas estruturados; o aluno escolhe um PDF e confere o que foi lido)
+  listarCronogramasAcervo: () => (CAT.materials || [])
+    .filter(m => /cronograma/i.test(m.path || '') && /\.pdf$/i.test(m.path || '') && !/guia/i.test(m.path || ''))
+    .slice(0, 60).map(m => { const seg = String(m.path || '').split(' / '); return { id: m.id, nome: String(seg[seg.length - 1] || '').replace(/\.pdf$/i, ''), curso: m.course || '', pasta: seg.length > 1 ? seg[seg.length - 2] : '' }; }),
+  baixarArquivoDrive: async (fileId) => {
+    const id = cleanDriveId(fileId);
+    if (!id) throw new Error('ID do arquivo inválido.');
+    const r = await driveFetchWithRetry(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`, { signal: AbortSignal.timeout(45000) });
+    if (!r.ok) throw new Error(`Não consegui baixar o PDF do Drive (${r.status}).`);
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > 18 * 1024 * 1024) throw new Error('PDF grande demais para leitura (máx. 18 MB).');
+    return buf;
+  }
+});
+
+// Biblioteca compartilhada de flashcards extraídos automaticamente do Google Drive.
+app.get('/api/flashcards/library/status', (req, res) => res.json({ success: true, status: getFlashcardSyncStatus() }));
+app.get('/api/flashcards/library/decks', async (req, res) => {
+  try {
+    const manifest = await readFlashcardManifest(supabase);
+    res.set('Cache-Control', 'private, max-age=60');
+    res.json({ success: true, generatedAt: manifest.generatedAt, decks: (manifest.decks || []).map(({ id, name, cardCount, sourceName, sourcePath }) => ({ id, name, cardCount, sourceName, sourcePath })) });
+  } catch (error) { res.status(503).json({ success: false, error: error.message }); }
+});
+app.get('/api/flashcards/library/decks/:deckId/cards', async (req, res) => {
+  try {
+    const page = await readFlashcardPage(supabase, String(req.params.deckId || '').slice(0, 64), req.query.offset, req.query.limit);
+    if (!page) return res.status(404).json({ success: false, error: 'Deck não encontrado' });
+    let reviews = {};
+    if (supabase && page.cards.length) {
+      try {
+        const ids = page.cards.map(card => card.id);
+        const { data, error } = await supabase.from('flashcard_reviews').select('card_id,due_at,interval_days,ease,repetitions,lapses,last_grade,last_reviewed_at').eq('username', req.user.username).in('card_id', ids);
+        if (error) throw error;
+        reviews = Object.fromEntries((data || []).map(row => [row.card_id, row]));
+      } catch (error) { console.warn('[Flashcards] Revisões SQL indisponíveis; usando estado da conta:', error.message); }
+    }
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ success: true, ...page, reviews });
+  } catch (error) { res.status(503).json({ success: false, error: error.message }); }
+});
+app.post('/api/flashcards/library/reviews', async (req, res) => {
+  if (!supabase) return res.status(503).json({ success: false, error: 'Progresso compartilhado indisponível.' });
+  const body = req.body || {};
+  const cardId = String(body.cardId || '');
+  const dueDate = String(body.dueDate || '');
+  const grade = Number(body.grade);
+  const eventId = String(body.eventId || '');
+  const intervalDays = Number(body.intervalDays), ease = Number(body.ease);
+  const repetitions = Number(body.repetitions), lapses = Number(body.lapses);
+  if (!/^[a-f0-9]{64}$/.test(cardId) || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || !Number.isInteger(grade) || grade < 0 || grade > 3 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(eventId) || !Number.isFinite(intervalDays) || intervalDays < 0 || intervalDays > 3650 || !Number.isFinite(ease) || ease < 1.3 || ease > 3.5 || !Number.isSafeInteger(repetitions) || repetitions < 0 || !Number.isSafeInteger(lapses) || lapses < 0) {
+    return res.status(400).json({ success: false, error: 'Dados de revisão inválidos.' });
+  }
+  try {
+    const { data: card, error: cardError } = await supabase.from('flashcard_library_cards').select('id').eq('id', cardId).maybeSingle();
+    if (cardError) throw cardError;
+    if (!card) return res.status(404).json({ success: false, error: 'Cartão não encontrado.' });
+    const reviewedAt = new Date().toISOString();
+    const { error: stateError } = await supabase.from('flashcard_reviews').upsert({
+      username: req.user.username, card_id: cardId, due_at: `${dueDate}T12:00:00.000Z`, interval_days: intervalDays,
+      ease, repetitions, lapses, last_grade: grade, last_reviewed_at: reviewedAt, updated_at: reviewedAt
+    }, { onConflict: 'username,card_id' });
+    if (stateError) throw stateError;
+    const { error: eventError } = await supabase.from('flashcard_review_events').upsert({
+      event_id: eventId, username: req.user.username, card_id: cardId, grade, reviewed_at: reviewedAt,
+      schedule_after: { dueDate, intervalDays, ease, repetitions, lapses }
+    }, { onConflict: 'event_id', ignoreDuplicates: true });
+    if (eventError) throw eventError;
+    return res.json({ success: true, reviewedAt });
+  } catch (error) { return res.status(503).json({ success: false, error: error.message }); }
+});
+app.get('/api/flashcards/library/media/:assetName', async (req, res) => {
+  try {
+    const asset = await readFlashcardMedia(supabase, req.params.assetName);
+    if (!asset) return res.status(404).json({ success: false, error: 'Mídia não encontrada.' });
+    res.set({ 'Content-Type': asset.contentType, 'Content-Length': String(asset.data.length), 'Cache-Control': 'private, max-age=86400, immutable', 'X-Content-Type-Options': 'nosniff' });
+    return res.send(asset.data);
+  } catch (error) { return res.status(503).json({ success: false, error: error.message }); }
+});
+app.post('/api/flashcards/library/sync', async (req, res) => {
+  try {
+    if (req.user?.role !== 'admin') return res.status(403).json({ success: false, error: 'Apenas administradores podem iniciar a sincronização.' });
+    const result = await syncDriveFlashcards(supabase, { force: req.body?.force === true });
+    res.json(result);
+  } catch (error) { res.status(503).json({ success: false, error: error.message }); }
+});
 registerApostilaReader(app);
+registerMedreaderMarcas(app, { getSupabase: () => supabase });
 
 // Arquivos internos nunca saem pelo site (código, dados, catálogo bruto, segredos)
 app.use((req, res, next) => {
   const p = decodeURIComponent(req.path || '/').toLowerCase();
-  if (/^\/(server\.js|smart_scheduler\.js|package(-lock)?\.json|bun\.lock|render\.yaml|supabase-schema\.sql|metadata\.json|drive-tree-snapshot\.json|radar-medico\.json|deploy\.md|readme\.md)$/.test(p) || /^\/(src|data|scripts|node_modules|\.github)(\/|$)/.test(p)) return res.status(404).send('Not found');
+  if (/^\/(server\.js|api(\/|$)|vercel\.json|smart_scheduler\.js|package(-lock)?\.json|bun\.lock|render\.yaml|supabase-schema\.sql|metadata\.json|drive-tree-snapshot\.json|radar-medico\.json|deploy\.md|readme\.md)$/.test(p) || /^\/(src|data|scripts|node_modules|\.github)(\/|$)/.test(p)) return res.status(404).send('Not found');
   next();
 });
 let _manifCache = null;
@@ -3496,17 +4300,22 @@ app.get(['/', '/index.html'], (req, res, next) => {
   } catch (_) { next(); }
 });
 // Catálogo de aulas (traz os IDs do Drive): só com login
-app.get('/acervo-manifest.json', (req, res, next) => {
-  const h = req.headers.authorization || '';
-  const tk = h.startsWith('Bearer ') ? h.slice(7) : String(req.query.t || '');
-  const session = validateSession(tk);
+app.get('/acervo-manifest.json', async (req, res, next) => {
+  const tk = getRequestSessionToken(req);
+  const session = await validateSession(tk);
   if (!session) return res.status(401).json({ error: 'Faça login.' });
   res.setHeader('Cache-Control', 'private, no-cache');
   try {
+    // O catálogo remoto é carregado durante o cold start. Não marque um vazio temporário como pronto.
+    await catalogoBootPromise;
     const ex = lerExtra();
     const sig = [ex.generatedAt, (ex.videos || []).length, (ex.materials || []).length, process.env.GOOGLE_DRIVE_FOLDER_ID || ''].join('|');
     if (!_manifCache || _manifCache.sig !== sig) {
-      const corpo = Buffer.from(JSON.stringify(juntarExtras(JSON.parse(fs.readFileSync(path.join(__dirname, 'acervo-manifest.json'), 'utf8')))));
+      // Manifest empacotado é somente-leitura (e pode faltar em bundle mínimo).
+      // Se não existir, monta a resposta com o catálogo já carregado do Supabase/Drive.
+      const base = safeReadJson(path.join(__dirname, 'acervo-manifest.json'), null)
+        || { generatedAt: ex.generatedAt || null, roots: [], videos: [], materials: [], folders: {} };
+      const corpo = Buffer.from(JSON.stringify(juntarExtras(base)));
       _manifCache = { sig, raw: corpo, gz: zlib.gzipSync(corpo, { level: 6 }), etag: '"' + crypto.createHash('md5').update(sig).digest('hex') + '"' };
     }
     res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('ETag', _manifCache.etag); res.setHeader('Vary', 'Accept-Encoding');
@@ -3516,54 +4325,81 @@ app.get('/acervo-manifest.json', (req, res, next) => {
   } catch (_) { next(); }
 });
 // Varredura das pastas extras do Drive (em segundo plano; refaz a cada 6h)
-async function rodarExtras() { try { const r = await varrerExtras(); if (r) { resetCatalogo(); console.log(`📂 [Extras] ${r.videos} vídeos e ${r.materials} materiais das pastas extras.`); } } catch (e) { console.warn('⚠️ [Extras]', e.message); } }
-// repete depois de terminar cada varredura (intervalo em segundos; padrão 30min para poupar cota da API)
-const EXTRA_PAUSA = Math.max(60, parseInt(process.env.EXTRA_SCAN_S, 10) || 1800) * 1000;
-setTimeout(function cicloExtras() { rodarExtras().finally(() => setTimeout(cicloExtras, EXTRA_PAUSA)); }, 3000);
+async function rodarExtras() { try { const r = await varrerExtras(); if (r) { resetCatalogo(); console.log(`📂 [Extras] ${r.videos} vídeos e ${r.materials} materiais das pastas extras.`); } return r; } catch (e) { console.warn('⚠️ [Extras]', e.message); return null; } }
+async function processDriveUpdate() {
+  const flashcardStatus = getFlashcardSyncStatus();
+  const flashcardsConfigured = flashcardStatus.configured && flashcardStatus.enabled;
+  let flashcardsChanged = false;
+  let initialFlashcardSyncAttempted = false;
+  if (flashcardsConfigured) {
+    const manifest = await readFlashcardManifest(supabase).catch(error => {
+      console.warn('[Flashcards] Não foi possível conferir o manifesto inicial:', error.message);
+      return null;
+    });
+    if (!manifest?.generatedAt) {
+      initialFlashcardSyncAttempted = true;
+      const outcome = await syncDriveFlashcards(supabase).catch(error => {
+        console.warn('[Flashcards] Carga inicial automática falhou:', error.message);
+        return null;
+      });
+      flashcardsChanged = !!outcome && !outcome.disabled;
+    }
+  }
+
+  const result = await rodarExtras();
+  if (!initialFlashcardSyncAttempted && flashcardsConfigured && result?.modo === 'delta' && Array.isArray(result.changes) && result.changes.length) {
+    const outcome = await syncDriveFlashcards(supabase, { changes: result.changes }).catch(error => { console.warn('[Flashcards] Delta por evento falhou:', error.message); return null; });
+    flashcardsChanged = !!outcome && !outcome.unchanged && !outcome.disabled;
+  } else if (!initialFlashcardSyncAttempted && flashcardsConfigured && result?.modo === 'full') {
+    const outcome = await syncDriveFlashcards(supabase).catch(error => { console.warn('[Flashcards] Reconciliação após full sync falhou:', error.message); return null; });
+    flashcardsChanged = !!outcome && !outcome.disabled;
+  }
+  if (result && (result.modo === 'full' || result.catalogChanged || flashcardsChanged)) {
+    const event = `event: catalog-updated\ndata: ${JSON.stringify({ generatedAt: new Date().toISOString(), mode: result.modo })}\n\n`;
+    for (const client of catalogEventClients) client.write(event);
+  }
+  return result;
+}
+// Vercel não preserva timers nem memória entre invocações. O cron chama esta rota
+// para recuperar deltas perdidos e renovar o canal do Drive.
+app.get('/webhooks/google-drive/maintenance', async (req, res) => {
+  const expected = String(process.env.CRON_SECRET || '');
+  const supplied = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const a = Buffer.from(expected), b = Buffer.from(supplied);
+  if (!expected || a.length !== b.length || !crypto.timingSafeEqual(a, b)) return res.status(401).json({ success: false, error: 'Unauthorized' });
+  try {
+    const result = await processDriveUpdate();
+    const channel = await renewDrivePushChannel();
+    return res.json({ success: true, mode: result?.modo || null, channelActive: !!channel.active, channelError: channel.error || null });
+  } catch (error) {
+    console.error('[Drive maintenance] Falha:', error.message);
+    return res.status(503).json({ success: false, error: error.message });
+  }
+});
+// Push é o caminho normal. Uma reconciliação diária recupera notificações perdidas;
+// não consulta o Supabase e, com token válido, só lê a Changes API incremental.
+const EXTRA_RECONCILE_MS = 24 * 60 * 60 * 1000;
+let drivePushRenewalStarted = false;
+if (!IS_SERVERLESS) setTimeout(async function cicloExtras() {
+  await processDriveUpdate();
+  if (!drivePushRenewalStarted) drivePushRenewalStarted = startDrivePushRenewal(processDriveUpdate);
+  setTimeout(cicloExtras, EXTRA_RECONCILE_MS).unref?.();
+}, 3000).unref?.();
 app.get('/api/acervo/extra-status', (req, res) => res.json({ success: true, ids: EXTRA_IDS(), principal: DRIVE_ROOT_FOLDER_ID, chave: DRIVE_OK, conta: temConta() ? emailConta() : '', erroConta: erroConta(), ...EXTRA_STATUS }));
 app.post('/api/acervo/extra-scan', (req, res) => { rodarExtras(); res.json({ success: true, started: !EXTRA_STATUS.running }); });
 
-/* ═══ UPLOAD DE GRAVAÇÃO DE AULA (MediaRecorder → Drive) ═══ */
-app.post('/api/recordings', async (req, res) => {
-  try {
-    const { fileName, mimeType = 'audio/webm', fileData } = req.body || {};
-    if (!fileData) return res.status(400).json({ success: false, error: 'fileData é obrigatório' });
-    const buffer = Buffer.from(String(fileData), 'base64');
-
-    // Nome no fuso America/Sao_Paulo: aula-AAAA-MM-DD-HHmm.webm + subpasta AAAA-MM-DD
-    const agoraSP = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-    const yyyy = agoraSP.getFullYear();
-    const mm = String(agoraSP.getMonth() + 1).padStart(2, '0');
-    const dd = String(agoraSP.getDate()).padStart(2, '0');
-    const hh = String(agoraSP.getHours()).padStart(2, '0');
-    const mi = String(agoraSP.getMinutes()).padStart(2, '0');
-    const dateFolder = `${yyyy}-${mm}-${dd}`;
-    const finalFileName = fileName || `aula-${yyyy}-${mm}-${dd}-${hh}${mi}.webm`;
-
-    let targetFolderId = cleanDriveId(DRIVE_RECORDINGS_ID || '');
-    if (!targetFolderId) return res.status(503).json({ success: false, error: 'GOOGLE_DRIVE_RECORDINGS_FOLDER_ID não configurada — upload de gravação bloqueado' });
-
-    // Organiza em subpasta AAAA-MM-DD quando há pasta dedicada de gravações
-    if (DRIVE_RECORDINGS_ID) {
-      try {
-        const existing = await findFolderByName(dateFolder, targetFolderId);
-        if (existing) targetFolderId = existing.shortcutDetails?.targetId || existing.id;
-        else {
-          const created = await createFolder(dateFolder, targetFolderId);
-          targetFolderId = created.id;
-        }
-      } catch (e) { console.warn('[Recordings] Subpasta de data:', e.message); }
-    }
-
-    const resultado = await uploadToDrive(buffer, finalFileName, mimeType, targetFolderId);
-    res.json({ success: true, file: resultado, message: 'Gravação salva no Drive com sucesso' });
-  } catch (err) {
-    console.error('[Recordings]', err && err.message);
-    res.status(500).json({ success: false, error: err && err.message });
-  }
+app.get('/api/catalog/events', (req, res) => {
+  res.status(200).set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+  res.flushHeaders?.();
+  res.write(': connected\n\n');
+  catalogEventClients.add(res);
+  const heartbeat = setInterval(() => res.write(': ping\n\n'), 25000);
+  const maxLife = IS_SERVERLESS ? setTimeout(() => res.end(), 240000) : null;
+  req.on('close', () => { clearInterval(heartbeat); if (maxLife) clearTimeout(maxLife); catalogEventClients.delete(res); });
 });
 
-/* ═══ IMPORTAÇÃO DE FLASHCARDS ANKI (.apkg) ════════════════════════════════════════
+/* ═══ 
+IMPORTAÇÃO DE FLASHCARDS ANKI (.apkg) ════════════════════════════════════════
    Busca arquivos .apkg estritamente dentro de GOOGLE_DRIVE_ANKI_FOLDER_ID.
    Nunca varre o Drive inteiro. Fail-fast se a variável não estiver configurada. ════════════════════════════════════════════════ */
 app.post('/api/anki/importar', async (req, res) => {
@@ -3641,6 +4477,9 @@ app.get('/api/anki/download/:fileId', async (req, res) => {
 });
 
 // Serve static assets from root directory
+// Same-origin Markdown dependencies in local mode; Vercel serves their build copies from public/.
+app.get('/js/vendor/markdown-it.min.js', (_req, res) => res.sendFile(path.join(__dirname, 'node_modules/markdown-it/dist/browser/markdown-it.umd.min.js')));
+app.get('/js/vendor/purify.min.js', (_req, res) => res.sendFile(path.join(__dirname, 'node_modules/dompurify/dist/purify.min.js')));
 app.use(express.static(__dirname, {
   dotfiles: 'deny',
   extensions: ['html', 'htm'],
@@ -3656,9 +4495,13 @@ app.all('/api/*', (req, res) => {
   res.status(404).json({ error: 'Endpoint da API não encontrado', path: req.path });
 });
 
-// Fallback to index.html for SPA navigation
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+// Fallback to index.html for SPA navigation.
+// Caminhos que parecem arquivo (têm extensão) NÃO recebem HTML: devolvem 404.
+// Isso evita o clássico "Unexpected token <" quando um asset/endpoint falta.
+app.get('*', (req, res, next) => {
+  if (/\.[a-z0-9]{1,10}$/i.test(req.path)) return res.status(404).send('Not found');
+  if (req.path.startsWith('/api')) return res.status(404).json({ error: 'Endpoint da API não encontrado', path: req.path });
+  res.sendFile(path.join(__dirname, 'index.html'), err => { if (err) next(err); });
 });
 
 // Erros não tratados viram log em vez de derrubar o servidor (no Render isso causaria reinício e quedas de stream)
@@ -3674,13 +4517,24 @@ app.use((err, req, res, next) => {
   res.status(status).send('Erro interno');
 });
 
-const server = app.listen(PORT, HOST, () => {
-  console.log(`Cuscuz-MED running at http://${HOST}:${PORT}`);
-  checkDriveKey();
-});
-
-process.on('SIGTERM', () => {
-  server.close(() => {
-    process.exit(0);
+/* ═══ BOOT ═══════════════════════════════════════════════════════════════════════
+   - Railway/Render/local: sobe o servidor HTTP contínuo.
+   - Vercel/serverless: NÃO chama listen; exporta o app Express para o runtime.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+let server = null;
+if (!IS_SERVERLESS) {
+  server = app.listen(PORT, HOST, () => {
+    console.log(`Cuscuz-MED running at http://${HOST}:${PORT}`);
+    checkDriveKey();
+    if (startFlashcardSyncScheduler(supabase)) console.log('🃏 Sincronização automática de flashcards do Drive agendada.');
   });
-});
+
+  process.on('SIGTERM', () => {
+    server.close(() => {
+      process.exit(0);
+    });
+  });
+}
+
+export default app;
+export { app, server };

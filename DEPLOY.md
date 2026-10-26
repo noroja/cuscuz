@@ -1,6 +1,95 @@
-# Deploy do Cuscuz-MED (backend + app) no Railway.app — grátis
+# Deploy do Cuscuz-MED na Vercel (serverless)
 
-O GitHub Pages só hospeda arquivos estáticos — o `server.js` (sync do Hardworq, gerador Gemini, tutor, chat) precisa de um servidor Node de verdade. O **Railway.app** conecta direto neste repositório e sobe tudo: app + API no mesmo endereço.
+A Vercel roda o mesmo `server.js`, mas em modo **função serverless**: o disco do projeto é **somente leitura** e só `/tmp` é gravável (e efêmero). O código já se adapta sozinho a esse ambiente.
+
+## Como funciona
+
+- **`api/index.js`** exporta o app Express (a Vercel chama essa função para tudo que não é arquivo estático).
+- O `server.js` detecta o ambiente (`VERCEL`/`AWS_LAMBDA_FUNCTION_NAME`/`VERCEL_ENV` via `src/fs-safe.js`) e **não** chama `app.listen()`. Fora da Vercel nada muda: `npm start` continua subindo o servidor HTTP normal.
+- **`scripts/build-public.js`** copia os assets (HTML, CSS, JS, ícones, manifest) para `public/` durante o build. A Vercel serve `public/**` pelo CDN e **ignora** o `express.static()`.
+- **`vercel.json`** define `buildCommand`, `maxDuration: 300` na função e os `includeFiles` que precisam chegar ao runtime (`index.html`, `acervo-manifest.json`, `drive-tree-snapshot.json`, `data/**`).
+
+## Persistência de estado
+
+Na Vercel **nada** é gravado no disco do projeto. Todo o estado mutável vai para `DATA_DIR`, que em serverless aponta para `/tmp/cuscuz-med`:
+
+- banco de questões de trabalho (`questions-bank.json`) — o `data/questions-bank.json` do repositório serve apenas de **semente** somente-leitura; no cold start, se o `/tmp` estiver vazio, o app usa a semente e tenta a cópia mais completa do Supabase Storage;
+- cache do radar (renovado no máximo 1x por dia), mirror do Hardworq, decks do planner, catálogo de extras, cache das apostilas.
+
+O **token do Hardworq não fica em arquivo**: ele é gravado com UPSERT na tabela `system_configs` (chave `hwq_token`) e lido do Supabase a cada cold start. Se a tabela ainda não tiver sido criada, o app usa automaticamente um **bucket privado `system`** no Supabase Storage (criado na primeira gravação, com a `SERVICE_ROLE_KEY`). O `/tmp` guarda apenas um cache best-effort. Para habilitar a tabela, rode uma vez o `supabase-schema.sql` no SQL Editor do Supabase.
+
+O **Radar Médico** também é durável: o cache e a marca da última chamada de IA ficam no Supabase. A IA é chamada no máximo **1x a cada 24h** (inclusive com vários cold starts); o cron diário só renova se o cache estiver vencido. O endpoint `/api/radar-medico` não é mais cacheável pelo navegador (`Cache-Control: no-store`).
+
+Como `/tmp` é por invocação, o estado durável continua vindo da nuvem (Supabase) e do repositório. Na Vercel, a sincronização do Hardworq roda **dentro da própria requisição** (com orçamento de tempo), porque trabalho disparado depois da resposta não é garantido em serverless. O webhook do Drive processa a notificação dentro da própria chamada serverless; o cron diário recupera deltas perdidos e renova o canal.
+
+## Passo a passo
+
+1. Vercel → **Add New… → Project** → importe o repositório do GitHub.
+2. Framework preset: **Other**. Build Command e Output são lidos do `vercel.json` (não precisa mexer).
+3. Em **Settings → Environment Variables**, adicione as variáveis usadas pelo app. Para flashcards e atualizações do Drive:
+   - `GOOGLE_DRIVE_FLASHCARDS_ROOTS` → `ID_DA_PASTA|Caminho opcional` (várias raízes separadas por `;`).
+   - `GOOGLE_SERVICE_ACCOUNT_JSON` → credencial de leitura da conta de serviço com acesso à pasta privada. `GOOGLE_DRIVE_API_KEY` só funciona quando os arquivos são acessíveis por API key.
+   - `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` → gravam o índice e os cartões no Storage privado.
+   - `DRIVE_PUSH_WEBHOOK_URL` → URL pública do deploy terminada em `/webhooks/google-drive`.
+   - `DRIVE_PUSH_WEBHOOK_TOKEN` e `CRON_SECRET` → segredos aleatórios distintos; não os coloque no GitHub.
+   - As demais variáveis estão no **checklist** logo abaixo. Variáveis só valem depois de um novo deploy (Redeploy).
+4. No **Supabase → SQL Editor**, rode `supabase-schema.sql`. A tabela `system_configs` é o caminho principal para o token do Hardworq. Se ela não existir, o app tenta o bucket privado `system` (requer `SUPABASE_SERVICE_ROLE_KEY`); sem nenhum dos dois, o token cai para o cache efêmero de `/tmp`.
+5. **Deploy**. O build roda `node scripts/build-public.js` e a função sobe em `api/index.js`.
+6. Depois do deploy, chame uma vez `GET /webhooks/google-drive/maintenance` com `Authorization: Bearer <CRON_SECRET>` para iniciar a reconciliação e registrar o canal. O cron diário do `vercel.json` renova o canal e recupera deltas sem polling do Supabase. Há também o cron `/api/radar-medico/refresh`, que atualiza o Radar no máximo 1x por dia.
+7. Diagnóstico: autenticado como administrador, `GET /api/health?deep=1` mostra se a tabela/bucket estão prontos e faz um teste real de login no Hardworq (sem expor a senha). Use após configurar `HARDWORQ_EMAIL`/`HARDWORQ_SENHA`.
+
+## Cuidados
+
+- O diretório `public/` é **gerado no build** e está no `.gitignore` — não versione.
+- Nunca copie `acervo-manifest.json`, `drive-tree-snapshot.json` nem `data/**` para `public/`: isso exporia o banco e burlaria a checagem de login do endpoint `/acervo-manifest.json`.
+- Rotas que terminam em extensões estáticas (`.css`, `.js`, `.png`, `.html`, …) **não** são reescritas para a função — são servidas pelo CDN. Se um asset faltar, o resultado é 404 (e não o `index.html`), o que facilita achar erro de caminho.
+- O Mentor IA responde via **SSE** (`text/event-stream`) com keep-alive, para não estourar o tempo da função em respostas longas da IA.
+- A duração máxima da função está configurada em 300 segundos. A importação inicial de pacotes Anki muito grandes pode ultrapassar esse limite; limites efetivos também dependem do plano e das configurações Vercel.
+
+## Checklist de variáveis na Vercel
+
+Settings → Environment Variables (marque Production; use *Redeploy* depois de mudar). Nomes exatos, conforme o código. Nada disso vai para o GitHub.
+
+| Grupo | Variáveis | Para quê |
+|---|---|---|
+| Acesso | `APP_PASSWORD` | Protege o app **e assina os links de vídeo/PDF** (`/m/...`). Se usar `MEDIA_ORIGIN`, tem de ser igual no seu PC. |
+| IA — texto e Mentor | `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` (use as que tiver), `AI_PROVIDER` (vazio ou `auto`) | Com 2+ chaves, o roteador escolhe por tarefa e troca de provedor em limite/erro. |
+| IA — aulas | `GROQ_API_KEY` | **Obrigatória para transcrever aulas** (Whisper). Só Gemini/OpenRouter não transcreve; a Aula do dia usa a legenda do navegador. |
+| IA — ajustes | `OPENROUTER_MODELS`, `GEMINI_MODEL`, `GROQ_MODEL`, `GROQ_TPM`, `AI_MAX_PARALLEL`, `AI_ORDER_<PERFIL>` | Opcionais; os padrões estão em `.env.example`. |
+| Supabase | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` | **Guarda o que a Vercel não guarda**: usuários/sessões, estado do Mentor (`planner_estado`), marcas do MedReader, token do Hardworq, flashcards. Rode `supabase-schema.sql` no SQL Editor. |
+| Drive | `GOOGLE_DRIVE_FOLDER_ID`, `GOOGLE_SERVICE_ACCOUNT_JSON` (ou `GOOGLE_DRIVE_API_KEY`), `GOOGLE_DRIVE_FLASHCARDS_ROOTS` | Catálogo, vídeos, PDFs e flashcards. |
+| Drive — avisos | `DRIVE_PUSH_WEBHOOK_URL`, `DRIVE_PUSH_WEBHOOK_TOKEN`, `CRON_SECRET` | Atualização automática do catálogo; os dois segredos devem ser aleatórios e diferentes. |
+| Hardworq | `HARDWORQ_EMAIL`, `HARDWORQ_SENHA` (+ `HARDWORQ_ID_TURMA`, `HARDWORQ_MAX_BANK`...) | Banco de questões. |
+| Banco publicado | `GITHUB_TOKEN`, `GITHUB_REPO`, `GITHUB_BRANCH` | Opcional: publicar o banco catalogado no repositório. |
+| Mídia fora da Vercel | `MEDIA_ORIGIN` | Opcional: veja a seção seguinte e `docs/RODAR-LOCAL.md`. |
+
+Mentor IA acadêmico e Aula do dia: não exigem variável nova além das de IA e do Supabase. Sem o SQL de `planner_estado`, o Mentor continua funcionando, mas guarda os dados só no navegador de cada aparelho (por aparelho, não por conta).
+
+## Limites do plano Hobby e como economizar
+
+- **Transferência rápida de origem (10 GB):** conta os bytes que saem da função para a CDN. O que mais pesa são vídeos e PDFs servidos por `/m/...`, `/api/drive/stream/...` e `/api/drive/pdf/...`. Para tirá-los da Vercel, rode `npm run local:midia` no seu PC atrás de um túnel HTTPS e defina `MEDIA_ORIGIN` (guia em `docs/RODAR-LOCAL.md`). Sem a variável, nada muda.
+- **Vídeo direto do Google (`DRIVE_DIRECT=1`):** com conta de serviço configurada, o `/m/...` de vídeo responde 307 para o Drive e os bytes vão do Google ao navegador, sem passar pela função. O player cai sozinho para o proxy (`?via=app`) se falhar. PDFs continuam proxiados. Contrapartida: o navegador enxerga um token somente-leitura de ~1 h. Ative, teste uma aula e acompanhe o consumo; desative removendo a variável.
+- Para ver o consumo por projeto e por rota, use Usage e os logs no painel da Vercel. Em planos gratuitos, passar do limite pode **pausar** o projeto em vez de cobrar; confirme as regras atuais na página de Billing da Vercel.
+- **Cache de IA em memória não dura:** cada instância nova da função perde o cache. Funções que geram questões por IA ao abrir uma videoaula podem repetir a chamada; veja `docs/AULA-DO-DIA-FLUXO.md`.
+- Cotas gratuitas de IA são pequenas (Groq: 200 mil tokens/dia no `gpt-oss-120b`, na documentação deles). Com mais de uma chave, o roteador distribui.
+- As funções têm no máximo 300 s (`vercel.json`); o limite efetivo depende do plano.
+
+## Verificação depois do deploy
+
+1. `GET /api/health` → `status: ok` (health check público mínimo).
+2. Como administrador autenticado, `GET /api/health?deep=1` → tabela/bucket do Supabase prontos, estado dos provedores e teste de login do Hardworq.
+3. `GET /api/aula/status` (logado) → `transcricao: true` se a `GROQ_API_KEY` está ativa.
+4. Abra o Mentor, gere um plano e recarregue: ele deve voltar igual (se o SQL do Supabase foi rodado, também em outro aparelho).
+5. Rodando local ou em outro host? Veja `docs/RODAR-LOCAL.md`.
+
+
+---
+
+# Apêndice — Railway (servidor persistente; legado)
+
+Guia antigo, mantido para quem quiser um servidor Node sempre ligado. **O deploy atual do app é na Vercel (acima).**
+
+O GitHub Pages só hospeda arquivos estáticos — o `server.js` (sync do Hardworq, gerador de questões com IA, tutor, chat) precisa de um servidor Node de verdade. O **Railway.app** conecta direto neste repositório e sobe tudo: app + API no mesmo endereço.
 
 ## Passo a passo (5 minutos, uma vez só)
 
@@ -11,7 +100,7 @@ O GitHub Pages só hospeda arquivos estáticos — o `server.js` (sync do Hardwo
 5. Após o deploy inicial, o Railway vai pedir o valor das variáveis de ambiente necessárias. Vá em **Variables** e adicione:
     - `HARDWORQ_EMAIL` / `HARDWORQ_SENHA` → as credenciais da sua conta Hardworq
       (não ficam no GitHub; ficam só no serviço)
-    - `GEMINI_API_KEY` → se tiver, cola a sua (ativa o gerador de questões e o tutor IA)
+    - `GROQ_API_KEY` → se tiver, cola a sua (ativa o gerador de questões, o tutor IA, o Mentor e a transcrição de aulas)
     - `OPENAI_API_KEY` / `SUPABASE_URL` / `SUPABASE_ANON_KEY` → opcionais
     - `APP_PASSWORD` → (opcional) senha para proteção de acesso ao app
     - Variáveis do Hardworq adicionais (se necessário):
@@ -42,7 +131,16 @@ Variáveis que podem ser configuradas no Railway (aba Variables):
 |----------|-----------|--------------|
 | `HARDWORQ_EMAIL` | Login do Hardworq | Sim (para banco de questões) |
 | `HARDWORQ_SENHA` | Senha do Hardworq | Sim (para banco de questões) |
-| `GEMINI_API_KEY` | Chave da API do Google Gemini | Não (ativa recursos de IA) |
+| `GROQ_API_KEY` | Chave da API da Groq (console.groq.com) | Não (ativa recursos de IA) |
+| `GEMINI_API_KEY` | Chave do Google AI Studio (aistudio.google.com). Com as duas chaves, `AI_PROVIDER=auto` por padrão: prompts pequenos vão à Groq e os grandes (aula inteira, PDFs) ao Gemini, com fallback mútuo | Não |
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | Chave da OpenRouter (openrouter.ai) e modelo (padrão `nvidia/nemotron-3.5-super-vl:free`). No modo `auto` é o último recurso, depois de Groq/Gemini; `AI_PROVIDER=openrouter` fixa só ele. Modelos `:free` têm cota diária baixa | Não |
+| `GROQ_MODEL` | Modelo de texto (padrão `openai/gpt-oss-120b`) | Não |
+| `GROQ_STT_MODEL` | Transcrição de aulas (padrão `whisper-large-v3-turbo`) | Não |
+| `GROQ_TIMEOUT_MS` / `GROQ_MAX_RETRIES` | Timeout por tentativa (45000) e tentativas extras em 429/5xx (2) | Não |
+| `GROQ_TPM` | Teto de tokens por minuto do plano Groq (padrão 8000, free tier do `gpt-oss-120b`). Dimensiona as janelas dos prompts de Aula do Dia para não estourar o limite | Não |
+| `AI_PROVIDER` | `auto` (híbrido, padrão com 2+ chaves), `groq`, `gemini` ou `openrouter` (fixa um provedor só) | Não |
+| `GEMINI_MODEL` | Modelo do Gemini (padrão `gemini-2.5-flash`) | Não |
+| `GEMINI_MAX_PROMPT_CHARS` | Teto de caracteres de prompt por chamada ao Gemini (padrão 300000) | Não |
 | `OPENAI_API_KEY` | Chave da API da OpenAI | Não (opcional) |
 | `SUPABASE_URL` | URL do Supabase | Não (opcional) |
 | `SUPABASE_ANON_KEY` | Chave anonima do Supabase | Não (opcional) |
@@ -70,3 +168,5 @@ Seu app estará disponível em um subdomínio da railway.app (como no exemplo: h
 Você pode conectar um domínio personalizado nas settings do serviço no Railway, se desejar.
 
 O GitHub Pages pode continuar servindo como vitrine estática ou ser desativado em Settings → Pages — o endereço do Railway é o app completo com backend e frontend.
+
+---

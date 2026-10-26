@@ -8,11 +8,11 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Aula — Cuscuz-MED</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script>
 /* Auth da API: anexa o token em /api/* e volta ao login se o servidor responder 401 */
 (function(){
-  window.cuscuzMediaUrl = function (u) { try { var t = localStorage.getItem('cuscuz_token'); return t ? u + (u.indexOf('?') >= 0 ? '&' : '?') + 't=' + encodeURIComponent(t) : u; } catch (e) { return u; } };
+  window.cuscuzMediaUrl = function (u) { return u; };
   window.cuscuzPauseAll = function () {
     try { document.querySelectorAll('video,audio').forEach(function (v) { try { v.pause(); } catch (e) {} }); } catch (e) {}
     try { document.querySelectorAll('#ac2-player iframe').forEach(function (f) { f.src = 'about:blank'; }); } catch (e) {}
@@ -26,11 +26,12 @@
     if (isApi) {
       try {
         var t = localStorage.getItem('cuscuz_token');
-        if (t) { o = Object.assign({}, o); var h = {}; if (o.headers) { (o.headers instanceof Headers ? Array.from(o.headers.entries()) : Object.entries(o.headers)).forEach(function(kv){ h[kv[0]] = kv[1]; }); } h['Authorization'] = 'Bearer ' + t; o.headers = h; }
+        if (t === 'cookie-session') { o = Object.assign({}, o); var h = {}; if (o.headers) { (o.headers instanceof Headers ? Array.from(o.headers.entries()) : Object.entries(o.headers)).forEach(function(kv){ h[kv[0]] = kv[1]; }); } h['Authorization'] = 'Bearer cookie-session'; o.headers = h; }
       } catch (e) {}
     }
     return _f(u, o).then(function(r){
-      if (isApi && r.status === 401) {
+      // 401 do Hardworq (login no serviço externo falhou) NÃO é sessão do app expirada: não desloga o aluno
+      if (isApi && r.status === 401 && s.indexOf('/api/questions/hardworq/') !== 0) {
         var tinha = false;
         try { tinha = !!localStorage.getItem('cuscuz_token'); localStorage.removeItem('cuscuz_token'); localStorage.removeItem('medplan_logged'); } catch (e) {}
         if (window.cuscuzPauseAll) cuscuzPauseAll();
@@ -66,9 +67,9 @@
     --border-strong: rgba(255, 255, 255, .16);
     --text: #eef2f6;
     --muted: rgba(238, 242, 246, .55);
-    --accent: #2dd4bf;
-    --accent-soft: rgba(45, 212, 191, .12);
-    --accent-hover: #14b8a6;
+    --accent: #00d4b8;
+    --accent-soft: rgba(0, 212, 184, .13);
+    --accent-hover: #00a389;
     --danger: #f87171;
     --ok: #4ade80;
     --amber: #fbbf24;
@@ -82,9 +83,9 @@
     color: var(--text);
     min-height: 100vh;
     background:
-      radial-gradient(1100px 700px at 12% -8%, rgba(13, 148, 136, .18), transparent 60%),
-      radial-gradient(900px 650px at 108% 108%, rgba(14, 116, 144, .15), transparent 60%),
-      radial-gradient(600px 400px at 85% 8%, rgba(56, 189, 248, .07), transparent 55%),
+      radial-gradient(1100px 700px at 12% -8%, rgba(14, 165, 233, .18), transparent 60%),
+      radial-gradient(900px 650px at 108% 108%, rgba(99, 102, 241, .16), transparent 60%),
+      radial-gradient(600px 400px at 85% 8%, rgba(232, 121, 249, .08), transparent 55%),
       var(--bg);
     background-attachment: fixed;
   }
@@ -99,7 +100,7 @@
   .topbar .logo span { color: var(--accent); }
   .topbar .curso-nome { margin-left: auto; font-size: 13px; color: var(--muted); max-width: 40vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  .aula-layout { display: grid; grid-template-columns: minmax(330px, 2fr) minmax(0, 3fr); gap: 24px; max-width: 1440px; margin: 0 auto; padding: 24px; align-items: start; }
+  .aula-layout { display: grid; grid-template-columns: minmax(260px, .72fr) minmax(0, 1.8fr); gap: 22px; max-width: 1500px; margin: 0 auto; padding: 22px 24px 36px; align-items: start; }
 
   /* ═══ Player de Vídeo Otimizado com HLS / MSE ═══ */
   .player-container {
@@ -143,7 +144,7 @@
     font-size: 14px;
     z-index: 2;
   }
-  .player-placeholder i { font-size: 46px; color: rgba(45, 212, 191, .7); }
+  .player-placeholder i { font-size: 46px; color: rgba(0, 212, 184, .82); }
 
   /* HUD / Toolbar de Controle do Player */
   .player-toolbar {
@@ -185,7 +186,7 @@
     padding: 4px 9px;
     border-radius: 99px;
     cursor: pointer;
-    transition: all .15s;
+    transition: transform .15s, opacity .15s;
   }
   .res-btn:hover, .speed-btn:hover { color: var(--text); }
   .res-btn.ativo, .speed-btn.ativo {
@@ -203,7 +204,7 @@
     background: var(--card);
     color: var(--muted);
     cursor: pointer;
-    transition: all .15s;
+    transition: transform .15s, opacity .15s;
   }
   .engine-tag:hover {
     border-color: var(--accent);
@@ -262,12 +263,12 @@
 
   /* Botão Praticar Questões do Tema (Pill Teal / VisionOS) */
   .aula-praticar-wrap { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: flex-start; }
-  .btn-praticar-questoes-tema { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: rgba(0,225,217,0.06); border: 1.5px solid #00E1D9; color: #00E1D9; border-radius: 9999px; padding: 9px 24px; font-family: var(--font, sans-serif); font-size: 14px; font-weight: 600; letter-spacing: -0.01em; cursor: pointer; transition: all .22s cubic-bezier(0.16,1,0.3,1); box-shadow: 0 2px 14px rgba(0,225,217,0.12), inset 0 0 10px rgba(0,225,217,0.04); text-decoration: none; line-height: 1.4; outline: none; }
+  .btn-praticar-questoes-tema { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: rgba(0,225,217,0.06); border: 1.5px solid #2ce6cd; color: #2ce6cd; border-radius: 9999px; padding: 9px 24px; font-family: var(--font, sans-serif); font-size: 14px; font-weight: 600; letter-spacing: -0.01em; cursor: pointer; transition: transform .22s cubic-bezier(0.16,1,0.3,1), opacity .22s cubic-bezier(0.16,1,0.3,1); box-shadow: 0 2px 14px rgba(0,225,217,0.12), inset 0 0 10px rgba(0,225,217,0.04); text-decoration: none; line-height: 1.4; outline: none; }
   .btn-praticar-questoes-tema:hover { background: rgba(0,225,217,0.15); border-color: #38fdf8; color: #38fdf8; box-shadow: 0 0 24px rgba(0,225,217,0.3), inset 0 0 14px rgba(0,225,217,0.08); transform: translateY(-1px); }
   .btn-praticar-questoes-tema:active { transform: scale(0.98); }
-  .btn-praticar-questoes-tema .praticar-icon { display: inline-flex; align-items: center; justify-content: center; color: #00E1D9; flex-shrink: 0; }
-  .btn-praticar-questoes-tema .praticar-text { display: inline-flex; align-items: center; gap: 4px; color: #00E1D9; }
-  .btn-praticar-questoes-tema strong { font-weight: 700; color: #00E1D9; }
+  .btn-praticar-questoes-tema .praticar-icon { display: inline-flex; align-items: center; justify-content: center; color: #2ce6cd; flex-shrink: 0; }
+  .btn-praticar-questoes-tema .praticar-text { display: inline-flex; align-items: center; gap: 4px; color: #2ce6cd; }
+  .btn-praticar-questoes-tema strong { font-weight: 700; color: #2ce6cd; }
   .btn.espaco { margin-left: auto; }
 
   /* ═══ Componente de Abas do Aluno (Treino Livre + PDF Interativo + Materiais) ═══ */
@@ -293,7 +294,7 @@
     font-size: 13.5px;
     font-weight: 600;
     cursor: pointer;
-    transition: all .15s;
+    transition: transform .15s, opacity .15s;
     white-space: nowrap;
   }
   .hub-tab-btn:hover {
@@ -301,9 +302,10 @@
     color: var(--text);
   }
   .hub-tab-btn.ativo {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-    color: var(--accent);
+    background: linear-gradient(110deg, rgba(14,165,233,.16), rgba(99,102,241,.14));
+    border-color: rgba(0,212,184,.62);
+    color: #7dd3fc;
+    box-shadow: inset 0 -2px 0 rgba(0,212,184,.8);
   }
   .tab-badge {
     font-size: 11px;
@@ -314,9 +316,25 @@
     font-weight: 700;
   }
   .hub-tab-btn.ativo .tab-badge {
-    background: var(--accent);
-    color: #04211d;
+    background: linear-gradient(110deg,#00a389,#0e6b5f);
+    color: #fff;
   }
+  .hub-tab-btn:focus-visible,.aula-fc-card:focus-visible,.aula-fc-grade button:focus-visible { outline: 3px solid #7dd3fc; outline-offset: 3px; }
+  .aula-fc-panel { max-width: 820px; margin: 0 auto; }
+  .aula-fc-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; color:var(--muted); font-size:12px; }
+  .aula-fc-progress { height:6px; background:rgba(148,163,184,.16); border-radius:99px; overflow:hidden; margin:0 0 20px; }
+  .aula-fc-progress span { display:block; height:100%; background:linear-gradient(90deg,#00a389,#0e6b5f); border-radius:inherit; transition:width .2s ease; }
+  .aula-fc-card { display:flex; flex-direction:column; justify-content:center; min-height:230px; padding:28px clamp(18px,4vw,44px); border:1px solid rgba(0,212,184,.32); border-radius:18px; background:radial-gradient(ellipse at 85% 8%,rgba(99,102,241,.13),transparent 45%),linear-gradient(145deg,#111b2d,#0c1422); box-shadow:0 18px 44px rgba(2,8,23,.28); cursor:pointer; text-align:center; transition:transform .18s,border-color .18s,background .18s; }
+  .aula-fc-card:hover { transform:translateY(-2px); border-color:rgba(0,212,184,.62); }
+  .aula-fc-card .rotulo { color:#7dd3fc; font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; margin-bottom:14px; }
+  .aula-fc-card .texto { color:var(--text); font-size:clamp(18px,2.2vw,24px); font-weight:650; line-height:1.45; text-wrap:pretty; }
+  .aula-fc-card .dica { color:var(--muted); font-size:11px; margin-top:20px; }
+  .aula-fc-notas { display:flex; justify-content:center; flex-wrap:wrap; gap:9px; margin-top:15px; }
+  .aula-fc-notas button { min-height:42px; padding:8px 15px; border:1px solid var(--border); border-radius:10px; background:var(--card); color:var(--text); font-size:12px; font-weight:700; transition:transform .15s,border-color .15s,background .15s; }
+  .aula-fc-notas button:hover { transform:translateY(-1px); border-color:rgba(0,212,184,.55); background:rgba(0,212,184,.1); }
+  .aula-fc-empty { padding:28px 20px; border:1px dashed var(--border-strong); border-radius:14px; color:var(--muted); text-align:center; line-height:1.6; }
+  .aula-fc-empty i { display:block; color:#12a08c; font-size:28px; margin-bottom:8px; }
+  @keyframes aula-fc-spin { to { transform:rotate(360deg); } }
   .hub-painel { display: none; }
   .hub-painel.ativo { display: block; animation: fadeIn .2s ease; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
@@ -397,7 +415,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: all .15s;
+    transition: transform .15s, opacity .15s;
     user-select: none;
   }
   .sim-nav-cell-btn:hover {
@@ -479,7 +497,7 @@
     line-height: 1.45;
     cursor: pointer;
     text-align: left;
-    transition: all .15s;
+    transition: transform .15s, opacity .15s;
     user-select: none;
   }
   .alternativa-btn:hover:not(.travada) {
@@ -498,7 +516,7 @@
     font-weight: 700;
     flex: none;
     color: var(--muted);
-    transition: all .15s;
+    transition: transform .15s, opacity .15s;
   }
   .alternativa-btn.selecionada {
     border-color: var(--accent);
@@ -577,7 +595,7 @@
     background: var(--card);
     color: var(--muted);
     cursor: pointer;
-    transition: all .15s;
+    transition: transform .15s, opacity .15s;
   }
   .pdf-chip-btn:hover { color: var(--text); border-color: var(--border-strong); }
   .pdf-chip-btn.ativo {
@@ -637,7 +655,7 @@
   .sidebar-stats span { display: inline-flex; align-items: center; gap: 5px; }
   .sidebar-stats i { font-size: 14px; }
 
-  .prog-toggle { display: flex; align-items: center; gap: 7px; margin-top: 10px; font-size: 12.5px; font-weight: 600; color: var(--muted); cursor: pointer; padding: 6px 8px; border-radius: 8px; background: var(--card-hover); user-select: none; }
+  .prog-toggle { display: flex; width: 100%; align-items: center; gap: 7px; margin-top: 10px; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--muted); cursor: pointer; padding: 6px 8px; border: 0; text-align: left; border-radius: 8px; background: var(--card-hover); user-select: none; }
   .prog-toggle:hover { color: var(--text); }
   .prog-toggle .pct { margin-left: auto; font-weight: 800; color: var(--accent); }
   .prog-toggle .caret { transition: transform .25s; font-size: 13px; }
@@ -677,7 +695,7 @@
   .sub-corpo { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .25s ease; }
   .submodulo.aberto .sub-corpo { grid-template-rows: 1fr; }
   .sub-corpo > div { overflow: hidden; }
-  .aula-item { display: flex; align-items: center; gap: 10px; padding: 8px 13px 8px 28px; font-size: 12.5px; cursor: pointer; border-top: 1px solid var(--border); transition: background .15s; }
+  .aula-item { display: flex; width: 100%; align-items: center; gap: 10px; padding: 8px 13px 8px 28px; font: inherit; font-size: 12.5px; text-align: left; color: var(--text); background: transparent; cursor: pointer; border: 0; border-top: 1px solid var(--border); transition: background-color .15s; }
   .aula-item:hover { background: var(--card-hover); }
   .aula-item.ativa { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
   .aula-item .play { color: var(--muted); font-size: 15px; flex: none; }
@@ -794,8 +812,9 @@
     }
   }
 </style>
+<link rel="stylesheet" href="/css/cuscuz-brand.css">
 </head>
-<body>
+<body class="aula-page">
 
 <header class="topbar glass">
   <a class="voltar" href="/"><i class="ph ph-arrow-left"></i> Voltar</a>
@@ -809,9 +828,9 @@
     <div class="sidebar-head">
       <h2>Conteúdo do curso</h2>
       <div class="sidebar-stats" id="curso-stats"></div>
-      <div class="prog-toggle" id="prog-toggle" onclick="toggleProg()" title="Abrir/fechar progresso">
+      <button type="button" class="prog-toggle" id="prog-toggle" onclick="toggleProg()" title="Abrir/fechar progresso" aria-expanded="false" aria-controls="prog-body">
         <i class="ph ph-chart-line-up"></i> Progresso <span class="pct" id="prog-pct-mini">0%</span> <i class="ph ph-caret-down caret"></i>
-      </div>
+      </button>
       <div class="prog-body" id="prog-body">
         <div class="rotulo"><span>Videoaulas assistidas</span><b id="prog-contagem">0/0</b></div>
         <div class="barra"><div id="prog-barra" style="width:0%"></div></div>
@@ -819,10 +838,10 @@
     </div>
     <div class="busca">
       <i class="ph ph-magnifying-glass"></i>
-      <input type="search" id="busca-aulas" placeholder="Buscar videoaula…" autocomplete="off">
+      <input type="search" id="busca-aulas" name="videoSearch" aria-label="Buscar videoaulas" placeholder="Buscar videoaula…" autocomplete="off">
     </div>
     <nav class="menu-aulas" id="menu-aulas"><div class="carregando"><i class="ph ph-circle-notch"></i>Carregando cursos do Drive…</div></nav>
-    <div class="sem-resultado" id="sem-resultado">Nenhuma videoaula encontrada com esse termo.</div>
+    <div class="sem-resultado" id="sem-resultado" role="status" aria-live="polite">Nenhuma videoaula encontrada com esse termo.</div>
   </aside>
 
   <!-- ══ Player (~60%, à direita) ══ -->
@@ -830,17 +849,17 @@
     <!-- 1. Player Avançado com HLS / MSE / Range Direct -->
     <div class="player-container" id="player-slot">
       <!-- Tag Video nativa com preload="metadata" para não travar a banda antes do play -->
-      <video id="aula-video" class="player-video ativo" preload="metadata" playsinline controls controlslist="nodownload"></video>
+      <video id="aula-video" class="player-video ativo" aria-label="Player de videoaulas" preload="metadata" playsinline controls controlslist="nodownload"></video>
       <!-- Iframe fallback para o player oficial do Drive -->
       <iframe id="drive-iframe" class="player-iframe" allow="autoplay; encrypted-media; fullscreen" title="Player Google Drive"></iframe>
-      <div class="player-placeholder" id="player-placeholder"><i class="ph ph-play-circle"></i><span>Selecione uma videoaula no menu ao lado</span></div>
+      <div class="player-placeholder" id="player-placeholder"><i class="ph ph-play-circle"></i><span>Selecione uma videoaula no menu</span></div>
     </div>
 
     <!-- Barra de Ferramentas / Seletor de Resolução & Buffer Status -->
     <div class="player-toolbar">
       <div class="player-toolbar-group">
-        <button class="navbtn" onclick="aulaToggleNav()" title="Mostrar/ocultar menu lateral"><i class="ph ph-sidebar-simple"></i></button>
-        <button class="navbtn" onclick="aulaRecarregar()" title="Recarregar streaming"><i class="ph ph-arrow-clockwise"></i></button>
+        <button class="navbtn" onclick="aulaToggleNav()" title="Mostrar/ocultar menu lateral" aria-label="Mostrar ou ocultar menu lateral"><i class="ph ph-sidebar-simple" aria-hidden="true"></i></button>
+        <button class="navbtn" onclick="aulaRecarregar()" title="Recarregar streaming" aria-label="Recarregar videoaula"><i class="ph ph-arrow-clockwise" aria-hidden="true"></i></button>
 
         <!-- Seletor de Resolução (Inicia em 'Auto') -->
         <span style="color:var(--muted);font-weight:600;font-size:11.5px">Qualidade:</span>
@@ -914,13 +933,16 @@
     <div class="aula-card hub-card">
       <div class="hub-tabs">
         <button class="hub-tab-btn ativo" id="tab-btn-questoes" onclick="trocarHubTab('questoes')">
-          <i class="ph ph-exam"></i> Simulado da Aula <span class="tab-badge" id="badge-questoes-count">20</span>
+          <i class="ph ph-exam"></i> Questões da aula <span class="tab-badge" id="badge-questoes-count">20</span>
         </button>
         <button class="hub-tab-btn" id="tab-btn-pdf" onclick="trocarHubTab('pdf')">
           <i class="ph ph-file-pdf"></i> Apostila / PDF Interativo <span class="tab-badge" id="badge-pdf-count">0</span>
         </button>
         <button class="hub-tab-btn" id="tab-btn-materiais" onclick="trocarHubTab('materiais')">
           <i class="ph ph-folders"></i> Materiais & Downloads
+        </button>
+        <button class="hub-tab-btn" id="tab-btn-flashcards" onclick="trocarHubTab('flashcards')">
+          <i class="ph ph-cards"></i> Flashcards <span class="tab-badge" id="badge-flashcards-count">—</span>
         </button>
       </div>
 
@@ -963,10 +985,10 @@
               <span style="font-size:12px;color:var(--muted)">Apostila:</span>
             </div>
             <div style="display:flex;align-items:center;gap:8px">
-              <button class="btn" id="btn-pdf-zoom-out" onclick="zoomPdf(-0.2)" title="Diminuir Zoom" style="padding:6px 10px;font-size:12px"><i class="ph ph-magnifying-glass-minus"></i></button>
+              <button class="btn" id="btn-pdf-zoom-out" onclick="zoomPdf(-0.2)" title="Diminuir Zoom" aria-label="Diminuir zoom do PDF" style="padding:6px 10px;font-size:12px"><i class="ph ph-magnifying-glass-minus" aria-hidden="true"></i></button>
               <button class="btn" id="btn-pdf-zoom-reset" onclick="resetZoomPdf()" title="Zoom 100%" style="padding:6px 10px;font-size:12px">100%</button>
-              <button class="btn" id="btn-pdf-zoom-in" onclick="zoomPdf(0.2)" title="Aumentar Zoom" style="padding:6px 10px;font-size:12px"><i class="ph ph-magnifying-glass-plus"></i></button>
-              <button class="btn" id="btn-pdf-expand" onclick="toggleExpandPdf()" title="Expandir visualizador" style="padding:6px 10px;font-size:12px"><i class="ph ph-arrows-out"></i></button>
+              <button class="btn" id="btn-pdf-zoom-in" onclick="zoomPdf(0.2)" title="Aumentar Zoom" aria-label="Aumentar zoom do PDF" style="padding:6px 10px;font-size:12px"><i class="ph ph-magnifying-glass-plus" aria-hidden="true"></i></button>
+              <button class="btn" id="btn-pdf-expand" onclick="toggleExpandPdf()" title="Expandir visualizador" aria-label="Expandir visualizador de PDF" style="padding:6px 10px;font-size:12px"><i class="ph ph-arrows-out" aria-hidden="true"></i></button>
               <a class="btn" id="btn-pdf-externo" href="#" target="_blank" rel="noopener" title="Abrir em aba externa" style="padding:6px 10px;font-size:12px"><i class="ph ph-arrow-square-out"></i></a>
             </div>
           </div>
@@ -990,6 +1012,14 @@
         </h3>
         <div class="materiais-lista" id="materiais-lista">
           <span style="font-size:13px;color:var(--muted)">Carregando…</span>
+        </div>
+      </div>
+
+      <!-- PAINEL 4: FLASHCARDS DA AULA, COMPARTILHANDO O SRS DO PLANEJADOR -->
+      <div class="hub-painel" id="painel-flashcards" aria-live="polite">
+        <div class="aula-fc-panel">
+          <div class="aula-fc-summary"><span id="aula-fc-tema">Cards ligados ao tema desta aula</span><span id="aula-fc-origem"></span></div>
+          <div id="aula-fc-conteudo"><div class="aula-fc-empty"><i class="ph ph-cards"></i>Selecione uma aula e abra esta aba para carregar os flashcards do tema.</div></div>
         </div>
       </div>
     </div>
@@ -1315,7 +1345,7 @@ async function extrairTagsECarregarSimuladoTreino(v) {
     <span class="tag-pill" style="border-color:var(--accent);background:var(--accent-soft);color:var(--accent)">
       <i class="ph ph-folder-open"></i> <b>Disciplina:</b> ${esc(meta.disciplina)}
     </span>
-    <span class="tag-pill" style="border-color:rgba(56,189,248,.4);background:rgba(56,189,248,.12);color:#38bdf8">
+    <span class="tag-pill" style="border-color:rgba(0,212,184,.4);background:rgba(0,212,184,.12);color:#00d4b8">
       <i class="ph ph-bookmark-simple"></i> <b>Tema:</b> ${esc(meta.tema)}
     </span>
     ${meta.tags.slice(2).map(t => `<span class="tag-pill"><i class="ph ph-tag"></i> #${esc(t)}</span>`).join('')}
@@ -1613,7 +1643,124 @@ window.trocarHubTab = function(tabName) {
   const painel = $('painel-' + tabName);
   if (btn) btn.classList.add('ativo');
   if (painel) painel.classList.add('ativo');
+  if (tabName === 'flashcards' && ATUAL) carregarFlashcardsAula(ATUAL);
 };
+
+/* Flashcards do tema da aula: usa o deck do Planejador e a mesma agenda SRS local. */
+let AULA_FC = { aulaId: null, list: [], index: 0, virada: false, errei: 0, bom: 0, facil: 0, fonte: '' };
+let aulaFcRequest = 0;
+window.carregarFlashcardsAula = async function(aula) {
+  if (!aula) return;
+  const requestId = ++aulaFcRequest;
+  const area = $('aula-fc-conteudo');
+  const temaEl = $('aula-fc-tema');
+  const origemEl = $('aula-fc-origem');
+  const badge = $('badge-flashcards-count');
+  const tema = aula.titulo || '';
+  const materia = aula.disc || '';
+  temaEl.textContent = tema ? 'Flashcards · ' + tema : 'Flashcards desta aula';
+  origemEl.textContent = '';
+  if (AULA_FC.aulaId === aula.id && AULA_FC.list.length) { renderFlashcardsAula(); return; }
+  AULA_FC = { aulaId: aula.id, list: [], index: 0, virada: false, errei: 0, bom: 0, facil: 0, fonte: '' };
+  badge.textContent = '…';
+  area.innerHTML = '<div class="aula-fc-empty"><i class="ph ph-circle-notch" style="animation:aula-fc-spin 1s linear infinite"></i>Buscando o deck vinculado a este tema…</div>';
+  try {
+    const resp = await fetch('/api/planner/deck?materia=' + encodeURIComponent(materia) + '&tema=' + encodeURIComponent(tema));
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (requestId !== aulaFcRequest || !ATUAL || ATUAL.id !== aula.id) return;
+    const deck = data.deck;
+    const cards = deck && Array.isArray(deck.flashcards) ? deck.flashcards : [];
+    if (!data.pronto || !cards.length) {
+      badge.textContent = '0';
+      area.innerHTML = '<div class="aula-fc-empty"><i class="ph ph-cards"></i><strong>Nenhum deck vinculado a esta aula ainda</strong><br>Gere um deck a partir do tema desta aula; as notas serão compartilhadas com o Planejador.<div class="aula-fc-notas"><button type="button" onclick="gerarFlashcardsAula()"><i class="ph ph-sparkle"></i> Gerar flashcards do tema</button></div></div>';
+      return;
+    }
+    AULA_FC.list = cards;
+    AULA_FC.fonte = deck.fonte || 'banco local';
+    badge.textContent = String(cards.length);
+    origemEl.textContent = cards.length + ' cards · ' + (/^(ia|gemini)$/.test(AULA_FC.fonte) ? 'deck IA' : 'banco local');
+    renderFlashcardsAula();
+  } catch (err) {
+    if (requestId !== aulaFcRequest) return;
+    badge.textContent = '!';
+    area.innerHTML = '<div class="aula-fc-empty"><i class="ph ph-wifi-slash"></i>Não foi possível carregar os flashcards agora.<br><span style="font-size:12px">Confira sua conexão e tente abrir a aba novamente.</span></div>';
+  }
+};
+
+window.gerarFlashcardsAula = async function() {
+  if (!ATUAL || AULA_FC.gerando) return;
+  const aula = ATUAL;
+  const requestId = ++aulaFcRequest;
+  const area = $('aula-fc-conteudo');
+  const badge = $('badge-flashcards-count');
+  AULA_FC.gerando = true;
+  area.innerHTML = '<div class="aula-fc-empty"><i class="ph ph-circle-notch" style="animation:aula-fc-spin 1s linear infinite"></i>Preparando o deck. Isso pode levar alguns segundos…</div>';
+  badge.textContent = '…';
+  try {
+    const resposta = await fetch('/api/planner/deck', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ materia:aula.disc || '', tema:aula.titulo || '' }) });
+    if (!resposta.ok) throw new Error('HTTP ' + resposta.status);
+    const deadline = Date.now() + 60000;
+    while (Date.now() < deadline) {
+      if (requestId !== aulaFcRequest || !ATUAL || ATUAL.id !== aula.id) return;
+      const consulta = await fetch('/api/planner/deck?materia=' + encodeURIComponent(aula.disc || '') + '&tema=' + encodeURIComponent(aula.titulo || ''));
+      if (!consulta.ok) throw new Error('HTTP ' + consulta.status);
+      const data = await consulta.json();
+      const cards = data.deck && Array.isArray(data.deck.flashcards) ? data.deck.flashcards : [];
+      if (data.pronto && cards.length) {
+        AULA_FC.aulaId = aula.id; AULA_FC.list = cards; AULA_FC.index = 0; AULA_FC.virada = false;
+        AULA_FC.errei = AULA_FC.bom = AULA_FC.facil = 0; AULA_FC.fonte = data.deck.fonte || 'banco local';
+        AULA_FC.gerando = false; badge.textContent = String(cards.length);
+        $('aula-fc-origem').textContent = cards.length + ' cards · ' + (/^(ia|gemini)$/.test(AULA_FC.fonte) ? 'deck IA' : 'banco local');
+        renderFlashcardsAula(); return;
+      }
+      if (data.deck && data.deck.fonte === 'nenhuma') {
+        AULA_FC.gerando = false; badge.textContent = '0';
+        area.innerHTML = '<div class="aula-fc-empty"><i class="ph ph-info"></i><strong>Não foi possível montar cards para este tema</strong><br>Não encontramos questões correspondentes no banco e a IA não gerou conteúdo desta vez.<div class="aula-fc-notas"><button type="button" onclick="aulaPraticarQuestoesTema()"><i class="ph ph-exam"></i> Praticar questões relacionadas</button></div></div>';
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1800));
+    }
+    throw new Error('timeout');
+  } catch (err) {
+    if (requestId !== aulaFcRequest) return;
+    AULA_FC.gerando = false; badge.textContent = '!';
+    area.innerHTML = '<div class="aula-fc-empty"><i class="ph ph-warning-circle"></i>O deck não ficou pronto agora.<br><span style="font-size:12px">Tente novamente em instantes.</span><div class="aula-fc-notas"><button type="button" onclick="gerarFlashcardsAula()">Tentar novamente</button></div></div>';
+  }
+};
+
+function renderFlashcardsAula() {
+  const area = $('aula-fc-conteudo');
+  if (!area || !AULA_FC.list.length) return;
+  const r = AULA_FC;
+  if (r.index >= r.list.length) {
+    area.innerHTML = '<div class="aula-fc-empty"><i class="ph ph-check-circle"></i><strong>Deck concluído</strong><br>Fáceis: ' + r.facil + ' · Bons: ' + r.bom + ' · Repetir: ' + r.errei + '<br>Suas notas foram salvas na mesma agenda SRS do Planejador.</div><div class="aula-fc-notas"><button type="button" onclick="reiniciarFlashcardsAula()"><i class="ph ph-arrow-counter-clockwise"></i> Revisar novamente</button></div>';
+    return;
+  }
+  const card = r.list[r.index];
+  const frente = card.frente || card.pergunta || card.front || 'Card';
+  const verso = card.verso || card.resposta || card.back || 'Sem resposta disponível.';
+  const progresso = Math.round(r.index / r.list.length * 100);
+  area.innerHTML = '<div class="aula-fc-summary"><span>Card ' + (r.index + 1) + ' de ' + r.list.length + '</span><span>' + esc(/^(ia|gemini)$/.test(r.fonte) ? 'Deck IA' : 'Banco local') + '</span></div>' +
+    '<div class="aula-fc-progress" role="progressbar" aria-label="Progresso dos flashcards" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + progresso + '"><span style="width:' + progresso + '%"></span></div>' +
+    '<button type="button" class="aula-fc-card" aria-expanded="' + r.virada + '" aria-label="' + (r.virada ? 'Resposta do flashcard. Avançar para avaliação.' : 'Mostrar resposta do flashcard') + '" onclick="virarFlashcardAula()"><span class="rotulo">' + (r.virada ? 'Resposta' : 'Pergunta') + '</span><span class="texto">' + esc(r.virada ? verso : frente) + '</span><span class="dica">' + (r.virada ? 'Avalie como foi lembrar' : 'Toque para revelar a resposta') + '</span></button>' +
+    (r.virada ? '<div class="aula-fc-notas" aria-label="Avaliar lembrança"><button type="button" onclick="avaliarFlashcardAula(\'errei\')">↻ Repetir em 1 dia</button><button type="button" onclick="avaliarFlashcardAula(\'bom\')">✓ Bom · 5 dias</button><button type="button" onclick="avaliarFlashcardAula(\'facil\')">⚡ Fácil · 10 dias</button></div>' : '<p style="margin-top:12px;text-align:center;color:var(--muted);font-size:12px">Pense na resposta antes de revelar.</p>');
+}
+
+window.virarFlashcardAula = function() { if (!AULA_FC.list.length || AULA_FC.index >= AULA_FC.list.length) return; AULA_FC.virada = !AULA_FC.virada; renderFlashcardsAula(); };
+window.avaliarFlashcardAula = function(nota) {
+  if (!AULA_FC.virada || !AULA_FC.list.length) return;
+  try {
+    const srs = JSON.parse(localStorage.getItem('planner-ia-srs') || '{}');
+    const dias = { errei: 1, bom: 5, facil: 10 }[nota] || 3;
+    const data = new Date(); data.setDate(data.getDate() + dias);
+    srs[(ATUAL && ATUAL.titulo || '') + '#' + AULA_FC.index] = { g: nota, d: data.toISOString().slice(0, 10) };
+    localStorage.setItem('planner-ia-srs', JSON.stringify(srs));
+  } catch (err) { toast('Não foi possível salvar a nota SRS neste dispositivo.'); return; }
+  if (nota === 'errei') AULA_FC.errei++; else if (nota === 'bom') AULA_FC.bom++; else AULA_FC.facil++;
+  AULA_FC.index++; AULA_FC.virada = false; renderFlashcardsAula();
+};
+window.reiniciarFlashcardsAula = function() { AULA_FC.index = 0; AULA_FC.virada = false; AULA_FC.errei = AULA_FC.bom = AULA_FC.facil = 0; renderFlashcardsAula(); };
 
 /* ════════════ Sidebar & Ações de Aula ════════════ */
 function renderMenu() {
@@ -1651,9 +1798,9 @@ function preencherLista(curso, disc) {
 }
 
 function itemAula(v) {
-  return '<div class="aula-item' + (ATUAL && ATUAL.id === v.id ? ' ativa' : '') + '" data-id="' + v.id + '" onclick="abrirAula(\'' + v.id + '\')" title="' + esc(v.titulo) + '">' +
+  return '<button type="button" class="aula-item' + (ATUAL && ATUAL.id === v.id ? ' ativa' : '') + '" data-id="' + v.id + '"' + (ATUAL && ATUAL.id === v.id ? ' aria-current="true"' : '') + ' onclick="abrirAula(\'' + v.id + '\')" title="' + esc(v.titulo) + '">' +
     '<i class="ph ' + (VISTAS.has(v.id) ? 'ph-check-circle check' : 'ph-play-circle play') + '"></i>' +
-    '<span class="titulo-aula">' + esc(v.titulo) + '</span></div>';
+    '<span class="titulo-aula">' + esc(v.titulo) + '</span></button>';
 }
 
 window.toggleModulo = function (btn) {
@@ -1678,9 +1825,9 @@ $('busca-aulas').addEventListener('input', e => {
   const hits = LISTA.filter(v => norm(v.titulo + ' ' + v.disc + ' ' + v.curso).includes(q)).slice(0, 80);
   $('sem-resultado').style.display = hits.length ? 'none' : 'block';
   menu.innerHTML = '<div class="resultado-busca">' + hits.map(v =>
-    '<div class="aula-item' + (ATUAL && ATUAL.id === v.id ? ' ativa' : '') + '" data-id="' + v.id + '" onclick="abrirAula(\'' + v.id + '\')">' +
-      '<i class="ph ph-play-circle play"></i><span class="titulo-aula">' + esc(v.titulo) + '</span>' +
-      '<span class="curso-tag">' + esc(v.curso) + '</span></div>').join('') + '</div>';
+    '<button type="button" class="aula-item' + (ATUAL && ATUAL.id === v.id ? ' ativa' : '') + '" data-id="' + v.id + '"' + (ATUAL && ATUAL.id === v.id ? ' aria-current="true"' : '') + ' onclick="abrirAula(\'' + v.id + '\')">' +
+      '<i class="ph ph-play-circle play" aria-hidden="true"></i><span class="titulo-aula">' + esc(v.titulo) + '</span>' +
+      '<span class="curso-tag">' + esc(v.curso) + '</span></button>').join('') + '</div>';
 });
 
 /* Abertura de Aula e Inicialização Completa */
@@ -1713,10 +1860,16 @@ window.abrirAula = function (id) {
 
   // 3. Inicializa o visualizador embutido de PDF da aula
   inicializarVisualizadorPdf(v);
+  if ($('painel-flashcards').classList.contains('ativo')) carregarFlashcardsAula(v);
 };
 
 function marcarAtivoNaArvore(v) {
-  document.querySelectorAll('.aula-item').forEach(el => el.classList.toggle('ativa', el.dataset.id === v.id));
+  document.querySelectorAll('.aula-item').forEach(el => {
+    const ativo = el.dataset.id === v.id;
+    el.classList.toggle('ativa', ativo);
+    if (ativo) el.setAttribute('aria-current', 'true');
+    else el.removeAttribute('aria-current');
+  });
   const mod = document.querySelector('.modulo[data-curso="' + CSS.escape(v.curso) + '"]');
   if (mod && !mod.classList.contains('aberto')) mod.classList.add('aberto');
   const sub = mod && mod.querySelector('.submodulo[data-disc="' + CSS.escape(v.disc) + '"]');
@@ -1798,8 +1951,9 @@ function atualizarItensVista() {
 }
 
 window.toggleProg = function () {
-  $('prog-toggle').classList.toggle('aberto');
-  $('prog-body').classList.toggle('aberto');
+  const aberto = $('prog-toggle').classList.toggle('aberto');
+  $('prog-toggle').setAttribute('aria-expanded', String(aberto));
+  $('prog-body').classList.toggle('aberto', aberto);
 };
 window.aulaToggleNav = function () {
   const off = document.querySelector('.aula-layout').classList.toggle('nav-off');

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-20T05:12:13.4624775Z",
+  "sourceInventory": "inventory.json",
+  "packages": [
+    {
+      "id": "1hNKm5T0cS9lLIs20s31eqzockln2NDtI",
+      "name": "EstratégiaMED - Flashcards.apkg",
+      "path": "BIBLIOTECA/flashcards/EstratégiaMED - Flashcards.apkg",
+      "size": 583917195,
+      "modifiedTime": null
+    },
+    {
+      "id": "1UGvUftimsaX6qE4PXbfFSU2uJnY-bYBq",
+      "name": "Med9flash.apkg",
+      "path": "BIBLIOTECA/flashcards/Med9flash.apkg",
+      "size": 226071099,
+      "modifiedTime": null
+    },
+    {
+      "id": "1WZ627clOBtlH1vsPePrfLQeCX6X9sySf",
+      "name": "MedCards Completo por TAGS.apkg",
+      "path": "BIBLIOTECA/flashcards/MedCards Completo por TAGS.apkg",
+      "size": 367957346,
+      "modifiedTime": null
+    },
+    {
+      "id": "19T8_pzdg20W50Gj7CBDHTHs8uLlNdzZh",
+      "name": "MedReview 2025.apkg",
+      "path": "CURSINHOS/MEDREVIEW/MedReview Materiais/MedReview 2025.apkg",
+      "size": 3746739192,
+      "modifiedTime": null
+    },
+    {
+      "id": "1qro_jQdh6RcBkC0N9yD3yZROKFAkQdeE",
+      "name": "_abordagem_via_area_sup_-20220928194718.apkg",
+      "path": "UFC /S4/ANKI/_abordagem_via_area_sup_-20220928194718.apkg",
+      "size": 7753,
+      "modifiedTime": null
+    },
+    {
+      "id": "1SGW_UqgION2zmOUGGehfcUgCDVPsOlFR",
+      "name": "S4_Farmacologia_Insuficiência_cardíaca_congestiva-20220822140732.apkg",
+      "path": "UFC /S4/ANKI/S4_Farmacologia_Insuficiência_cardíaca_congestiva-20220822140732.apkg",
+      "size": 441179,
+      "modifiedTime": null
+    },
+    {
+      "id": "1S1CJT7oYSMOTaB5Lj746PXdy-7J1eH6s",
+      "name": "S4_Semiologia-20220831075717.apkg",
+      "path": "UFC /S4/ANKI/S4_Semiologia-20220831075717.apkg",
+      "size": 116864,
+      "modifiedTime": null
+    },
+    {
+      "id": "1b0KMmogQpDEToBCZLbCcN8noGqQ2X99V",
+      "name": "Medicina Legal (DP8).apkg",
+      "path": "UFC /S8/DP 8/Flashcards-20250130T172830Z-001/Flashcards/Medicina Legal (DP8).apkg",
+      "size": 4140288,
+      "modifiedTime": null
+    }
+  ]
+}

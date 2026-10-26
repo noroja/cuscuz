@@ -1,0 +1,100 @@
+﻿[
+    {
+        "file":  "landing/assets/design-facial-anatomy-from-encyclopedie.jpg",
+        "media":  "image",
+        "ref":  "aic:148239",
+        "title":  "Design: Facial Anatomy from Encyclopédie",
+        "creator":  "A. J. Defehrt",
+        "creatorUrl":  null,
+        "date":  "1762/77",
+        "license":  "public domain (CC0)",
+        "licenseCode":  "cc0",
+        "licenseUrl":  "https://creativecommons.org/publicdomain/zero/1.0/",
+        "creditRequired":  false,
+        "page":  "https://www.artic.edu/artworks/148239",
+        "via":  "Art Institute of Chicago",
+        "image":  "https://www.artic.edu/iiif/2/48769974-a3ae-1c47-f431-472d7f6e395a/full/1600,/0/default.jpg",
+        "width":  1600,
+        "height":  2429,
+        "bytes":  1570723,
+        "credit":  "\"Design: Facial Anatomy from Encyclopédie\" by A. J. Defehrt, 1762/77, public domain (CC0), via Art Institute of Chicago",
+        "notes":  [
+
+                  ],
+        "saved":  "2026-10-20T01:30:41.061Z"
+    },
+    {
+        "file":  "landing/assets/a-system-of-anatomical-plates-of-the.jpg",
+        "media":  "image",
+        "ref":  "met:687392",
+        "title":  "A System of Anatomical Plates of the Human Body, vol. 2",
+        "creator":  "John Lizars",
+        "creatorUrl":  null,
+        "date":  "1822–26",
+        "license":  "public domain (CC0)",
+        "licenseCode":  "cc0",
+        "licenseUrl":  "https://creativecommons.org/publicdomain/zero/1.0/",
+        "creditRequired":  false,
+        "page":  "https://www.metmuseum.org/art/collection/search/687392",
+        "via":  "The Metropolitan Museum of Art",
+        "image":  "https://images.metmuseum.org/CRDImages/dp/original/DP355583.jpg",
+        "width":  2332,
+        "height":  3873,
+        "bytes":  2801443,
+        "credit":  "\"A System of Anatomical Plates of the Human Body, vol. 2\" by John Lizars, 1822–26, public domain (CC0), via The Metropolitan Museum of Art",
+        "notes":  [
+
+                  ],
+        "saved":  "2026-10-20T01:30:46.131Z"
+    },
+    {
+        "file":  "landing/assets/a-human-skeleton-seen-from-the-front.jpg",
+        "media":  "image",
+        "ref":  "openverse:e6082561-8d73-4ee2-9e5c-65c2bddc767e",
+        "title":  "A human skeleton, seen from the front, resting the bones of",
+        "creator":  null,
+        "creatorUrl":  null,
+        "date":  null,
+        "license":  "CC BY 4.0",
+        "licenseCode":  "by",
+        "licenseUrl":  "https://creativecommons.org/licenses/by/4.0/",
+        "creditRequired":  true,
+        "page":  "https://commons.wikimedia.org/w/index.php?curid=36438690",
+        "via":  "Wikimedia Commons",
+        "image":  "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c3/A_human_skeleton%2C_seen_from_the_front%2C_resting_the_bones_of_Wellcome_V0007798.jpg/1920px-A_human_skeleton%2C_seen_from_the_front%2C_resting_the_bones_of_Wellcome_V0007798.jpg",
+        "width":  1920,
+        "height":  3195,
+        "bytes":  2623514,
+        "credit":  "\"A human skeleton, seen from the front, resting the bones of\", CC BY 4.0, via Wikimedia Commons",
+        "notes":  [
+
+                  ],
+        "saved":  "2026-10-20T01:30:54.123Z"
+    },
+    {
+        "file":  "landing/assets/zygomatic-bones-by-anatomy-standard.webm",
+        "media":  "video",
+        "poster":  "landing/assets/zygomatic-bones-poster.jpg",
+        "ref":  "commons:92281742",
+        "title":  "Zygomatic Bones by Anatomy Standard",
+        "creator":  "Anatomy Standard",
+        "creatorUrl":  "https://www.anatomystandard.com/",
+        "date":  "2019",
+        "license":  "CC BY 3.0",
+        "licenseCode":  "by",
+        "licenseUrl":  "https://creativecommons.org/licenses/by/3.0",
+        "creditRequired":  true,
+        "page":  "https://commons.wikimedia.org/wiki/File:Zygomatic_Bones_by_Anatomy_Standard.webm",
+        "via":  "Wikimedia Commons",
+        "video":  "https://upload.wikimedia.org/wikipedia/commons/transcoded/d/db/Zygomatic_Bones_by_Anatomy_Standard.webm/Zygomatic_Bones_by_Anatomy_Standard.webm.480p.vp9.webm",
+        "width":  854,
+        "height":  480,
+        "duration":  16.1,
+        "bytes":  667243,
+        "credit":  "\"Zygomatic Bones by Anatomy Standard\" by Anatomy Standard, CC BY 3.0, via Wikimedia Commons",
+        "notes":  [
+
+                  ],
+        "saved":  "2026-10-20T02:14:41.151Z"
+    }
+]

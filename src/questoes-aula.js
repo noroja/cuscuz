@@ -55,7 +55,7 @@ function indexar(bank) {
   const docs = bank.map(q => {
     const st = norm(String(q.statement || '').slice(0, 900));
     const ex = norm(String(q.explanation || '').slice(0, 500));
-    const op = '';
+    const op = norm((Array.isArray(q.options) ? q.options : []).join(' ').slice(0, 900));
     const meta = norm([q.subspecialty, q.specialty, ...(Array.isArray(q.tags) ? q.tags : [])].join(' '));
     return { q, st, ex, op, meta, all: ' ' + st + ' ' + ex + ' ' + op + ' ' + meta + ' ' };
   });
@@ -111,8 +111,202 @@ function selecionar(bank, { tema, modulo, disc, limit = 40 } = {}) {
   }
   pontuadas.sort((a, b) => b.score - a.score || (b.q.year || 0) - (a.q.year || 0));
   const exatas = pontuadas.filter(p => p.cobertura >= 0.99 || p.fraseOk).length;
-  const sel = pontuadas.slice(0, limit).map(p => Object.assign({}, p.q, { _rel: p.cobertura >= 0.99 || p.fraseOk ? 'alta' : 'media' }));
+  const sel = pontuadas.slice(0, limit).map(p => Object.assign({}, p.q, { _rel: p.cobertura >= 0.99 || p.fraseOk ? 'alta' : 'media', _matchScore: p.score }));
   return { questions: sel, total: pontuadas.length, exatas, termos: principais };
+}
+
+function questionId(question) {
+  return String(question?.id || question?.remoteId || '').trim();
+}
+
+function hasTerm(text, term) {
+  const phrase = norm(term);
+  if (!phrase) return false;
+  if (phrase.includes(' ')) return (` ${text} `).includes(` ${phrase} `);
+  return text.split(' ').some(word => word === phrase || (phrase.length >= 5 && word.startsWith(phrase)) || (word.length >= 5 && phrase.startsWith(word)));
+}
+
+function topicTerms(topic) {
+  return [...new Set(tokens(topic.name || '').filter(token => token.length >= 3))].slice(0, 12);
+}
+
+function difficultyLevel(value) {
+  const text = norm(value);
+  if (/facil|easy|basico/.test(text)) return 'easy';
+  if (/dificil|hard|avancado/.test(text)) return 'hard';
+  if (/medio|moderado|intermediario/.test(text)) return 'medium';
+  return 'unknown';
+}
+
+function answerIndex(question) {
+  const options = Array.isArray(question.options) ? question.options : Array.isArray(question.opts) ? question.opts : [];
+  const explicit = [question.correctIndex, question.ans].find(index => Number.isInteger(index) && index >= 0 && index < options.length);
+  const fromLetter = /^[A-Z]$/i.test(String(question.correctLetter || '')) ? String(question.correctLetter).toUpperCase().charCodeAt(0) - 65 : -1;
+  const index = Number.isInteger(explicit) ? explicit : fromLetter >= 0 && fromLetter < options.length ? fromLetter
+    : typeof question.correctAnswer === 'string' ? options.indexOf(question.correctAnswer) : -1;
+  return index >= 0 && index < options.length ? index : -1;
+}
+
+// Cobertura lexical verificável; não substitui validação pedagógica nem classificação humana.
+function selecionarComCobertura(bank, {
+  tema, modulo, disc, limit = 10, topics = [], mode = 'review', difficulty = 'all',
+  excludeAnswered = false, excludedIds = [], prioritizeIds = [], includeComplementary = true
+} = {}) {
+  const max = Math.max(1, Math.min(60, Number.parseInt(limit, 10) || 10));
+  const rawProvided = Array.isArray(topics) ? topics.filter(topic => topic && typeof topic.name === 'string' && topic.name.trim()).slice(0, 30) : [];
+  const lowConfidenceTopics = rawProvided.filter(topic => topic.confidence != null && topic.confidence !== '' &&
+    Number.isFinite(Number(topic.confidence)) && Number(topic.confidence) < 0.45);
+  const provided = rawProvided.filter(topic => !lowConfidenceTopics.includes(topic));
+  const themeTerms = tokens(tema);
+  const fallbackNames = (themeTerms.length ? themeTerms : tokens(modulo)).slice(0, 8);
+  const objectives = provided.length ? provided.map((topic, index) => ({
+    id: String(topic.topicId || topic.id || `topic:${index}`), name: topic.name.trim(),
+    synonyms: Array.isArray(topic.synonyms) ? topic.synonyms.slice(0, 12) : [],
+    sourceKind: String(topic.sourceKind || topic.origin || 'catalog_metadata'),
+    confidence: topic.confidence != null && topic.confidence !== '' && Number.isFinite(Number(topic.confidence)) ? Number(topic.confidence) : null,
+    evidence: Array.isArray(topic.evidence) ? topic.evidence.slice(0, 4) : []
+  })) : fallbackNames.map((name, index) => ({
+    id: `metadata:${index}:${name}`, name, synonyms: [], sourceKind: 'lesson_metadata', confidence: null, evidence: []
+  }));
+  const docs = indexar(bank || []);
+  const candidateScores = new Map();
+  const searchableObjectives = objectives.map(objective => ({
+    objective, phrase: norm(objective.name), nameTerms: topicTerms(objective),
+    synonymPhrases: [...new Set(objective.synonyms.map(norm).filter(Boolean))].slice(0, 12)
+  }));
+  for (const doc of docs) {
+    const id = questionId(doc.q);
+    if (!id) continue;
+    let score = 0;
+    for (const item of searchableObjectives) {
+      const phraseHit = item.phrase.length >= 4 && hasTerm(doc.all, item.phrase);
+      const synonymHit = item.synonymPhrases.some(phrase => hasTerm(doc.all, phrase));
+      const nameHitCount = item.nameTerms.filter(term => hasTerm(doc.all, term)).length;
+      if (phraseHit || synonymHit || nameHitCount >= Math.min(2, item.nameTerms.length) && nameHitCount > 0) {
+        score += (phraseHit || synonymHit ? 2 : 0) + nameHitCount;
+      }
+    }
+    if (score > 0) candidateScores.set(id, { question: doc.q, score });
+  }
+
+  const excluded = new Set((Array.isArray(excludedIds) ? excludedIds : []).map(String).slice(0, 500));
+  const prioritize = new Set((Array.isArray(prioritizeIds) ? prioritizeIds : []).map(String).slice(0, 500));
+  const requiredDifficulty = difficultyLevel(difficulty);
+  const seenQuestions = new Set();
+  let duplicateCount = 0, missingAnswerCount = 0, excludedAnsweredCount = 0;
+  const candidates = [];
+  for (const [id, entry] of candidateScores) {
+    const question = entry.question;
+    if (excludeAnswered && excluded.has(id)) { excludedAnsweredCount++; continue; }
+    if (answerIndex(question) < 0) { missingAnswerCount++; continue; }
+    if (requiredDifficulty !== 'unknown' && requiredDifficulty !== 'all' && difficultyLevel(question.difficulty) !== requiredDifficulty) continue;
+    const statementKey = norm(question.statement || question.q || question.enunciado || '').replace(/\s+/g, ' ').trim();
+    const optionsKey = norm((Array.isArray(question.options) ? question.options : Array.isArray(question.opts) ? question.opts : []).join(' '));
+    const questionKey = statementKey ? `${statementKey} | ${optionsKey}` : '';
+    if (questionKey && seenQuestions.has(questionKey)) { duplicateCount++; continue; }
+    if (questionKey) seenQuestions.add(questionKey);
+
+    const statement = norm(question.statement || question.q || question.enunciado || '');
+    const options = optionsKey;
+    const explanation = norm(question.explanation || '');
+    const metadata = norm([question.specialty, question.subspecialty, ...(Array.isArray(question.tags) ? question.tags : [])].join(' '));
+    const all = ` ${statement} ${options} ${explanation} ${metadata} `;
+    const relations = [];
+    for (const objective of objectives) {
+      const terms = topicTerms(objective);
+      const synonymPhrases = [...new Set(objective.synonyms.map(norm).filter(Boolean))].slice(0, 12);
+      const directHits = terms.filter(term => hasTerm(` ${statement} ${options} `, term));
+      const allHits = terms.filter(term => hasTerm(all, term));
+      const directCoverage = terms.length ? directHits.length / terms.length : 0;
+      const anyCoverage = terms.length ? allHits.length / terms.length : 0;
+      const phrase = norm(objective.name);
+      const exactPhrase = phrase.length >= 7 && (` ${statement} ${options} `).includes(` ${phrase} `);
+      const directSynonym = synonymPhrases.some(synonym => hasTerm(` ${statement} ${options} `, synonym));
+      const contextualSynonym = synonymPhrases.some(synonym => hasTerm(all, synonym));
+      const minimumNameHits = Math.min(2, terms.length);
+      const relation = exactPhrase || directSynonym || (minimumNameHits > 0 && directHits.length >= minimumNameHits) ? 'direct'
+        : contextualSynonym || (minimumNameHits > 0 && allHits.length >= minimumNameHits) ? 'partial' : 'none';
+      if (relation === 'none') continue;
+      relations.push({ topicId: objective.id, name: objective.name, relation, directCoverage, anyCoverage,
+        evidence: directHits.length || directSynonym ? 'statement_or_options' : allHits.length || contextualSynonym ? 'explanation_or_metadata' : 'phrase',
+        lessonEvidence: objective.evidence.slice(0, 4) });
+    }
+    if (!includeComplementary && !relations.some(relation => relation.relation === 'direct')) continue;
+    if (!relations.length) continue;
+    const directTopicIds = relations.filter(relation => relation.relation === 'direct').map(relation => relation.topicId);
+    const partialTopicIds = relations.filter(relation => relation.relation === 'partial').map(relation => relation.topicId);
+    candidates.push({
+      question: Object.assign({}, question, {
+        _rel: directTopicIds.length ? 'alta' : 'media',
+        curriculumMatch: { directTopicIds, partialTopicIds, relations }
+      }),
+      id, relations, baseScore: entry.score,
+      priority: prioritize.has(id),
+      difficulty: difficultyLevel(question.difficulty)
+    });
+  }
+
+  const selected = [], covered = new Set(), difficultyCounts = { easy: 0, medium: 0, hard: 0, unknown: 0 };
+  while (selected.length < max && candidates.length) {
+    let bestIndex = -1, bestScore = -Infinity;
+    for (let index = 0; index < candidates.length; index++) {
+      const candidate = candidates[index];
+      const direct = candidate.relations.filter(row => row.relation === 'direct');
+      const partial = candidate.relations.filter(row => row.relation === 'partial');
+      const newDirect = direct.filter(row => !covered.has(row.topicId)).length;
+      const newPartial = partial.filter(row => !covered.has(row.topicId)).length;
+      const redundant = direct.length + partial.length - newDirect - newPartial;
+      const base = Math.tanh(Math.max(0, candidate.baseScore) / 10);
+      let score = 0.25 + newDirect * 3 + newPartial * 1.1 - redundant * 0.35 + base * 0.6 + (candidate.priority ? 2 : 0);
+      if (mode === 'fixation') score += ({ easy: 0.8, medium: 0.3, hard: 0, unknown: 0 })[candidate.difficulty];
+      if (mode === 'proof') score += ({ easy: 0, medium: 0.3, hard: 0.15, unknown: 0 })[candidate.difficulty] - difficultyCounts[candidate.difficulty] * 0.45;
+      if (score > bestScore) { bestScore = score; bestIndex = index; }
+    }
+    if (bestIndex < 0 || bestScore <= 0) break;
+    const [next] = candidates.splice(bestIndex, 1);
+    selected.push(next.question);
+    next.relations.filter(row => row.relation === 'direct' || row.relation === 'partial').forEach(row => covered.add(row.topicId));
+    difficultyCounts[next.difficulty]++;
+  }
+
+  const matrix = objectives.map(objective => {
+    const rows = selected.map(question => ({
+      questionId: questionId(question),
+      relation: question.curriculumMatch?.relations?.find(row => row.topicId === objective.id)?.relation || 'none'
+    }));
+    const directCount = rows.filter(row => row.relation === 'direct').length;
+    const partialCount = rows.filter(row => row.relation === 'partial').length;
+    return {
+      topicId: objective.id, name: objective.name,
+      relation: directCount ? 'direct' : partialCount ? 'partial' : 'uncovered',
+      directCount, partialCount, matrix: rows,
+      sourceKind: objective.sourceKind, confidence: objective.confidence, evidence: objective.evidence
+    };
+  });
+  const nominalCovered = matrix.filter(row => row.relation !== 'uncovered').length;
+  const allMetadata = objectives.every(topic => ['catalog_metadata', 'catalog_title', 'catalog_path', 'lesson_metadata'].includes(topic.sourceKind));
+  return {
+    questions: selected,
+    total: candidates.length + selected.length,
+    objectives: matrix,
+    coverage: {
+      nominal: objectives.length ? nominalCovered / objectives.length : null,
+      weighted: null,
+      cognitive: null,
+      evidenceMode: allMetadata ? 'metadata_lexical_estimate' : 'content_topic_lexical_estimate'
+    },
+    diagnostics: {
+      candidateCount: candidates.length + selected.length, selectedCount: selected.length,
+      excludedAnsweredCount, duplicateCount, missingAnswerCount,
+      lowConfidenceTopicCount: lowConfidenceTopics.length,
+      limitations: [
+        'A relação questão–tópico é uma estimativa lexical e não substitui validação curricular humana.',
+        'Cobertura ponderada e cognitiva não foram calculadas porque o acervo não possui pesos nem níveis cognitivos validados.',
+        ...(lowConfidenceTopics.length ? [`${lowConfidenceTopics.length} tópico(s) com confiança abaixo de 0,45 foram excluídos da cobertura automática.`] : []),
+        ...(allMetadata ? ['Os tópicos disponíveis vêm de metadados do catálogo; não há evidência de conteúdo da videoaula indexada.'] : [])
+      ]
+    }
+  };
 }
 
 // Acha no catálogo de doenças do Hardworq (~358) as que correspondem à aula, para buscar no banco completo (30 mil+)
@@ -133,4 +327,4 @@ function acharDoencas(doencas, tema, modulo) {
   return out.slice(0, 3).map(x => x.d);
 }
 
-export { selecionar, norm, tokens, acharDoencas };
+export { selecionar, selecionarComCobertura, norm, tokens, acharDoencas };

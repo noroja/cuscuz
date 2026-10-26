@@ -26,7 +26,7 @@
 
   /* Cores de destaque (compatível com tema escuro da plataforma) */
   --medreader-accent: #00d4b8;
-  --medreader-accent-hover: #0284c7;
+  --medreader-accent-hover: #007a6c;
   --medreader-accent-glow: rgba(0, 212, 184, 0.35);
   --medreader-rose: #fb7185;
   --medreader-amber: #fbbf24;
@@ -45,7 +45,7 @@
   /* Espaçamentos e bordas */
   --medreader-radius: 12px;
   --medreader-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
-  --medreader-transition: all 0.18s ease;
+  --medreader-transition: transform 0.18s ease, opacity 0.18s ease;
 }
 
 /* ── Corpo e container do leitor ── */
@@ -275,7 +275,7 @@
 }
 .medreader-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--medreader-accent), #38bdf8);
+  background: linear-gradient(90deg, var(--medreader-accent), #00d4b8);
   border-radius: 99px;
   transition: width 0.3s ease;
   box-shadow: 0 0 8px var(--medreader-accent-glow);
@@ -636,4 +636,311 @@ body:not([class*='--bg-void']) .medreader-toggle-group {
   --text-secondary: #64748b;
   --text-muted: #94a3b8;
   --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.12);
+}
+
+/* ── Leitor em tela cheia (shell): barra fixa + área com rolagem própria ── */
+.medreader-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  display: none;
+  flex-direction: column;
+  background: var(--medreader-bg-night);
+}
+.medreader-shell.open { display: flex; }
+
+.medreader-shell .medreader-toolbar {
+  flex: 0 0 auto;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  background: #0b1220;
+  color: #e5edf7;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+.medreader-shell .medreader-toolbar > * { width: auto; }
+.medreader-shell .medreader-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.medreader-shell .medreader-controls { display: flex; gap: 8px; flex: 0 0 auto; }
+.medreader-shell .medreader-btn {
+  color: #e5edf7;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
+  padding: 6px 12px;
+}
+.medreader-shell .medreader-btn:hover { background: rgba(255, 255, 255, 0.14); }
+.medreader-shell .medreader-btn.primary {
+  background: var(--medreader-accent);
+  color: #04211d;
+  border-color: transparent;
+}
+
+/* Área do texto: é ela que rola (o shell é fixo e não rola) */
+.medreader-shell #medreader-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  outline: none;
+}
+
+/* Mensagens de carregamento / erro dentro do leitor */
+.medreader-estado {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 48px 24px;
+  text-align: center;
+  font-size: 15px;
+  opacity: 0.85;
+}
+.medreader-estado.erro { color: #e11d48; opacity: 1; }
+
+
+/* ── Barra superior: ícones, busca, índice, rodapé de progresso ── */
+.medreader-shell [hidden] { display: none !important; }
+.medreader-shell .medreader-btn svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.medreader-shell .medreader-controls { flex-wrap: nowrap; }
+
+.medreader-corpo {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.medreader-busca {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #0e1626;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+.medreader-busca input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #0b1220;
+  color: #e5edf7;
+  font-size: 14px;
+}
+.medreader-busca-cont { min-width: 48px; text-align: right; font-size: 12px; color: #9fb0c7; }
+.medreader-busca-cont.sem { color: #fb7185; }
+mark.medreader-busca-hit { background: #fde047; color: #1a1a2e; border-radius: 2px; }
+mark.medreader-busca-hit.atual { background: #fb923c; outline: 2px solid #fb923c; }
+
+.medreader-rodape {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  padding: 6px 16px;
+  font-size: 12px;
+  background: #0b1220;
+  color: #9fb0c7;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.medreader-rodape b { color: #e5edf7; font-weight: 700; }
+
+.medreader-painel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 340px;
+  max-width: 90%;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  background: #111a2b;
+  color: #e5edf7;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.35);
+}
+.medreader-painel-cab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+#medreader-indice { flex: 1 1 auto; overflow-y: auto; padding: 6px 0 16px; }
+.medreader-indice-item {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.medreader-indice-item:hover, .medreader-indice-item:focus-visible { background: rgba(255, 255, 255, 0.09); outline: none; }
+.medreader-painel-vazio { padding: 16px 14px; font-size: 13px; opacity: 0.8; }
+
+@media (max-width: 700px) {
+  .medreader-shell .medreader-btn-txt { display: none; }
+}
+@media (max-width: 600px) {
+  .medreader-shell .medreader-toolbar { flex-wrap: wrap; row-gap: 6px; padding: 8px 10px; }
+  .medreader-shell .medreader-title { flex: 1 1 100%; }
+  .medreader-shell .medreader-controls { flex: 1 1 100%; justify-content: space-between; gap: 4px; }
+  .medreader-shell .medreader-controls .medreader-btn { padding: 6px 9px; }
+  .medreader-painel { width: 100%; max-width: 100%; }
+  .medreader-rodape { gap: 16px; font-size: 11px; }
+}
+
+/* ══════════════ Marcações: menu de seleção e histórico ══════════════ */
+mark.mr-marca { color: inherit; border-radius: 2px; cursor: pointer; padding: 0; transition: box-shadow 0.2s; }
+mark.mr-c-amarelo { background: rgba(250, 204, 21, 0.42); box-shadow: inset 0 -2px 0 #eab308; }
+mark.mr-c-verde   { background: rgba(74, 222, 128, 0.36); box-shadow: inset 0 -2px 0 #22c55e; }
+mark.mr-c-azul    { background: rgba(96, 165, 250, 0.36); box-shadow: inset 0 -2px 0 #3b82f6; }
+mark.mr-c-rosa    { background: rgba(244, 114, 182, 0.36); box-shadow: inset 0 -2px 0 #ec4899; }
+mark.mr-t-bookmark.mr-primeira::before { content: "\1F516"; font-size: 0.85em; margin-right: 2px; }
+mark.mr-t-nota.mr-primeira::before { content: "\270E"; font-size: 0.85em; margin-right: 2px; }
+mark.mr-t-duvida.mr-primeira::before { content: "?"; font-weight: 700; margin-right: 2px; color: #ef4444; }
+mark.mr-pulso { outline: 2px solid #f97316; outline-offset: 2px; }
+
+.medreader-menu {
+  position: fixed; z-index: 70; display: flex; align-items: center; gap: 4px;
+  padding: 6px 8px; border-radius: 10px; background: #1f2937; color: #f9fafb;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4); max-width: calc(100vw - 16px);
+}
+.medreader-menu[hidden] { display: none !important; }
+.medreader-menu .mr-sw { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.5); cursor: pointer; padding: 0; box-shadow: none; }
+.medreader-menu .mr-sw.ativo { border-color: #fff; }
+.medreader-menu .mr-sw.mr-c-amarelo { background: #facc15; }
+.medreader-menu .mr-sw.mr-c-verde { background: #4ade80; }
+.medreader-menu .mr-sw.mr-c-azul { background: #60a5fa; }
+.medreader-menu .mr-sw.mr-c-rosa { background: #f472b6; }
+.medreader-menu .mr-sep { width: 1px; height: 20px; background: rgba(255, 255, 255, 0.25); margin: 0 4px; }
+.medreader-menu .mr-b { background: transparent; border: 0; color: inherit; font-size: 16px; min-width: 32px; height: 32px; border-radius: 6px; cursor: pointer; padding: 0 6px; }
+.medreader-menu .mr-b:hover { background: rgba(255, 255, 255, 0.15); }
+.medreader-menu .mr-b.perigo:hover { background: rgba(239, 68, 68, 0.5); }
+.medreader-menu .mr-b.primario { background: #2563eb; font-size: 13px; }
+.medreader-menu .mr-editor { display: flex; flex-direction: column; gap: 6px; width: min(320px, calc(100vw - 40px)); }
+.medreader-menu .mr-editor label { font-size: 12px; opacity: 0.8; }
+.medreader-menu .mr-editor textarea { width: 100%; box-sizing: border-box; resize: vertical; border-radius: 6px; border: 1px solid #4b5563; background: #111827; color: #f9fafb; padding: 6px 8px; font: inherit; font-size: 14px; }
+.medreader-menu .mr-editor-acoes { display: flex; justify-content: flex-end; gap: 6px; }
+.medreader-menu .mr-editor-acoes .mr-b { font-size: 13px; }
+
+#medreader-marcas-lista { overflow-y: auto; flex: 1; min-height: 0; padding: 6px 8px 16px; }
+.mr-item { border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+.mr-item.orfa { opacity: 0.6; }
+.mr-item-cab { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.mr-item-cab em { margin-left: auto; font-style: normal; color: #ef4444; }
+.mr-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; border-radius: 4px; font-size: 12px; }
+.mr-chip.mr-c-amarelo { background: #facc15; color: #000; }
+.mr-chip.mr-c-verde { background: #4ade80; color: #000; }
+.mr-chip.mr-c-azul { background: #60a5fa; color: #000; }
+.mr-chip.mr-c-rosa { background: #f472b6; color: #000; }
+.mr-item-trecho { display: block; width: 100%; text-align: left; background: none; border: 0; color: inherit; font: inherit; font-size: 13px; padding: 6px 0; cursor: pointer; }
+.mr-item-trecho:hover { text-decoration: underline; }
+.mr-item-nota { margin: 0 0 6px; font-size: 13px; padding: 6px 8px; border-left: 3px solid #f97316; background: rgba(128, 128, 128, 0.12); white-space: pre-wrap; }
+.mr-item-acoes { display: flex; gap: 6px; justify-content: flex-end; }
+
+/* ══════════════ Visual v2: barra de ícones, folha clara, rodapé com barra, painéis ══════════════ */
+.medreader-shell { background: #15191d; }
+.medreader-shell #medreader-container { background: #15191d; }
+
+/* Barra superior (voltar · título · nuvem) e barra de ícones */
+.medreader-shell .medreader-topo {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; background: #1a1e22; color: #fff;
+}
+.medreader-shell .medreader-topo .medreader-title { flex: 1 1 auto; text-align: center; font-size: 15px; }
+.medreader-shell .medreader-voltar, .medreader-shell .medreader-nuvem { width: 40px; height: 36px; flex: 0 0 40px; justify-content: center; }
+.medreader-shell .medreader-nuvem { display: inline-flex; align-items: center; color: #7b8791; }
+.medreader-shell .medreader-nuvem[data-estado="ok"] { color: #3fc1dd; }
+.medreader-shell .medreader-nuvem[data-estado="pend"] { color: #f59e0b; animation: mr-pulsa 1s ease-in-out infinite; }
+.medreader-shell .medreader-nuvem[data-estado="off"] { color: #f97316; }
+.medreader-shell .mr-nuvem-ok { opacity: 0; }
+.medreader-shell .medreader-nuvem[data-estado="ok"] .mr-nuvem-ok { opacity: 1; }
+@keyframes mr-pulsa { 50% { opacity: 0.4; } }
+
+.medreader-shell .medreader-toolbar { background: #38424a; justify-content: center; padding: 4px 10px; border-bottom: 0; }
+.medreader-shell .medreader-toolbar .medreader-controls { gap: 14px; justify-content: center; flex-wrap: nowrap; overflow-x: auto; max-width: 100%; }
+.medreader-shell .medreader-btn { position: relative; background: transparent; border: 0; color: #fff; padding: 7px 8px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; }
+.medreader-shell .medreader-btn:hover, .medreader-shell .medreader-btn[aria-expanded="true"] { background: rgba(255, 255, 255, 0.14); }
+.medreader-shell .medreader-btn svg { width: 22px; height: 22px; }
+.medreader-shell .medreader-btn .medreader-btn-txt { display: none; }
+.medreader-shell .medreader-btn-fonte { font-size: 17px; font-weight: 700; min-width: 34px; }
+.medreader-shell .medreader-badge { position: absolute; top: 0; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #3fc1dd; color: #06222a; font-size: 10px; line-height: 16px; text-align: center; box-sizing: border-box; }
+.medreader-shell .medreader-busca .medreader-btn { border: 1px solid rgba(255, 255, 255, 0.2); }
+
+/* A apostila numa folha clara sobre o fundo escuro (o tema muda a folha, não o fundo) */
+.medreader-shell .medreader-content {
+  max-width: 1100px; min-height: 0; margin: 20px auto 40px;
+  padding: 28px clamp(14px, 3.2vw, 40px) 40px;
+  background: #f5f7f9; color: #27394a; border-radius: 2px;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+}
+/* Sépia como filtro: pinta também os fundos brancos que a própria apostila define dentro da folha */
+.medreader-shell #medreader-container.medreader-theme-sepia .medreader-content { background: #fbf8f1; color: #27394a; filter: sepia(0.95) saturate(0.9) brightness(0.93) contrast(1.02); }
+.medreader-shell #medreader-container.medreader-theme-night .medreader-content { background: #f5f7f9; filter: invert(1) hue-rotate(180deg); box-shadow: none; }
+.medreader-shell #medreader-container.medreader-theme-night .medreader-content :is(img, video, canvas, picture, iframe) { filter: invert(1) hue-rotate(180deg); }
+.medreader-shell .medreader-estado { color: #e5edf7; }
+@media (max-width: 700px) {
+  .medreader-shell .medreader-content { margin: 0 0 24px; padding: 18px 14px 28px; border-radius: 0; }
+  .medreader-shell .medreader-toolbar { padding: 2px 4px; }
+  .medreader-shell .medreader-toolbar .medreader-controls { gap: 2px; justify-content: space-between; width: 100%; }
+  .medreader-shell .medreader-topo .medreader-title { flex: 1 1 auto; }
+}
+
+/* Rodapé: barra de progresso arrastável + porcentagem e tempo */
+.medreader-shell .medreader-rodape {
+  display: flex; flex-direction: column; align-items: stretch; gap: 0;
+  padding: 0 0 6px; background: #1a1e22; color: #e8eef3; border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.medreader-shell #medreader-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; margin: 0; padding: 0; background: transparent; cursor: pointer; --fill: 0%; }
+.medreader-shell #medreader-slider::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, #3fc1dd var(--fill), #4a5560 var(--fill)); }
+.medreader-shell #medreader-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%; background: #3fc1dd; border: 0; box-shadow: 0 0 0 3px rgba(63, 193, 221, 0.25); }
+.medreader-shell #medreader-slider::-moz-range-track { height: 4px; border-radius: 2px; background: #4a5560; }
+.medreader-shell #medreader-slider::-moz-range-progress { height: 4px; border-radius: 2px; background: #3fc1dd; }
+.medreader-shell #medreader-slider::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #3fc1dd; border: 0; }
+.medreader-shell .medreader-rodape-txt { display: flex; justify-content: center; gap: 56px; font-size: 12px; }
+.medreader-shell .medreader-rodape-txt span { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.medreader-shell .medreader-rodape b { color: #3fc1dd; font-weight: 600; font-size: 13px; }
+
+/* Painéis laterais (índice, marcações, ajuda) */
+.medreader-shell .medreader-painel {
+  top: 8px; right: 8px; bottom: 8px; width: 380px; max-width: calc(100% - 16px);
+  background: rgba(88, 118, 146, 0.97); color: #fff; border: 0; border-radius: 14px;
+  backdrop-filter: blur(6px); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+.medreader-shell .medreader-painel-cab { border-bottom: 0; padding: 14px 16px 6px; }
+.medreader-shell .medreader-painel-cab strong { display: inline-flex; align-items: center; gap: 10px; font-size: 18px; }
+.medreader-shell .medreader-painel-cab .medreader-btn { font-size: 18px; }
+.medreader-shell .medreader-indice-item {
+  position: relative; text-transform: uppercase; font-weight: 600; font-size: 14px; letter-spacing: 0.01em;
+  padding: 10px 16px 10px calc(18px + var(--n, 0) * 22px);
+}
+.medreader-shell .medreader-indice-item[data-n]:not([data-n="0"])::before {
+  content: ""; position: absolute; left: calc(var(--n) * 22px - 2px); top: 0; height: 55%; width: 14px;
+  border-left: 2px solid rgba(255, 255, 255, 0.55); border-bottom: 2px solid rgba(255, 255, 255, 0.55); border-bottom-left-radius: 4px;
+}
+.medreader-shell .medreader-indice-item:hover, .medreader-shell .medreader-indice-item:focus-visible { background: rgba(255, 255, 255, 0.14); }
+.medreader-shell .medreader-ajuda { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 18px 20px; font-size: 13.5px; line-height: 1.5; }
+.medreader-shell .medreader-ajuda h4 { margin: 14px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.85; }
+.medreader-shell .medreader-ajuda p { margin: 0; }
+@media (max-width: 600px) {
+  .medreader-shell .medreader-painel { top: 0; right: 0; bottom: 0; width: 100%; max-width: 100%; border-radius: 0; }
 }

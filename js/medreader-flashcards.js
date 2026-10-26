@@ -326,7 +326,7 @@ class FlashcardReviewModal {
         display: flex; align-items: center; justify-content: center;
         color: var(--text-muted, #64748b); background: var(--bg-hover, rgba(255,255,255,0.08));
         border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
-        cursor: pointer; transition: all 0.15s;
+        cursor: pointer; transition: transform 0.15s, opacity 0.15s;
       }
       .medreader-modal-close:hover { color: #fb7185; }
       .medreader-modal-body {
@@ -359,7 +359,7 @@ class FlashcardReviewModal {
         background: var(--bg-elevated, rgba(30,40,60,0.75));
         color: var(--text-primary, #f1f5f9);
         font-weight: 700; font-size: 13px;
-        cursor: pointer; transition: all 0.15s;
+        cursor: pointer; transition: transform 0.15s, opacity 0.15s;
       }
       .medreader-modal-btn.dificil:hover { border-color: #fb7185; color: #fb7185; }
       .medreader-modal-btn.medio:hover { border-color: #fbbf24; color: #fbbf24; }
@@ -381,7 +381,7 @@ class FlashcardReviewModal {
       <div class="medreader-modal">
         <div class="medreader-modal-header">
           <div class="medreader-modal-title">Revisar Flashcard</div>
-          <button class="medreader-modal-close" onclick="this.closest('.medreader-modal-overlay').classList.remove('open')"><i class="ph ph-x"></i></button>
+          <button type="button" class="medreader-modal-close" aria-label="Fechar revisão de flashcard" onclick="this.closest('.medreader-modal-overlay').classList.remove('open')"><i class="ph ph-x" aria-hidden="true"></i></button>
         </div>
         <div class="medreader-modal-body">
           <div class="medreader-modal-question" id="medreader-modal-pergunta">Carregando...</div>
@@ -530,6 +530,7 @@ class Highlighter {
       span.title = 'Destaque vinculado';
 
       const id = this._novoId();
+      span.setAttribute('data-highlight-id', id);
       const highlight = {
         id,
         texto: textoSelecionado,

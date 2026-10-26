@@ -5,7 +5,7 @@ services:
     name: cuscuz-med
     runtime: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm install --omit=dev
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -38,9 +38,41 @@ services:
         sync: false
       - key: GOOGLE_DRIVE_FOLDER_ID
         sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: GOOGLE_DRIVE_FLASHCARDS_ROOTS
+        sync: false
+      - key: GOOGLE_DRIVE_FLASHCARDS_SYNC
+        value: "true"
+      - key: FLASHCARD_MAX_PACKAGE_BYTES
+        value: "6442450944"
+      # Supabase Storage: o acervo pode usar ANON_KEY, mas flashcards precisam gravar no bucket privado.
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # Webhook do Google Drive (push real-time) e cron de manutenção
+      - key: DRIVE_PUSH_WEBHOOK_URL
+        sync: false
+      - key: DRIVE_PUSH_WEBHOOK_TOKEN
+        sync: false
+      - key: CRON_SECRET
+        sync: false
       # Opcionais (deixe em branco se não usar; o app funciona sem elas, com recursos reduzidos)
+      - key: GROQ_API_KEY
+        sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: nvidia/nemotron-3.5-super-vl:free
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: GROQ_TPM
+        value: "8000"
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: AI_PROVIDER
+        value: auto
       - key: OPENAI_API_KEY
         sync: false
       - key: SUPABASE_URL

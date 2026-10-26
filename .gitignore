@@ -6,6 +6,8 @@ data/hwq-token.json
 
 # Dependências
 node_modules/
+__pycache__/
+*.py[cod]
 
 # Sistema
 Thumbs.db
@@ -23,3 +25,23 @@ data/extra-manifest.json
 # Gerados ao vivo pela sincronização incremental (Changes API) — ficam no volume /app/data
 data/acervo-manifest.json
 data/sync-token.json
+
+# Login e sessões dos usuários: NUNCA no repositório (ficam no Supabase)
+data/users.json
+data/sessions.json
+data/users/
+
+# Caches gerados em tempo de execução
+data/apostila-cache.json
+data/drive-info-cache.json
+data/apostilas/
+
+# Artefato de build da Vercel (assets estáticos copiados de public/ pelo script)
+public/
+
+# Artefatos do skill de design (nao versionar)
+.taste-skill/
+.vercel
+.env*
+!.env.example
+supabase/.temp/

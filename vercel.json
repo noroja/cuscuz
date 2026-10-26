@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "buildCommand": "node scripts/build-public.js",
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 300,
+      "includeFiles": "{*.html,*.png,*.webmanifest,planner-v2.js,aula-dia.js,acervo-manifest.json,drive-tree-snapshot.json,css/**,js/**,assets/**,data/**}"
+    },
+    "server.js": {
+      "maxDuration": 300,
+      "includeFiles": "{*.html,*.png,*.webmanifest,planner-v2.js,aula-dia.js,acervo-manifest.json,drive-tree-snapshot.json,css/**,js/**,assets/**,data/**}"
+    }
+  },
+  "crons": [
+    { "path": "/webhooks/google-drive/maintenance", "schedule": "17 6 * * *" },
+    { "path": "/api/radar-medico/refresh", "schedule": "23 6 * * *" }
+  ]
+}

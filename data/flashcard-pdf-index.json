@@ -1,0 +1,2100 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-21T14:53:40.263Z",
+  "sourceInventory": "acervo-manifest.json",
+  "files": [
+    {
+      "id": "1zg-dAorO3UNyzRz_RN0ZcGLiqhWU54aN",
+      "name": "Flashcard 1 - Trauma - Avaliação Inicial, Vias Aéreas e Trauma Torácico.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 01. Trauma - Avaliação Inicial, Vias Aéreas e Trauma Torácico / Flashcard (2) / Flashcard 1 - Trauma - Avaliação Inicial, Vias Aéreas e Trauma Torácico.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1XLNZDzeHMK1LQH8drfSMImWYabyfEylg",
+      "name": "Flashcard 2 - Trauma - Avaliação Inicial, Vias Aéreas e Trauma Torácico.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 01. Trauma - Avaliação Inicial, Vias Aéreas e Trauma Torácico / Flashcard (2) / Flashcard 2 - Trauma - Avaliação Inicial, Vias Aéreas e Trauma Torácico.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1dXynXVd3zfM_NXEhLV5I_TEB_1p_PbvJ",
+      "name": "Flashcard - Trauma - Choque.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 02. Trauma - Choque / Flashcard (1) / Flashcard - Trauma - Choque.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "12m1RNmbLm5qr5TZphjWru4g-M76AgaAH",
+      "name": "Flashcard - Trauma Abdominal e Pélvico.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 03. Trauma Abdominal e Pélvico / Flashcard (1) / Flashcard - Trauma Abdominal e Pélvico.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1QVDi4BfNE7Z8T6yL4OMiHazAn3_K7CJj",
+      "name": "Flashcard - Trauma de Face e Cervical.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 04. Trauma de Face e Cervical / Flashcard (1) / Flashcard - Trauma de Face e Cervical.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1kp5Iu7LdnGc_NN1OLwnJBsaTjVJTpW2J",
+      "name": "Flashcard - Trauma Vascular de Extremidades e Musculoesquelético.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 05. Trauma Vascular de Extremidades e Musculoesquelético / Flashcard (1) / Flashcard - Trauma Vascular de Extremidades e Musculoesquelético.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1Nipa98sANITQwyDVcn8WzTMTHUR64lgI",
+      "name": "Flashcard - Trauma Populações Especiais (Pediátrico, Gestante e Idosos).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 06. Trauma Populações Especiais (Pediátrico, Gestante e Idosos) / Flashcard (1) / Flashcard - Trauma Populações Especiais (Pediátrico, Gestante e Idosos).pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1gAGdP89-ewu592QIovISFrg_N4RLX5jY",
+      "name": "Flashcard - Queimaduras e Trauma Elétrico.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 07. Queimaduras e Trauma Elétrico / Flashcard (1) / Flashcard - Queimaduras e Trauma Elétrico.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1uH0zDwIplETSav9TauYEHx7TxwXS5e9B",
+      "name": "Flashcard - Resposta Endócrino-Metabólica ao Trauma.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 08. Resposta Endócrino-Metabólica ao Trauma / Flashcard (1) / Flashcard - Resposta Endócrino-Metabólica ao Trauma.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1uhKg5yxf9FYWrj-x717Z642Ve7dKHR2p",
+      "name": "Flashcard - Urgências Abdominais - Abdome Agudo.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 09. Urgências Abdominais - Abdome Agudo / Flashcard (1) / Flashcard - Urgências Abdominais - Abdome Agudo.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1CUc1ckMWro48Wnin97PIMzIHtuSJQjZI",
+      "name": "Flashcard - Abdome Agudo Inflamatório - Apendicite Aguda.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 10. Abdome Agudo Inflamatório - Apendicite Aguda / Flashcard (1) / Flashcard - Abdome Agudo Inflamatório - Apendicite Aguda.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1aaTN9bJRBKUChQ8VZaldnggEMUb1aDNp",
+      "name": "Flashcard - Abdome Agudo Inflamatório - Colecistite e Colangite Aguda.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 11. Abdome Agudo Inflamatório - Colecistite e Colangite Aguda / Flashcard (1) / Flashcard - Abdome Agudo Inflamatório - Colecistite e Colangite Aguda.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1S7wAeVfWxiHtnzdpsmuN4tMVt2newguv",
+      "name": "Flashcard - Abdome Agudo Inflamatório - Diverticulite Aguda.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 12. Abdome Agudo Inflamatório - Diverticulite Aguda / Flashcard (1) / Flashcard - Abdome Agudo Inflamatório - Diverticulite Aguda.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1KwvraKFWoqEMSzAjsSrqwTZEs5ziUi2n",
+      "name": "Flashcard - Abdome Agudo Vascular.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 13. Abdome Agudo Vascular / Flashcard (1) / Flashcard - Abdome Agudo Vascular.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1k9SzlZ3hnKz1PbmYqCugUt9ksS1bfylY",
+      "name": "Flashcard - Abdome Agudo Hemorrágico.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 14. Abdome Agudo Hemorrágico / Flashcard (1) / Flashcard - Abdome Agudo Hemorrágico.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1H3gvc7KBOW17Brjvskx0nQcW7da0QWcU",
+      "name": "Flashcard - Abdome Agudo Perfurativo.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 15. Abdome Agudo Perfurativo / Flashcard (1) / Flashcard - Abdome Agudo Perfurativo.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1rzF378Q1wTgBa5MjdZf1Ix_z69E01yQU",
+      "name": "Flashcard - Abdome Agudo Obstrutivo.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 16. Abdome Agudo Obstrutivo / Flashcard (1) / Flashcard - Abdome Agudo Obstrutivo.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1sidh42u1YQQ_m7qeG9IFMCCccRcFY2wU",
+      "name": "Flashcard - Vesícula e Vias Biliares.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 17. Vesícula e Vias Biliares / Flashcard (1) / Flashcard - Vesícula e Vias Biliares.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "18ZI1IQ9Q1p-7LJAIlCbsUptGMTftIbPW",
+      "name": "Flashcard - Complicações Pós-Operatórias.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 18. Complicações Pós-Operatórias / Flashcard (1) / Flashcard - Complicações Pós-Operatórias.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1XCOcCLKHTqPC7Tl4z8JjSXSXKdr4xgGC",
+      "name": "Flashcard - Hérnias da Parede Abdominal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 19. Hérnias da Parede Abdominal / Flashcard (1) / Flashcard - Hérnias da Parede Abdominal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1XwGql0ltVd_lvygXdOYEEHkyIyBsvArZ",
+      "name": "Flashcard - Cirurgia Torácica.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 21. Cirurgia Torácica / Flashcard (1) / Flashcard - Cirurgia Torácica.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "19xUcm_aspDlobfzLs2jDv4ok4Stz7UqV",
+      "name": "Flashcard - Cirurgia Plástica.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 22. Cirurgia Plástica / Flashcard (1) / Flashcard - Cirurgia Plástica.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1ttVFLXhcnHw5G8-wTZR-71l5qFfmcZMY",
+      "name": "Flashcard - Urologia.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 23. Urologia / Flashcard (1) / Flashcard - Urologia.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "147qHEpQpGsui-WrWYgowJ1S4T4NcBGPX",
+      "name": "Flashcard - Cirurgia Infantil - Parte I.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 24. Cirurgia Infantil - Parte I / Flashcard (1) / Flashcard - Cirurgia Infantil - Parte I.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1r-RwUvsr6ul2qnPF3cYtzD54gofhh-F8",
+      "name": "Flashcard - Cirurgia Infantil - Parte II.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 25. Cirurgia Infantil - Parte II / Flashcard (1) / Flashcard - Cirurgia Infantil - Parte II.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1VXl1gBBsZZb2kJAR5uEQR50tCIJW7vOk",
+      "name": "Flashcard - Cirurgia Infantil - Parte III.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 26. Cirurgia Infantil - Parte III / Flashcard (1) / Flashcard - Cirurgia Infantil - Parte III.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "13ZHSL9h6Cp5-goR-_MvPrF7ksyjfK88B",
+      "name": "Flashcard - Proctologia.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 27. Proctologia / Flashcard (1) / Flashcard - Proctologia.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1yJxktn6xXD3f_vDTIW47IEs6Q9yVZ5YU",
+      "name": "Flashcard - Neoplasias do Apêndice Cecal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 28. Neoplasias do Apêndice Cecal / Flashcard (1) / Flashcard - Neoplasias do Apêndice Cecal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1Tx6mZx0ZPoQts9JY-AlS0j8H12GaTrZ3",
+      "name": "Flashcard - Nutrição em Cirurgia e Aceleração da Recuperação Pós-Operatória.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 29. Nutrição em Cirurgia e Aceleração da Recuperação Pós-Operatória / Flashcard (1) / Flashcard - Nutrição em Cirurgia e Aceleração da Recuperação Pós-Operatória.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "11SDZG9e7zNROdzl-4L7WobxXDee3-xu-",
+      "name": "Flashcard - Cicatrização de Feridas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 30. Cicatrização de Feridas / Flashcard (1) / Flashcard - Cicatrização de Feridas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1mqGEQZa_dWsweobWAsW1RVFZIt_RUztU",
+      "name": "Flashcard - Temas Gerais em Cirurgia.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Cirurgia / 32. Temas Gerais em Cirurgia / Flashcard (1) / Flashcard - Temas Gerais em Cirurgia.pdf",
+      "course": "APOSTILAS",
+      "subject": "Cirurgia"
+    },
+    {
+      "id": "1z17m-B-_09e2B8VtaxNCl0M3HkedAnc1",
+      "name": "Flashcard - Puberdade.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 01. Puberdade / Flashcard (1) / Flashcard - Puberdade.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1NVinKDG66c8_GEIu0qK7VX_NXs2P6yEv",
+      "name": "Flashcard - BRUE (Brief Resolved Unexplained Events) e SMSL (Síndrome da Morte Súbita do Lactente).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 02. BRUE (Brief Resolved Unexplained Events) e SMSL (Síndrome da Morte Súbita do Lactente) / Flashcard (1) / Flashcard - BRUE (Brief Resolved Unexplained Events) e SMSL (Síndrome da Morte Súbita do Lactente).pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1xr-bIPYiopoZU70ndo3bGdPPfojYB-RN",
+      "name": "Flashcard - Infecção do Trato Urinário em Pediatria (ITU).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 03. Infecção do Trato Urinário em Pediatria (ITU) / Flashcard (1) / Flashcard - Infecção do Trato Urinário em Pediatria (ITU).pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1mC94ox6MBgq-tPRbgP1WQXQ2oPaXk8_A",
+      "name": "Flashcard - Alergia Alimentar.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 04. Alergia Alimentar / Flashcard (1) / Flashcard - Alergia Alimentar.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1TmFeuxbB5foaRCIpyPtRTSpJy4ju5Zcz",
+      "name": "Flashcard - Obesidade na Infância e na Adolescência.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 05. Obesidade na Infância e na Adolescência / Flashcard (1) / Flashcard - Obesidade na Infância e na Adolescência.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1lfE7Ul6pKNga44-wCg--5tqlJAyTghQv",
+      "name": "Flashcard - Anafilaxia e Urticária.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 07. Anafilaxia e Urticária / Flashcard (1) / Flashcard - Anafilaxia e Urticária.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1eydv6UZf8FScDX8SiygpIDtaJsaNoGUS",
+      "name": "Flashcard - Crescimento.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 08. Crescimento / Flashcard (1) / Flashcard - Crescimento.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1Pvov5tDBmLrSvM7ZxZ4BsNOrc2AUNu-q",
+      "name": "Flashcard - Constipação Intestinal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 09. Constipação Intestinal / Flashcard (1) / Flashcard - Constipação Intestinal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1Kbl5SeEv1nyCj0I4I9FVj_GAca5ZD_AP",
+      "name": "Flashcard - Hiperplasia Adrenal Congênita.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 10. Hiperplasia Adrenal Congênita / Flashcard (1) / Flashcard - Hiperplasia Adrenal Congênita.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1hFbsvBArWmUwLJlhgYYbwv_EVZ0XCEiV",
+      "name": "Flashcard - Distúrbios Respiratórios do Período Neonatal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 11. Distúrbios Respiratórios do Período Neonatal / Flashcard (1) / Flashcard - Distúrbios Respiratórios do Período Neonatal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "16ahuwM0FdPaLvomCQlVFt8_i7jPMCUFg",
+      "name": "Flashcard - Febre Reumática.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 12. Febre Reumática / Flashcard (1) / Flashcard - Febre Reumática.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1Wk3qs2mmzGpzVlsVXZ9rT1-WwfEHIFvZ",
+      "name": "Flashcard - Síndromes Genéticas e Erros Inatos do Metabolismo.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 13. Síndromes Genéticas e Erros Inatos do Metabolismo / Flashcard (1) / Flashcard - Síndromes Genéticas e Erros Inatos do Metabolismo.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1qxxJaWvWoermtyhR6RHN0N0MG8xjKAN1",
+      "name": "Flashcard - Enurese Noturna.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 14. Enurese Noturna / Flashcard (1) / Flashcard - Enurese Noturna.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1ckwUrqk6cV6wU2OAiQ-EyW0y_LBRL0lV",
+      "name": "Flashcard - Infecções Congênitas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 15. Infecções Congênitas / Flashcard (1) / Flashcard - Infecções Congênitas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1qdpupepIyL8WHM_J2pe33BOAyjk8XUN3",
+      "name": "Flashcard - Hipotireoidismo Congênito.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 16. Hipotireoidismo Congênito / Flashcard (1) / Flashcard - Hipotireoidismo Congênito.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1fBXigDcoqb8qeqc1uaoxlE63z3mLtmfD",
+      "name": "Flashcard - Aleitamento Materno.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 17. Aleitamento Materno / Flashcard (1) / Flashcard - Aleitamento Materno.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1t5QfdXNsm9d706EqNaYxGox0PjGWNQcL",
+      "name": "Flashcard - Pneumonia na Infância.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 18. Pneumonia na Infância / Flashcard (1) / Flashcard - Pneumonia na Infância.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1CRLMT189-MLE3wVxcen8cDXqwPcfYRk9",
+      "name": "Flashcard - Desnutrição na Infância.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 19. Desnutrição na Infância / Flashcard (1) / Flashcard - Desnutrição na Infância.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1yf--p-m4KpeXDuV8MCyFxLHaQGt24cso",
+      "name": "Flashcard - Imunizações.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 20. Imunizações / Flashcard (1) / Flashcard - Imunizações.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "18UTuyEvss7P7GbGXRN2WtBC9NxzPL4zp",
+      "name": "Flashcard - Asma em Pediatria.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 21. Asma em Pediatria / Flashcard (1) / Flashcard - Asma em Pediatria.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "19DETZP4hAToY53RfdCBqcjwtrf1qoMsm",
+      "name": "Flashcard - Sífilis na Gestação e Síflis Congênita.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 22. Sífilis na Gestação e Síflis Congênita / Flashcard (1) / Flashcard - Sífilis na Gestação e Síflis Congênita.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1mt3PRlIuAzaNGFJ9QdRN1uj9E8d_ReJP",
+      "name": "Flashcard - Cuidados Neonatais.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 23. Cuidados Neonatais / Flashcard (1) / Flashcard - Cuidados Neonatais.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1D1dMVGIqCNi4J8B19jsE5MGut35rreI9",
+      "name": "Flashcard - Choque em Pediatria.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 24. Choque em Pediatria / Flashcard (1) / Flashcard - Choque em Pediatria.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1r29IsNcx4hE0vnK-jmHjlWYd9Wxwvb_q",
+      "name": "Flashcard - Deficiências Vitamínicas e Profilaxias.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 25. Deficiências Vitamínicas e Profilaxias / Flashcard (1) / Flashcard - Deficiências Vitamínicas e Profilaxias.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1vuhaNiMTLHTVQNw5xkVigDhWaORSeVGg",
+      "name": "Flashcard - Convulsão Febril.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 26. Convulsão Febril / Flashcard (1) / Flashcard - Convulsão Febril.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1aE-YCHhEHKxzHLG6KbPmYdRJSjt_9kRi",
+      "name": "Flashcard - Reanimação Neonatal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 27. Reanimação Neonatal / Flashcard (1) / Flashcard - Reanimação Neonatal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1uD-xnplEY6Ckd4A6cNvgxh48m3qbDg9n",
+      "name": "Flashcard - Doença de Kawasaki.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 28. Doença de Kawasaki / Flashcard (1) / Flashcard - Doença de Kawasaki.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "16n29rqfpjQ0rlSLjegFZ8reLY5rhfkqB",
+      "name": "Flashcard - Hipertensão Arterial na Criança e no Adolescente.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 29. Hipertensão Arterial na Criança e no Adolescente / Flashcard (1) / Flashcard - Hipertensão Arterial na Criança e no Adolescente.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "18cKdz8udrhDCf3JG5GP9dykVmmBw2278",
+      "name": "Flashcard - Púrpura de Henoch-Schönlein e Vasculite por IgA.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 30. Púrpura de Henoch-Schönlein e Vasculite por IgA / Flashcard (1) / Flashcard - Púrpura de Henoch-Schönlein e Vasculite por IgA.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1BUgjFoiUSufAeW_YweTvTCjOzOSshGjt",
+      "name": "Flashcard - Doenças Exantemáticas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 31. Doenças Exantemáticas / Flashcard (1) / Flashcard - Doenças Exantemáticas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1C44QGMjd6UeGMEI64A3hHISl7oljfLcu",
+      "name": "Flashcard - Cardiopatias Congênitas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 32. Cardiopatias Congênitas / Flashcard (1) / Flashcard - Cardiopatias Congênitas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1itrtf48H1LX00HRVQ1O6RlBZVl4ryVLt",
+      "name": "Flashcard - Doença Celíaca em Pediatria.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 33. Doença Celíaca em Pediatria / Flashcard (1) / Flashcard - Doença Celíaca em Pediatria.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "14FA605jk8iLEmtxTKYFPFqTuHLGqUHz2",
+      "name": "Flashcard - Icterícia e Sepse Neonatal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 34. Icterícia e Sepse Neonatal / Flashcard (1) / Flashcard - Icterícia e Sepse Neonatal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1gnXlnVT_DKSp2Bx4PRgP1FNeVWZbpwez",
+      "name": "Flashcard - Diagnóstico Nutricional.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 35. Diagnóstico Nutricional / Flashcard (1) / Flashcard - Diagnóstico Nutricional.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1gf4L2N7mbecnClSrQ69kCZkKFyrRgYVI",
+      "name": "Flashcard - Coqueluche.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 36. Coqueluche / Flashcard (1) / Flashcard - Coqueluche.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1fpNKiHztdhBlqdjCsWplAEdfyNwJrcxQ",
+      "name": "Flashcard - Febre na Pediatria.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 38. Febre na Pediatria / Flashcard (1) / Flashcard - Febre na Pediatria.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1ul7Ov6W81QvzsRp7lEr2lCWc5ifC3io8",
+      "name": "Flashcard - Segurança na Pediatria.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 39. Segurança na Pediatria / Flashcard (1) / Flashcard - Segurança na Pediatria.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1P3hdjsfeCWKcjzvXzur4nCB1R5x_MN31",
+      "name": "Flashcard - Doença do Refluco Gastroesofágico em Pediatria.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 41. Doença do Refluco Gastroesofágico em Pediatria / Flashcard (1) / Flashcard - Doença do Refluco Gastroesofágico em Pediatria.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1xt_vQs6B9F56-aC7ByeDkbvIv4S5pD1i",
+      "name": "Flashcard - Bronquiolite.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 42. Bronquiolite / Flashcard (1) / Flashcard - Bronquiolite.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "19lhGuAKBhZMTK0-LtneeZXeewYtg1Udg",
+      "name": "Flashcard - Emergências Pediátricas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 43. Emergências Pediátricas / Flashcard (1) / Flashcard - Emergências Pediátricas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1p5H_LTMsbeEYh4zY0NtJBJ_qDmFi4MRq",
+      "name": "Flashcard - Tópicos em Pediatria.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 44. Tópicos em Pediatria / Flashcard (1) / Flashcard - Tópicos em Pediatria.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1bBrujZ6LSSqK3gGr98fpSIEgHYTSDpvZ",
+      "name": "Flashcard - Tuberculose na Infância.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 45. Tuberculose na Infância / Flashcard (1) / Flashcard - Tuberculose na Infância.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1iEMyl1ifFez9GkahecQQXKaQF3TaFELr",
+      "name": "Flashcard - Fibrose Cística.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 46. Fibrose Cística / Flashcard (1) / Flashcard - Fibrose Cística.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1N0ciDFLNQ6ugIc5rPfYhVEGG7bjFwZG1",
+      "name": "Flashcard - Artrite Idopática Juvenil (AIJ).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 47. Artrite Idopática Juvenil (AIJ) / Flashcard (1) / Flashcard - Artrite Idopática Juvenil (AIJ).pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "1bb2N8FK96NX-XxWJhsk6LfRK4C69cBO8",
+      "name": "Flashcard - Diarreia.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Pediatria / 48. Diarreia / Flashcard (1) / Flashcard - Diarreia.pdf",
+      "course": "APOSTILAS",
+      "subject": "Pediatria"
+    },
+    {
+      "id": "11-VN-y1gTxTRyeoA5ZVDXbjKUYSa-GWb",
+      "name": "Flashcard - Sistemas de Informação em Saúde.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 01. Sistemas de Informação em Saúde / Flashcard (1) / Flashcard - Sistemas de Informação em Saúde.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1vekBrMdXIqNDMUwBOmYTv6X6Sv-hGX2u",
+      "name": "Flashcard - Ética Médica.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 02. Ética Médica / Flashcard (1) / Flashcard - Ética Médica.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1oKj9V6msW7cRzbklzgUFLuJLGwMiNGbz",
+      "name": "Flashcard - Princípios e Diretrizes do SUS.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 03. Princípios e Diretrizes do SUS / Flashcard (1) / Flashcard - Princípios e Diretrizes do SUS.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1aKdn3gR7d9ZgSMu7PwJsWNwh8UETIgX_",
+      "name": "Flashcard - Marcos Legais do Sistema Único de Saúde.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 04. Marcos Legais do Sistema Único de Saúde / Flashcard (1) / Flashcard - Marcos Legais do Sistema Único de Saúde.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "15YdxsM8TRI6f7DsvOT4WGzBS31HZY4me",
+      "name": "Flashcard 1- Marcos Legais do Sistema Único de Saúde.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 05. Bases de Saúde do Trabalhador e Normas Regulamentadoras / Flashcard (2) / Flashcard 1- Marcos Legais do Sistema Único de Saúde.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1z9oTzLZdyrPjOfKlglBiSlDhMIQ1gAV1",
+      "name": "Flashcard 2 - Marcos Legais do Sistema Único de Saúde.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 05. Bases de Saúde do Trabalhador e Normas Regulamentadoras / Flashcard (2) / Flashcard 2 - Marcos Legais do Sistema Único de Saúde.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "15bz7FDeBWQsttJSHlSFTO0x6-F_Rz2R0",
+      "name": "Flashcard - Medidas de Saúde Coletiva (Parte I - Indicadores de Morbidade).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 06. Medidas de Saúde Coletiva (Parte I - Indicadores de Morbidade) / Flashcard (1) / Flashcard - Medidas de Saúde Coletiva (Parte I - Indicadores de Morbidade).pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1QWWhuVnhbqLmWfcaxuJFARtA0C_REElB",
+      "name": "Flashcard - Medidas de Saúde Coletiva (Parte II - Indicadores de Mortalidade).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 07. Medidas de Saúde Coletiva (Parte II - Indicadores de Mortalidade) / Flashcard (1) / Flashcard - Medidas de Saúde Coletiva (Parte II - Indicadores de Mortalidade).pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1EaG6Klz3w22X7VnXug6Cs7iKtdad6Ko1",
+      "name": "Flashcard - Processos Epidêmicos e Epidemiologia das Doenças Infecciosas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 09. Processos Epidêmicos e Epidemiologia das Doenças Infecciosas / Flashcard (1) / Flashcard - Processos Epidêmicos e Epidemiologia das Doenças Infecciosas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1y4P50j0cKttsjt5Li_OvXSsL2AFEGYai",
+      "name": "Flashcard - Processo Saúde-Doença.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 10. Processo Saúde-Doença / Flashcard (1) / Flashcard - Processo Saúde-Doença.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1vgFk_2KF6F0jAb-5qEuoGlpuBbHNfEPO",
+      "name": "Flashcard - Vigilância em Saúde.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 11. Vigilância em Saúde / Flashcard (1) / Flashcard - Vigilância em Saúde.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1yY3WcgxLRGKqZNBkhh7shvADmSmFR0m8",
+      "name": "Flashcard - Estatística Médica.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 12. Estatística Médica / Flashcard (1) / Flashcard - Estatística Médica.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1UyvNeKifDf9DeByc29Im0G6Qb3AMRexw",
+      "name": "Flashcard - Pesquisa Epidemiológica e Medidas de Associação.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 13. Pesquisa Epidemiológica e Medidas de Associação / Flashcard (1) / Flashcard - Pesquisa Epidemiológica e Medidas de Associação.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1Ig5zalg3-ExN34xLjSWSinK-PfDVLt3O",
+      "name": "Flashcard - Testes Diagnósticos.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 14. Testes Diagnósticos / Flashcard (1) / Flashcard - Testes Diagnósticos.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1Cd647mxYMLSw0rX8g9CFJTnMO04Mzm4k",
+      "name": "Flashcard - Testes Diagnósticos.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 15. História do SUS / Flashcard (1) / Flashcard - Testes Diagnósticos.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1wEN3e_XbTIz6UsD62QdEuJ1erfkrX_bt",
+      "name": "Flashcard - Processos de Descentralização e Regionalização do SUS.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 16. Processos de Descentralização e Regionalização do SUS / Flashcard (1) / Flashcard - Processos de Descentralização e Regionalização do SUS.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1KdSn3ok6XJz1MiRZmadVfJdsD9k5Onw4",
+      "name": "Flashcard - Processos de Descentralização e Regionalização do SUS.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 17. Atenção Primária à Saúde / Flashcard (1) / Flashcard - Processos de Descentralização e Regionalização do SUS.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1uoQP_DmwiHLgin7R0XIqeWkaqpaKr4qk",
+      "name": "Flashcard - Políticas de Saúde.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 18. Políticas de Saúde / Flashcard (1) / Flashcard - Políticas de Saúde.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1_qeYhFIVBp_XeLV1hgBpN2HtVGpZVNMe",
+      "name": "Flashcard - Financiamento em Saúde.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 19. Financiamento em Saúde / Flashcard (1) / Flashcard - Financiamento em Saúde.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1zRDN6U1_DrG4Ixv_IbKaQg2qNGW-dgeH",
+      "name": "Flashcard - Medicina de Família e Comunidade.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 20. Medicina de Família e Comunidade / Flashcard (1) / Flashcard - Medicina de Família e Comunidade.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1MTzyQaXJIXez4R1UDlEKBl8uTKtm1z7G",
+      "name": "Flashcard - Medicina de Família e Comunidade.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Preventiva / 21. Saúde do Idoso / Flashcard (1) / Flashcard - Medicina de Família e Comunidade.pdf",
+      "course": "APOSTILAS",
+      "subject": "Preventiva"
+    },
+    {
+      "id": "1IfFe3uE6MeiKV6U4yXPcFTkaJcQjw8PG",
+      "name": "Flashcard - Parada Cardiorrespiratória (PCR).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 01. Parada Cardiorrespiratória (PCR) / Flashcard (1) / Flashcard - Parada Cardiorrespiratória (PCR).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1qwaJcb_IEB5Re3XHiD5EHguk9coEMDRi",
+      "name": "Flashcard - Bradiarritmias.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 02. Bradiarritmias / Flashcard (1) / Flashcard - Bradiarritmias.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1FVSzIwquyCXtKT7d7VR4YI3wKsIFd4IU",
+      "name": "Flashcard - Fibrilação e Flutter Atrial.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 04. Fibrilação e Flutter Atrial / Flashcard (1) / Flashcard - Fibrilação e Flutter Atrial.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1PLid1qr8Dz8fcLgbbdh-zHLuDhjUOZ0C",
+      "name": "Flashcard - Síncope.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 05. Síncope / Flashcard (1) / Flashcard - Síncope.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1cAz-ikRo5cd35ylKetoy6ChUDix3iMew",
+      "name": "Flashcard - Dislipidemia e Estratificação de Risco Cardiovascular.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 06. Dislipidemia e Estratificação de Risco Cardiovascular / Flashcard (1) / Flashcard - Dislipidemia e Estratificação de Risco Cardiovascular.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1Nhd2afhSKmzLcvmxOiGfOqYuRbdJKE_o",
+      "name": "Flashcard - Doença Arterial Coronariana Estável (DAC Estável).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 07. Doença Arterial Coronariana Estável (DAC Estável) / Flashcard (1) / Flashcard - Doença Arterial Coronariana Estável (DAC Estável).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1_avnoywA_sB6GaCUXJXvPt48tWeUPrI9",
+      "name": "Flashcard - SCASSST - Síndrome Coronária Aguda Sem Supra do Segmento ST.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 08. SCASSST - Síndrome Coronária Aguda Sem Supra do Segmento ST / Flashcard (1) / Flashcard - SCASSST - Síndrome Coronária Aguda Sem Supra do Segmento ST.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1lRf25C-mbT2GwquOygKauV4f8o_NTa3O",
+      "name": "Flashcard - IAMCSSST (Infarto Agudo do Miocárdio com Supradesnivelamento de Segmento ST).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 09. IAMCSSST (Infarto Agudo do Miocárdio com Supradesnivelamento de Segmento ST) / Flashcard (1) / Flashcard - IAMCSSST (Infarto Agudo do Miocárdio com Supradesnivelamento de Segmento ST).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1CYaqyTgKT1neNnY-Km2Jx73iUjUGeq0Q",
+      "name": "Flashcard - Síndromes Aórticas Agudas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 10. Síndromes Aórticas Agudas / Flashcard (1) / Flashcard - Síndromes Aórticas Agudas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1-R8u0Zx9nwNfAEE-WmKOkWRxFPO2rWfp",
+      "name": "Flashcard - Hipertensão Arterial Sistêmica (Parte 2) Tratamento.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 12. Hipertensão Arterial Sistêmica (Parte 2) Tratamento / Flashcard (1) / Flashcard - Hipertensão Arterial Sistêmica (Parte 2) Tratamento.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1O1c4Dgb0XnPaYVqt1hOTAhs8c0FbpWX6",
+      "name": "Flashcard - Hipertensão Arterial Sistêmica (Parte 3) Secundária e Crise Hipertensiva.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 13. Hipertensão Arterial Sistêmica (Parte 3) Secundária e Crise Hipertensiva / Flashcard (1) / Flashcard - Hipertensão Arterial Sistêmica (Parte 3) Secundária e Crise Hipertensiva.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1naz5TT5bWondd43_q1WI8y-37iUVTPeZ",
+      "name": "Flashcard - Insuficiência Cardíaca (Parte 2) Tratamento.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 15. Insuficiência Cardíaca (Parte 2) Tratamento / Flashcard (1) / Flashcard - Insuficiência Cardíaca (Parte 2) Tratamento.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1GJaTA63KqiybCxVAuMpMybpoaTEawCdh",
+      "name": "Flashcard - Semiologia Cardíaca.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 18. Semiologia Cardíaca / Flashcard (1) / Flashcard - Semiologia Cardíaca.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1dau_I1jgJQJkqf1rEmu1I2Zak-TbEcyN",
+      "name": "Flashcard - Valvopatias.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 19. Valvopatias / Flashcard (1) / Flashcard - Valvopatias.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1wh8Sp22GnBtndX9y3S36IJU6ZbbT1XJk",
+      "name": "Flashcard - Cardiomiopatias.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 20. Cardiomiopatias / Flashcard (1) / Flashcard - Cardiomiopatias.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1_zy_1zw0ahBD4_sdK8HARo8DR_POU4gV",
+      "name": "Flashcard - Pericardiopatias.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Cardiologia / 21. Pericardiopatias / Flashcard (1) / Flashcard - Pericardiopatias.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1ABDDdfn7boS1FtIlZ2F5QyULUWGksxbr",
+      "name": "Flashcard - Introdução ao Diabetes Mellitus.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 01. Introdução ao Diabetes Mellitus / Flashcard (1) / Flashcard - Introdução ao Diabetes Mellitus.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1iFdltqUJkXqKVedYD-_9QrAeEsGIHcgD",
+      "name": "Flashcard - Diabetes Mellitus Tipo 2.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 02. Diabetes Mellitus Tipo 2 / Flashcard (1) / Flashcard - Diabetes Mellitus Tipo 2.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1gj96rUIFeFCWuEIvwlT_svpjGTex6pLR",
+      "name": "Flashcard - Diabetes Mellitus (Insulinoterapia e Cirurgia Metabólica).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 03. Diabetes Mellitus (Insulinoterapia e Cirurgia Metabólica) / Flashcard (1) / Flashcard - Diabetes Mellitus (Insulinoterapia e Cirurgia Metabólica).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1ZOaizhyPmYUefa_t-etvdH6bABrtwC-V",
+      "name": "Flashcard - Diabetes Mellitus (Insulinoterapia e Cirurgia Metabólica).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 04. Diabetes Mellitus (Complicações Agudas) / Flashcard (1) / Flashcard - Diabetes Mellitus (Insulinoterapia e Cirurgia Metabólica).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1RdjAm-mScRqMttL0G0miR99VQ_n4RrKd",
+      "name": "Flashcard - Diabetes Mellitus (Complicações Crônicas).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 05. Diabetes Mellitus (Complicações Crônicas) / Flashcard (1) / Flashcard - Diabetes Mellitus (Complicações Crônicas).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1CbVuzvlxqUFUsCEnoslu-vuhz6FSsbLc",
+      "name": "Flashcard - Diabetes Mellitus (Hiperglicemia Hospitalar).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 06. Diabetes Mellitus (Hiperglicemia Hospitalar) / Flashcard (1) / Flashcard - Diabetes Mellitus (Hiperglicemia Hospitalar).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1k1wqM7fBHqMwnweYnnV5HJlP5ysGiKI-",
+      "name": "Flashcard - Tireoide (Fisiologia, Semiologia e Avaliação Diagnóstica).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 07. Tireoide (Fisiologia, Semiologia e Avaliação Diagnóstica) / Flashcard (1) / Flashcard - Tireoide (Fisiologia, Semiologia e Avaliação Diagnóstica).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1NcL0VEzVp73FM57YNyv_uJk48zKbmAqw",
+      "name": "Flashcard - Tireoide (Hipotireoidismo).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 08. Tireoide (Hipotireoidismo) / Flashcard (1) / Flashcard - Tireoide (Hipotireoidismo).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "14DM2wGfzS-y8XCQv0ja3-vDkx_8O993J",
+      "name": "Flashcard - Tireoide (Tireotoxicose).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 09. Tireoide (Tireotoxicose) / Flashcard (1) / Flashcard - Tireoide (Tireotoxicose).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1qR7Umhwm0BBDAnp5qouTmDDIDlHCH5Z9",
+      "name": "Flashcard - Obesidade e Síndrome Metabólica.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 10. Obesidade e Síndrome Metabólica / Flashcard (1) / Flashcard - Obesidade e Síndrome Metabólica.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1P8EJnGJGxlxu4rfuyEFzloqsxHNpnP9S",
+      "name": "Flashcard - Metabolismo Ósseo e Mineral (Princípios e Fisiologia).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 12. Metabolismo Ósseo e Mineral (Princípios e Fisiologia) / Flashcard (1) / Flashcard - Metabolismo Ósseo e Mineral (Princípios e Fisiologia).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1lFlKw0epcTCMIQOJjR1SN2ujjdvIZTtA",
+      "name": "Flashcard - Metabolismo Ósseo e Mineral (Hipercalcemia).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 13. Metabolismo Ósseo e Mineral (Hipercalcemia) / Flashcard (1) / Flashcard - Metabolismo Ósseo e Mineral (Hipercalcemia).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1YR6iOpFiMSrI6LVMK-K_Ip9fKzexrsVl",
+      "name": "Flashcard - Metabolismo Ósseo e Mineral (Hipercalcemia).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 14. Metabolismo Ósseo e Mineral (Hipocalcemia) / Flashcard (1) / Flashcard - Metabolismo Ósseo e Mineral (Hipercalcemia).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1XqCzCHr_gazxVq7EfgOVaUjutZ0CURj7",
+      "name": "Flashcard - Metabolismo Ósseo e Mineral (Magnésio e Fosfato).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 15. Metabolismo Ósseo e Mineral (Magnésio e Fosfato) / Flashcard (1) / Flashcard - Metabolismo Ósseo e Mineral (Magnésio e Fosfato).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "12Mvo3fyOBeljF68wg9xFv6b3IQMk_Y63",
+      "name": "Flashcard - Metabolismo Ósseo e Mineral (Vitamina D e Osteomalácia).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 16. Metabolismo Ósseo e Mineral (Vitamina D e Osteomalácia) / Flashcard (1) / Flashcard - Metabolismo Ósseo e Mineral (Vitamina D e Osteomalácia).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1rBGevwXvuzKAPEpN_qNXUKbOAV1L_K8t",
+      "name": "Flashcard - Metabolismo Ósseo e Mineral (Raquitismo).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 17. Metabolismo Ósseo e Mineral (Raquitismo) / Flashcard (1) / Flashcard - Metabolismo Ósseo e Mineral (Raquitismo).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1thjHylbraW8lz_vxYbzZGmVyhNmsQqgI",
+      "name": "Flashcard - Metabolismo Ósseo e Mineral (Osteoporose e Doença Óssea de Paget).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 18. Metabolismo Ósseo e Mineral (Osteoporose e Doença Óssea de Paget) / Flashcard (1) / Flashcard - Metabolismo Ósseo e Mineral (Osteoporose e Doença Óssea de Paget).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1VcXycaIcaDDdipiWygarG6-KDdbqVZrz",
+      "name": "Flashcard - Adrenal (Morfologia Adrenal).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 19. Adrenal (Morfologia Adrenal) / Flashcard (1) / Flashcard - Adrenal (Morfologia Adrenal).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1ZBMT7GGBmpKUOf8jrW5ByIv5ogx-2TpA",
+      "name": "Flashcard - Adrenal (Hipocortisolismo - Insuficiência Adrenal).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 20. Adrenal (Hipocortisolismo - Insuficiência Adrenal) / Flashcard (1) / Flashcard - Adrenal (Hipocortisolismo - Insuficiência Adrenal).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1o91TpqzDp_PBOKYQaS-nZnVJy0IMJfev",
+      "name": "Flashcard - Adrenal (Hipercortisolismo - Síndrome de Cushing).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 21. Adrenal (Hipercortisolismo - Síndrome de Cushing) / Flashcard (1) / Flashcard - Adrenal (Hipercortisolismo - Síndrome de Cushing).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1j7mhl2izDkqLxuoav7pDz6s-y3pQB4Hn",
+      "name": "Flashcard - Adrenal (Feocromocitoma, Hiperaldosteronismo e Incidentaloma Adrenal).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 22. Adrenal (Feocromocitoma, Hiperaldosteronismo e Incidentaloma Adrenal) / Flashcard (1) / Flashcard - Adrenal (Feocromocitoma, Hiperaldosteronismo e Incidentaloma Adrenal).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1z3477uS0p8WLerTyNYg743Q25xkKrpHL",
+      "name": "Flashcard - Perioperatório (Controle Glicêmico e Manejo dos Glicocorticoides).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 23. Perioperatório (Controle Glicêmico e Manejo dos Glicocorticoides) / Flashcard (1) / Flashcard - Perioperatório (Controle Glicêmico e Manejo dos Glicocorticoides).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "15d6sXSUuXNS-mWRXjtpBN6yZL3hhaTUt",
+      "name": "Flashcard - Hipófise (Fisiologia da Hipófise e Hipopituitarismo).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 24. Hipófise (Fisiologia da Hipófise e Hipopituitarismo) / Flashcard (1) / Flashcard - Hipófise (Fisiologia da Hipófise e Hipopituitarismo).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "18WFz25jNcrtlmWTMxcgUxNsoeYOzYGAm",
+      "name": "Flashcard - Hipófise (Fisiologia da Hipófise e Hipopituitarismo).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 25. Hipófise (Acromegalia e Incidentaloma Hipofisário) / Flashcard (1) / Flashcard - Hipófise (Fisiologia da Hipófise e Hipopituitarismo).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1JlnceUp7Z8_SJvnufuW_7qoH1TUA0Z1G",
+      "name": "Flashcard - Hipófise (Hiperprolactinemia).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 26. Hipófise (Hiperprolactinemia) / Flashcard (1) / Flashcard - Hipófise (Hiperprolactinemia).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1vWtQxBoKNHBDxbQvQE-E8GtAgqPrY0P0",
+      "name": "Flashcard - Neoplasias Enndócrinas Múltiplas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 27. Neoplasias Enndócrinas Múltiplas / Flashcard (1) / Flashcard - Neoplasias Enndócrinas Múltiplas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1GMkDaovx0LSwOv7iYk3is1cjbZuzZ-NP",
+      "name": "Flashcard - Hipoglicemia no Paciente Não Diabético.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 28. Hipoglicemia no Paciente Não Diabético / Flashcard (1) / Flashcard - Hipoglicemia no Paciente Não Diabético.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1yUI-LYJS9lTDOi6pIb7whvpN-5nFm4iq",
+      "name": "Flashcard - Incongruência de Gênero.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Endocrinologia / 29. Incongruência de Gênero / Flashcard (1) / Flashcard - Incongruência de Gênero.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1ZodAF1E9zbk0yQqyq8qszZPGNwv894MC",
+      "name": "Flashcard - Hemorragia Digestiva Alta Não Varicosa.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Gastroenterologia / 01. Hemorragia Digestiva Alta Não Varicosa / Flashcard (1) / Flashcard - Hemorragia Digestiva Alta Não Varicosa.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1B5--IJFVaIpke1mgh-lg9FpiVnMjZyat",
+      "name": "Flashcard - Hemorragia Digestiva Alta Varicosa.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Gastroenterologia / 02. Hemorragia Digestiva Alta Varicosa / Flashcard (1) / Flashcard - Hemorragia Digestiva Alta Varicosa.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1S8mhDt_cKbJ_gjSOKpj7vb7wzvC3gl6I",
+      "name": "Flashcard - Hemorragia Digestiva Baixa.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Gastroenterologia / 03. Hemorragia Digestiva Baixa / Flashcard (1) / Flashcard - Hemorragia Digestiva Baixa.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1F4AE38y71piCvi1LL3w0Sms-jgVMa8ko",
+      "name": "Flashcard - Pancreatite Aguda e Crônica (Pancreatites).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Gastroenterologia / 08. Pancreatite Aguda e Crônica (Pancreatites) / Flashcard (1) / Flashcard - Pancreatite Aguda e Crônica (Pancreatites).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "13jpis5Zp2Vld0Uh57Ei9Qu4FRQA_rSTS",
+      "name": "Flashcard - Introdução ao Estudo das Anemias.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Hematologia / 01. Introdução ao Estudo das Anemias / Flashcard (1) / Flashcard - Introdução ao Estudo das Anemias.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1AXre16Tnp6fnzozx1UYy7ALIlKbXtuCt",
+      "name": "Flashcard - Anemias Macrocíticas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Hematologia / 03. Anemias Macrocíticas / Flashcard (1) / Flashcard - Anemias Macrocíticas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1klfrB5Bc__L7ClUi3FKBe0Ks3nTpK-wP",
+      "name": "Flashcard - Anemias Hemolíticas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Hematologia / 04. Anemias Hemolíticas / Flashcard (1) / Flashcard - Anemias Hemolíticas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1gR-hkhezA27iYgpytWHis7d1goV5QRfM",
+      "name": "Flashcard - Leucemias Crônicas, Mieloproliferações e Linfomas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Hematologia / 07. Leucemias Crônicas, Mieloproliferações e Linfomas / Flashcard (1) / Flashcard - Leucemias Crônicas, Mieloproliferações e Linfomas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1PJE1lsP_z_4r2qIg0E8t39pUi1i0GJIt",
+      "name": "Flashcard - Mieloma Múltiplo (Gamopatias Monoclonais).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Hematologia / 08. Mieloma Múltiplo (Gamopatias Monoclonais) / Flashcard (1) / Flashcard - Mieloma Múltiplo (Gamopatias Monoclonais).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1hcdTJuuxfzgIKVCFEN4V1xK5-IGG5XBd",
+      "name": "Flahcard - Hemostasia I - Conceitos Básicos e Medicações Anticoagulantes.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Hematologia / 09. Hemostasia I - Conceitos Básicos e Medicações Anticoagulantes / Flashcard (1) / Flahcard - Hemostasia I - Conceitos Básicos e Medicações Anticoagulantes.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1RsTXVz3ET8EjiD58ac9ZCeykX8d72Vut",
+      "name": "Flashcard - Hemostasia II - Doenças Hemostáticas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Hematologia / 10. Hemostasia II - Doenças Hemostáticas / Flashcard (1) / Flashcard - Hemostasia II - Doenças Hemostáticas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1hxr0iUpn7k7wRyp5l0rZF5XVLl34Rxz1",
+      "name": "Flashcard - Medicina Transfusional.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Hematologia / 11. Medicina Transfusional / Flashcard (1) / Flashcard - Medicina Transfusional.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1yhz9uaCNMCaTwFvGEJsGLJl6zeZkFNSa",
+      "name": "Flashcard - Introdução à Hepatologia.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Hepatologia / 01. Introdução à Hepatologia / Flashcard (1) / Flashcard - Introdução à Hepatologia.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1iiKizGmkt1U-6BGtQcUUNRPw-zppi1iH",
+      "name": "Flashcard - Hepatites Virais.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Hepatologia / 02. Hepatites Virais / Flashcard (1) / Flashcard - Hepatites Virais.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1AIbAFkZchnEtiXEmxzdE3Gg3vrn4Y2aB",
+      "name": "Flashcard - Meningites (Infecções do Sistema Nervoso Central).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 01. Meningites (Infecções do Sistema Nervoso Central) / Flashcard (1) / Flashcard - Meningites (Infecções do Sistema Nervoso Central).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1398nKDgm5SF6rCmciQC50hiibhoYh_J4",
+      "name": "Flashcard - Leptospirose.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 02. Leptospirose / Flashcard (1) / Flashcard - Leptospirose.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "19JWmEK5cKZiyf6jK6G-ecvjWyclLsYIm",
+      "name": "Flashcard - Malária.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 03. Malária / Flashcard (1) / Flashcard - Malária.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1wXAnwhWZexJGX__joluiohBsmnjPj4aA",
+      "name": "Flashcard - Animais Peçonhentos.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 04. Animais Peçonhentos / Flashcard (1) / Flashcard - Animais Peçonhentos.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1BUtJsXHxJ8Tvhz8vHTPj64qjrhapVBFJ",
+      "name": "Flashcard - Influenza.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 05. Influenza / Flashcard (1) / Flashcard - Influenza.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1gwGBcb-N2W_oDbcAwuvIm84oSR_jgU7b",
+      "name": "Flashcard - HIV.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 06. HIV / Flashcard (1) / Flashcard - HIV.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1cJOHz4tBBBuWqtB5TvO5PqbZ8WZ3ZOTZ",
+      "name": "Flashcard - Sepse.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 07. Sepse / Flashcard (1) / Flashcard - Sepse.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1k3_85tvLsV-Sioz8csXsRTDPeOTbGLRR",
+      "name": "Flashcard - Antibióticos.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 08. Antibióticos / Flashcard (1) / Flashcard - Antibióticos.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1KIMKY0-k2T0M2rwiGtvWhUSZW34YHPpd",
+      "name": "Flashcard - Arboviroses (Dengue, Chikungunya e Zika).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 09. Arboviroses (Dengue, Chikungunya e Zika) / Flashcard (1) / Flashcard - Arboviroses (Dengue, Chikungunya e Zika).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "18YJjcR3WNGTQkdWqJIn-ZaS-CvvMy-cX",
+      "name": "Flashcard - Micoses Invasivas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 10. Micoses Invasivas / Flashcard (1) / Flashcard - Micoses Invasivas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "13qzpi6a2TGwoNWuyvkZPPjTFkxgipqsB",
+      "name": "Flashcard - Tuberculose.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 11. Tuberculose / Flashcard (1) / Flashcard - Tuberculose.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "11mkb4rRdJAAHotV7MdfId8JA32C5bs29",
+      "name": "Flashcard - Parasitoses.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 12. Parasitoses / Flashcard (1) / Flashcard - Parasitoses.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1Gxu9SZeGRRLBIrasmZ_fNFDBRKJJy659",
+      "name": "Flashcard - Neutropenia Febril e Febre de Origem Indeterminada.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 13. Neutropenia Febril e Febre de Origem Indeterminada / Flashcard (1) / Flashcard - Neutropenia Febril e Febre de Origem Indeterminada.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1oP_e_yNYFm5J-xjOaMjfi_W26DgTIAol",
+      "name": "Flashcard - Endocardite Bacteriana (Endocardite Infecciosa).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 14. Endocardite Bacteriana (Endocardite Infecciosa) / Flashcard (1) / Flashcard - Endocardite Bacteriana (Endocardite Infecciosa).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1fFpHGiv27qPfmiElrQuSynZWKPR0XO-9",
+      "name": "Flashcard - Infecções Relacionadas à Assistência em Saúde (IRAS).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 15. Infecções Relacionadas à Assistência em Saúde (IRAS) / Flashcard (1) / Flashcard - Infecções Relacionadas à Assistência em Saúde (IRAS).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1mhue0G3nu3Pudv6rZJcZaLVpbzHjK71i",
+      "name": "Flashcard - Hepatoesplenomegalias Infecciosas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 16. Hepatoesplenomegalias Infecciosas / Flashcard (1) / Flashcard - Hepatoesplenomegalias Infecciosas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1nxwBUncqnnclT7h9LsSY1AQXd-nFOCZf",
+      "name": "Flashcard - Sindome Febril Íctero-hemorrágica.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 17. Sindome Febril Íctero-hemorrágica / Flashcard (1) / Flashcard - Sindome Febril Íctero-hemorrágica.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1IpRgAkDd-VRT6g5dJf-4G6Q8_v8BPLe0",
+      "name": "Flashcard - Covid-19.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 18. Covid-19 / Flashcard (1) / Flashcard - Covid-19.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1JBuuAodtb5XWJBFtmbdIUzCIJrwI7-0V",
+      "name": "Flashcard - Aula Bônus - Sífilis e Outras ISTs.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 19. Aula Bônus - Sífilis e Outras ISTs / Flashcard (1) / Flashcard - Aula Bônus - Sífilis e Outras ISTs.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1KWF92mX8jEezL7-pTrXNcttr_dFF78Pl",
+      "name": "Flashcard - Pneumonias Bacterianas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 20. Pneumonias Bacterianas / Flashcard (1) / Flashcard - Pneumonias Bacterianas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "16IDw9LZUTEUJXbEyEPGzfUQ9nTKFf3yF",
+      "name": "Flashcard - Raiva, Tétano, Mordedura e Arranhadura Animal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Infectologia / 21. Raiva, Tétano, Mordedura e Arranhadura Animal / Flashcard (1) / Flashcard - Raiva, Tétano, Mordedura e Arranhadura Animal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1wKlu478XkdtN2Nu50qnq4JMTWP0r0XH4",
+      "name": "Flashcard - Doenças Glomerulares.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Nefrologia / 01. Doenças Glomerulares / Flashcard (1) / Flashcard - Doenças Glomerulares.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1unSNC37JDViiqPP6d0-jWFmxqRcwv9Ly",
+      "name": "Flashcard - Lesão Renal Aguda (LRA).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Nefrologia / 02. Lesão Renal Aguda (LRA) / Flashcard (1) / Flashcard - Lesão Renal Aguda (LRA).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1CgamMrwhUIDcWCAByUu_gh_yOGtPmlCF",
+      "name": "Flashcard - Doença Renal Crônica (DRC) - Parte I.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Nefrologia / 03. Doença Renal Crônica (DRC) - Parte I / Flashcard (1) / Flashcard - Doença Renal Crônica (DRC) - Parte I.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1l0dVpYyHqGL5apksHVmqbaJ1xV5GdOm3",
+      "name": "Flashcard - Doença Renal Crônica (DRC) - Parte II.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Nefrologia / 04. Doença Renal Crônica (DRC) - Parte II / Flashcard (1) / Flashcard - Doença Renal Crônica (DRC) - Parte II.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "11QUKfqKH-R2wrN0OYzVH1f2EM4HJ4Njm",
+      "name": "Flascard - Distúrbios Ácido-Básicos.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Nefrologia / 05. Distúrbios Ácido-Básicos / Flashcard (1) / Flascard - Distúrbios Ácido-Básicos.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "12GBHOYR5yGPtHiqbOO1aLm2a7OGdiJhy",
+      "name": "Flashcard - Análise da Gasometria Arterial.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Nefrologia / 06. Análise da Gasometria Arterial / Flashcard (1) / Flashcard - Análise da Gasometria Arterial.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1OiuQQ2ui7znf1n3cLUNQp_MulP1nDuz6",
+      "name": "Flashcard - Distúrbios do Sódio - Disnatremias.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Nefrologia / 07. Distúrbios do Sódio - Disnatremias / Flashcard (1) / Flashcard - Distúrbios do Sódio - Disnatremias.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1W9o-LGa4FFfqWmTvWa7B8L92ZKNGTZX-",
+      "name": "Flashcard - Distúrbios do Potássio.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Nefrologia / 08. Distúrbios do Potássio / Flashcard (1) / Flashcard - Distúrbios do Potássio.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1orwjyenRLHn2dJRSvh_dG9xuo7cGQ6hX",
+      "name": "Flashcard - Túbulo-Interstício Renal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Nefrologia / 09. Túbulo-Interstício Renal / Flashcard (1) / Flashcard - Túbulo-Interstício Renal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1MZHHrob14tZbAT7IkxH9eOz8JJ4NSoRZ",
+      "name": "Flashcard - ITU - Infecção do Trato Urinário.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Nefrologia / 10. ITU - Infecção do Trato Urinário / Flashcard (1) / Flashcard - ITU - Infecção do Trato Urinário.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1fdeC8RcbFFiBXvsN9V4JJqwau3EsX_za",
+      "name": "Flashcard - Nefrolitíase.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Nefrologia / 11. Nefrolitíase / Flashcard (1) / Flashcard - Nefrolitíase.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "17FpguRJNKcgLqefHxRfIZTFuEqHYVesg",
+      "name": "Flashcard - Coma e Alterações da Consciência.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Neurologia / 01. Coma e Alterações da Consciência / Flashcard (1) / Flashcard - Coma e Alterações da Consciência.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1CcS6gnpCsEyqXW_hln_cypeGBeY6twNm",
+      "name": "Flashcard - Anatomia, Fisiologia e Semiologia Neurológica.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Neurologia / 02. Anatomia, Fisiologia e Semiologia Neurológica / Flashcard (1) / Flashcard - Anatomia, Fisiologia e Semiologia Neurológica.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1_e7pp03U_CSE9McawdtVjClqUHXTeVo_",
+      "name": "Flashcard - Cefaleias.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Neurologia / 03. Cefaleias / Flashcard (1) / Flashcard - Cefaleias.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1rSB8K2xHsKhwyVU8pWYvaFYf6h0yuy6P",
+      "name": "Flashcard - Demências.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Neurologia / 04. Demências / Flashcard (1) / Flashcard - Demências.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1AselKXHETgkj8np6_L_ZacENDoMTqH3r",
+      "name": "Flashcard - Epilepsias.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Neurologia / 05. Epilepsias / Flashcard (1) / Flashcard - Epilepsias.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1sWAVk5BR6kLyBQKrbPuJ_bxOmAH2MzIR",
+      "name": "Flashcard - Acidentes Vasculares Cerebrais.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Neurologia / 06. Acidentes Vasculares Cerebrais / Flashcard (1) / Flashcard - Acidentes Vasculares Cerebrais.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1NScOqPDkG-Y1ZDzTEoIwuVbU9toc6FJI",
+      "name": "Flashcard 1 - Doenças Neuromusculares.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Neurologia / 07. Doenças Neuromusculares / Flashcard (2) / Flashcard 1 - Doenças Neuromusculares.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1CRKvB19b29tTnXWPuFj9sT-5tUWTPwkH",
+      "name": "Flashcard 2 - Doenças Neuromusculares.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Neurologia / 07. Doenças Neuromusculares / Flashcard (2) / Flashcard 2 - Doenças Neuromusculares.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1xv5Ak3n-Qo7yc_Mu_FNxYqDHliWXoJoQ",
+      "name": "Flashcard - Distúrbios do Movimento.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Neurologia / 08. Distúrbios do Movimento / Flashcard (1) / Flashcard - Distúrbios do Movimento.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1uPg7b1wTINRNEi3eiAAWontsAZym9R-D",
+      "name": "Flashcard - Traumatismo Cranioencefálico.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Neurologia / 09. Traumatismo Cranioencefálico / Flashcard (1) / Flashcard - Traumatismo Cranioencefálico.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1rXWSTvaPa1NZ4zAjvHSxSPNwZ1H1a3BQ",
+      "name": "Flashcard - Distúrbios do Sono.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Neurologia / 10. Distúrbios do Sono / Flashcard (1) / Flashcard - Distúrbios do Sono.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1skQrJbC2W7HaZ_iAR0JhwyeDTadCv2HJ",
+      "name": "Flashcard - Doenças Desmielinizantes e Encefalites Autoimunes.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Neurologia / 11. Doenças Desmielinizantes e Encefalites Autoimunes / Flashcard (1) / Flashcard - Doenças Desmielinizantes e Encefalites Autoimunes.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1DMSrVUHc-etvqc4jp3HhxJlu8ETk1N0W",
+      "name": "Flashcard - Tumores Intracranianos.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Neurologia / 12. Tumores Intracranianos / Flashcard (1) / Flashcard - Tumores Intracranianos.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1zrk5nlIttGignFk_wSIp1UuF1BGuECUc",
+      "name": "Flashcard - Derrame Pleural.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Pneumologia / 01. Derrame Pleural / Flashcard (1) / Flashcard - Derrame Pleural.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1qVDBy4lrsw39y1wWOGYTakBUVORzFLaZ",
+      "name": "Flashcard - Doença Pulmonar Obstrutiva Crônica (DPOC).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Pneumologia / 02. Doença Pulmonar Obstrutiva Crônica (DPOC) / Flashcard (1) / Flashcard - Doença Pulmonar Obstrutiva Crônica (DPOC).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1FtD0SN9mImv93EVVr3Ld8AL_YcfYEM_f",
+      "name": "Flashcard - Tromboembolismo Pulmonar (TEP).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Pneumologia / 03. Tromboembolismo Pulmonar (TEP) / Flashcard (1) / Flashcard - Tromboembolismo Pulmonar (TEP).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1dZCTP46p0kPsOlDViQNHIipxbKoUuchE",
+      "name": "Flashcard - Introdução a Pneumologia.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Pneumologia / 04. Introdução à Pneumologia / Flashcard (1) / Flashcard - Introdução a Pneumologia.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1N21i3_IKIAm3FTxhR0UzEN1_K4DgW56C",
+      "name": "Flashcard - Asma.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Pneumologia / 06. Asma / Flashcard (1) / Flashcard - Asma.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1E-7qcktAy4sP5oYjSaEwe0AJEgNvO310",
+      "name": "Flashcard - Miscelânea (Interstício, Bronquiectasias, Hipertensão Pulmonar e Pneumotórax).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Pneumologia / 07. Miscelânea (Interstício, Bronquiectasias, Hipertensão Pulmonar e Pneumotórax) / Flashcard (1) / Flashcard - Miscelânea (Interstício, Bronquiectasias, Hipertensão Pulmonar e Pneumotórax).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1HOH8uppVR23v7XCh2QyMsx_dgSVjF24l",
+      "name": "Flashcard - Neoplasias Pulmonares.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Pneumologia / 08. Neoplasias Pulmonares / Flashcard (1) / Flashcard - Neoplasias Pulmonares.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1IHTZO8VlkotLPqC2-kd3qh-pwKl4xx-U",
+      "name": "Flashcard - Introdução à Reumatologia.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Reumatologia / 01. Introdução à Reumatologia / Flashcard (1) / Flashcard - Introdução à Reumatologia.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "105Ag7D2IYCLMvF4faWIqxOKi5Y4h_Gft",
+      "name": "Flashcard - Doenças Autoimunes do Tecido Conjuntivo.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Reumatologia / 02. Doenças Autoimunes do Tecido Conjuntivo / Flashcard (1) / Flashcard - Doenças Autoimunes do Tecido Conjuntivo.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1-OVzGUDgGXr_85RuXI8ekumWJrji9w7S",
+      "name": "Flashcard - Lúpus Eritematoso Sistêmico e Síndrome Antifosfolípide.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Reumatologia / 03. Lúpus Eritematoso Sistêmico e Síndrome Antifosfolípide / Flashcard (1) / Flashcard - Lúpus Eritematoso Sistêmico e Síndrome Antifosfolípide.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1yW7CUTl-5TcwCVC1enbUEUm4PoSonqGS",
+      "name": "Flashcard - Artrite Reumatoide (Apêndice - Medicações na Reumatologia).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Reumatologia / 04. Artrite Reumatoide (Apêndice - Medicações na Reumatologia) / Flashcard (1) / Flashcard - Artrite Reumatoide (Apêndice - Medicações na Reumatologia).pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "149o9ZTL1scczZz_7ZYzL5Ba-Hy4ip6aj",
+      "name": "Flashcard - Espondiloartrites.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Reumatologia / 05. Espondiloartrites / Flashcard (1) / Flashcard - Espondiloartrites.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1uSAVJeEZW1KhVmjGQyZb9Ctxnd67J_UF",
+      "name": "Flashcard - Vasculites.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Reumatologia / 06. Vasculites / Flashcard (1) / Flashcard - Vasculites.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1qIFKaJ5vrWl796p6mG4-4NU4wpli2-kO",
+      "name": "Flashcard - Artrites Microcristalinas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Reumatologia / 07. Artrites Microcristalinas / Flashcard (1) / Flashcard - Artrites Microcristalinas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1u3ieq2oeZOSIGTelszI-iksMWr23plGV",
+      "name": "Flashcard - Síndromes Dolorosas Crônicas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Reumatologia / 08. Síndromes Dolorosas Crônicas / Flashcard (1) / Flashcard - Síndromes Dolorosas Crônicas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1mPIMc2qjBoiXkkxPmyCiXY5gVwaiwXBo",
+      "name": "Flashcard - Doenças do Osso e da Cartilagem.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Reumatologia / 09. Doenças do Osso e da Cartilagem / Flashcard (1) / Flashcard - Doenças do Osso e da Cartilagem.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1D8IEnZ65ssqs53c4ydgh9DWK7GvmVTJK",
+      "name": "Flashcard - Artropatias Infecciosas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Reumatologia / 10. Artropatias Infecciosas / Flashcard (1) / Flashcard - Artropatias Infecciosas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1kIGuTbXmaycTvaVwAyh_LbllctQqlc1f",
+      "name": "Flashcard - Miscelânea.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Reumatologia / 11. Miscelânea / Flashcard (1) / Flashcard - Miscelânea.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "17L2yOBnBSKp2nI6gl0ZkdXKtqX1p3n7_",
+      "name": "Flashcard - Reumatologia Pediátrica.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Reumatologia / 12. Reumatologia Pediátrica / Flashcard (1) / Flashcard - Reumatologia Pediátrica.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1sSAKSEn2SuG4h11bGOt-WxlM2hDgyQel",
+      "name": "Flashcard - Manifestações Reumatológicas e Doenças Sistêmicas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Clínica Médica / Reumatologia / 13. Manifestações Reumatológicas e Doenças Sistêmicas / Flashcard (1) / Flashcard - Manifestações Reumatológicas e Doenças Sistêmicas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Clínica Médica"
+    },
+    {
+      "id": "1LD5NlQi0AuZdL_DkUQco8XYSNIpi6K6s",
+      "name": "Flashcard - Ciclo Menstrual.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 01. Ciclo Menstrual / Flashcard (1) / Flashcard - Ciclo Menstrual.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "13fDu17X5cAaZ9fmWSwgp3-IdDCINtskX",
+      "name": "Flashcard - Planejamento Familiar.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 02. Planejamento Familiar / Flashcard (1) / Flashcard - Planejamento Familiar.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1Pr9mmcuRgKg1bbJ4FCZaELPAOWIhwVcL",
+      "name": "Flashcard - Amenorreia.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 03. Amenorreia / Flashcard (1) / Flashcard - Amenorreia.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1pg85XNug0j5a2WTyDQGg1OcXa7-tUtVh",
+      "name": "Flashcard - Síndromes dos Ovários Policísticos.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 04. Síndromes dos Ovários Policísticos / Flashcard (1) / Flashcard - Síndromes dos Ovários Policísticos.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1htUJlJMGdmzQwKhqU1G2WOk8n16d-VBz",
+      "name": "Flashcard - Endometriose.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 05. Endometriose / Flashcard (1) / Flashcard - Endometriose.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1e331reZCcHrjpKJzP278LBlgB0BFjee5",
+      "name": "Flashcard - Adenomiose.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 06. Adenomiose / Flashcard (1) / Flashcard - Adenomiose.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1ONZTbXs2WjQxzjriwnmbIB25khXCWUvF",
+      "name": "Flashcard - Pólipos Uterinos.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 07. Pólipos Uterinos / Flashcard (1) / Flashcard - Pólipos Uterinos.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1dkLJOLRH8bzfuXJ4L4dcOm9I23cDQ7Oq",
+      "name": "Flashcard - Rastreamento do Câncer de Mama.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 08. Rastreamento do Câncer de Mama / Flashcard (1) / Flashcard - Rastreamento do Câncer de Mama.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "12da5wc4K5QtHjIkEeZHb4frrMqPwZE2l",
+      "name": "Flashcard - Sangramento Uterino Anormal (SUA).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 09. Sangramento Uterino Anormal (SUA) / Flashcard (1) / Flashcard - Sangramento Uterino Anormal (SUA).pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "14ljevyeuF2vHe9RU1_YM0Ih71ah1QqhN",
+      "name": "Flashcard - Doenças Benignas da Mama.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 10. Doenças Benignas da Mama / Flashcard (1) / Flashcard - Doenças Benignas da Mama.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "14YzeuHQ7BOHEeY9I3YD21e19AHeQI-W3",
+      "name": "Flashcard - Incontinência Urinária.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 11. Incontinência Urinária / Flashcard (1) / Flashcard - Incontinência Urinária.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1Xbtcv4MSzUd5mGIsMAWCuRUvAzbBvIq-",
+      "name": "Flashcard - Câncer de Mama.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 12. Câncer de Mama / Flashcard (1) / Flashcard - Câncer de Mama.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1X8ZUSDGoVVS1_ipUp7Xg-_p-t8j9djSL",
+      "name": "Flashcard - Câncer de Mama.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 13. Câncer do Corpo do Útero / Flashcard (1) / Flashcard - Câncer de Mama.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1Q5TOQjylJwJao4w-Nfrt4qAHz5R-OUVZ",
+      "name": "Flashcard - Câncer do Corpo do Útero.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 14. Tumores Anexiais e Câncer de Ovário / Flashcard (1) / Flashcard - Câncer do Corpo do Útero.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1ZoSV-HaJuUtUkeGFv7Yc9IuWIHd_w1q2",
+      "name": "Flashcard - Doenças de Vulva e Vagina.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 15. Doenças de Vulva e Vagina / Flashcard (1) / Flashcard - Doenças de Vulva e Vagina.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1Su1WP5YVjwOB164YoF3YFvkONeMJkAzj",
+      "name": "Flashcard - Vulvovaginites.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 16. Vulvovaginites / Flashcard (1) / Flashcard - Vulvovaginites.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1l69-h0abnXVb4ZjLB6F47XoARETUSTXo",
+      "name": "Flashcard - Cervicites.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 17. Cervicites / Flashcard (1) / Flashcard - Cervicites.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1ju3Q7UTl5o9PLtO79UZOpxSa-_hQgdCt",
+      "name": "Flashcard - Doença Inflamatória Pélvica (DIP).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 18. Doença Inflamatória Pélvica (DIP) / Flashcard (1) / Flashcard - Doença Inflamatória Pélvica (DIP).pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1ivRXSqswAsdpXcNQysan81gaqa6sWbVD",
+      "name": "Flashcard - Úlceras Genitais.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 19. Úlceras Genitais / Flashcard (1) / Flashcard - Úlceras Genitais.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1kE1NtjqGzYFxPCbKk3SZO1QTqUMC712Z",
+      "name": "Flashcard - Assistência à Vítima de Violência Sexual.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 20. Assistência à Vítima de Violência Sexual / Flashcard (1) / Flashcard - Assistência à Vítima de Violência Sexual.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1KYUvD9wLp_bzS7udowrF3Fik5jFfDPUh",
+      "name": "Flashcard - Rastreamento do Câncer de Colo de Útero.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 21. Rastreamento do Câncer de Colo de Útero / Flashcard (1) / Flashcard - Rastreamento do Câncer de Colo de Útero.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "13FvJ-ykYPCx1jUB9MoFlmESd0wVndsL5",
+      "name": "Flashcard - Câncer de Colo Uterino.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 22. Câncer de Colo Uterino / Flashcard (1) / Flashcard - Câncer de Colo Uterino.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1mn3mtdi6qppp_W3OhdIoYphnCOm_rzvE",
+      "name": "Flashcard - Climatério e Terapia Hormonal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 23. Climatério e Terapia Hormonal / Flashcard (1) / Flashcard - Climatério e Terapia Hormonal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1mdklntIXo04QR-dUASI88uhvZsJ4N-8M",
+      "name": "Flashcard - Miomatose Uterina.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 24. Miomatose Uterina / Flashcard (1) / Flashcard - Miomatose Uterina.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1i0H0bKJ5OvkcBY_pcYomf02D42r12ZcF",
+      "name": "Flashcard - Prolapso de Órgãos Pélvicos.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 25. Prolapso de Órgãos Pélvicos / Flashcard (1) / Flashcard - Prolapso de Órgãos Pélvicos.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1zHLQH9wF1ZCGDwwSA_T5waIMSZU0MmLP",
+      "name": "Flashcard - Anatomia e Embriologia do Trato Genital Feminino.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 26. Anatomia e Embriologia do Trato Genital Feminino / Flashcard (1) / Flashcard - Anatomia e Embriologia do Trato Genital Feminino.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1lR4y91LglicbPnjwFioyJg2JyQadVvQY",
+      "name": "Flashcard - Infertilidade Conjugal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 27. Infertilidade Conjugal / Flashcard (1) / Flashcard - Infertilidade Conjugal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1Kjq7ika0HRoxfyr2bIYIro2ryZFr38lc",
+      "name": "Flashcard - Dor Pélvica Crônica e Dismenorreia.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 28. Dor Pélvica Crônica e Dismenorreia / Flashcard (1) / Flashcard - Dor Pélvica Crônica e Dismenorreia.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1nFwu26HmL0YWb2dGYiP5qn_9uY0DB6i3",
+      "name": "Flashcard - Sexualidade.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 29. Sexualidade / Flashcard (1) / Flashcard - Sexualidade.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1Fq8Rb9oOtis2_kR3yUU0qb53NCBTvzoe",
+      "name": "Flashcard - Síndrome Pré-Menstrual.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 30. Síndrome Pré-Menstrual / Flashcard (1) / Flashcard - Síndrome Pré-Menstrual.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "17fIF9WHNVH2tgxMIZHR_4MbKxBKsVHmU",
+      "name": "Flashcard - Abdome Agudo em Ginecologia.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Ginecologia / 31. Abdome Agudo em Ginecologia / Flashcard (1) / Flashcard - Abdome Agudo em Ginecologia.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1mbCRScFIzD-NL5P7hGuFmj8y90RLpPzh",
+      "name": "Flashcard - TPP - Prematuridade e Trabalho de Parto Prematuro.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 01. TPP - Prematuridade e Trabalho de Parto Prematuro / Flashcard (1) / Flashcard - TPP - Prematuridade e Trabalho de Parto Prematuro.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1T_o4gKKxhTwwbCilhO-DntsLML0KBizt",
+      "name": "Flashcard - Rotura Prematura de Membranas (RPM).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 02. Rotura Prematura de Membranas (RPM) / Flashcard (1) / Flashcard - Rotura Prematura de Membranas (RPM).pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1e6Dk8EbY-1LDsX5AzYm7UqfcFZvKCydD",
+      "name": "Flashcard - HPP - Hemorragia Pós-Parto.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 03. HPP - Hemorragia Pós-Parto / Flashcard (1) / Flashcard - HPP - Hemorragia Pós-Parto.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1vdJ_yKnEKucsV_KGG3sRHWkIAYXRFx2Z",
+      "name": "Flashcard - Gestação Múltipla.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 04. Gestação Múltipla / Flashcard (1) / Flashcard - Gestação Múltipla.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1Xi22YMF5XZzVMyPvwWNOGreS624f1iOC",
+      "name": "Flashcard - Partograma e Distocias.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 05. Partograma e Distocias / Flashcard (1) / Flashcard - Partograma e Distocias.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1iu10FRB0hiRTlLS5k1_xVkuDPYeIKgoJ",
+      "name": "Flashcard - Bacia Obstétrica, Pelvimetria e Estática Fetal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 06. Bacia Obstétrica, Pelvimetria e Estática Fetal / Flashcard (1) / Flashcard - Bacia Obstétrica, Pelvimetria e Estática Fetal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "18MlB5FP_-x3sJRgAP1iMpZg3n3WP_QTN",
+      "name": "Flashcard - Infecção Puerperal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 07. Infecção Puerperal / Flashcard (1) / Flashcard - Infecção Puerperal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1m25_Lu8NShFOPrUFJ42gysHuFtMDNUZJ",
+      "name": "Flashcard - Sífilis na Gestação e Sífilis Congênita.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 08. Sífilis na Gestação e Sífilis Congênita / Flashcard (1) / Flashcard - Sífilis na Gestação e Sífilis Congênita.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1c8crHuN7wHotT4O40c_TYisGl279UL9P",
+      "name": "Flashcard - Infecções Congênitas na Gestação.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 09. Infecções Congênitas na Gestação / Flashcard (1) / Flashcard - Infecções Congênitas na Gestação.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1lu9A2N9SRzSWNY07bZkws8ZwO_MSq_cQ",
+      "name": "Flashcard - Aloimunização Materna e Doença Hemolítica Perinatal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 10. Aloimunização Materna e Doença Hemolítica Perinatal / Flashcard (1) / Flashcard - Aloimunização Materna e Doença Hemolítica Perinatal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1O16nRILlTM-yB4qm5yI6gbM06XMdJcZd",
+      "name": "Flashcard - Alteração do Volume do Líquido Aminiótico.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 11. Alteração do Volume do Líquido Aminiótico / Flashcard (1) / Flashcard - Alteração do Volume do Líquido Aminiótico.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1qRKecGIMOGJAi6UXF6y8Op50iYGYqSe9",
+      "name": "Flashcard - Modificações Fisiológicas da Gestação.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 12. Modificações Fisiológicas da Gestação / Flashcard (1) / Flashcard - Modificações Fisiológicas da Gestação.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1rXVbKcxB9X-3asFGbk8Cr_YyrolKkOhF",
+      "name": "Flashcard - Síndromes Hipertensivas da Gestação.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 14. Síndromes Hipertensivas da Gestação / Flashcard (1) / Flashcard - Síndromes Hipertensivas da Gestação.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1YOpYGxKR55czMPvpCmx2RInUD_Jekgv_",
+      "name": "Flashcard - Vitalidade Fetal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 15. Vitalidade Fetal / Flashcard (1) / Flashcard - Vitalidade Fetal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1aljkkaQHUY2Tvverr1LUy_aYpA0a9ShJ",
+      "name": "Flashcard - Assistência ao Parto.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 16. Assistência ao Parto / Flashcard (1) / Flashcard - Assistência ao Parto.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1ZvXD5SKEjhOSJYvASK8C_7DSSHjGCQX-",
+      "name": "Flashcard - Parto Vaginal Operatório.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 17. Parto Vaginal Operatório / Flashcard (1) / Flashcard - Parto Vaginal Operatório.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "14tC07inU5iMealGG0UmqZCKwV0Lk2-0C",
+      "name": "Flashcard - Indução do Parto e Pós-Datismo.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 19. Indução do Parto e Pós-Datismo / Flashcard (1) / Flashcard - Indução do Parto e Pós-Datismo.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1I1HtBogGZPNITfp3ngR7a3iPmYJy6PNN",
+      "name": "Flashcard - Restrição de Crescimento Fetal e Óbito Fetal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 20. Restrição de Crescimento Fetal e Óbito Fetal / Flashcard (1) / Flashcard - Restrição de Crescimento Fetal e Óbito Fetal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1hh3lvS-hjR4PSKCOUEsReL68xpt-AaZu",
+      "name": "Flashcard - Pré-Natal.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 21. Pré-Natal / Flashcard (1) / Flashcard - Pré-Natal.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1fe1lrLxPNJ5EmTsMV6GpqoVK0oLduPZ7",
+      "name": "Flashcard - Ultrassom em Obstetrícia.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 22. Ultrassom em Obstetrícia / Flashcard (1) / Flashcard - Ultrassom em Obstetrícia.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1Uc7hy8GFqaYnRmFwazNjDw7V529ncxm0",
+      "name": "Flashcard - Diabetes Mellitus na Gestação.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 23. Diabetes Mellitus na Gestação / Flashcard (1) / Flashcard - Diabetes Mellitus na Gestação.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "14owE0AdvyTwUoW10drKbAYSlqBx4cl1J",
+      "name": "Flashcard - Sangramento da Primeira Metade.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 24. Sangramento da Primeira Metade / Flashcard (1) / Flashcard - Sangramento da Primeira Metade.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1ZoPSBz8wwfHRPZwkkOUNUVwWWKcilZ3H",
+      "name": "Flashcard - Sagramento da Segunda Metade.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Ginecologia e Obstetrícia / Obstetrícia / 25. Sagramento da Segunda Metade / Flashcard (1) / Flashcard - Sagramento da Segunda Metade.pdf",
+      "course": "APOSTILAS",
+      "subject": "Ginecologia e Obstetrícia"
+    },
+    {
+      "id": "1zKrpshN2BBTJfGujWM9C3OqjqPL3xmdD",
+      "name": "Flashcard - Histologia e Fisiologia da Pele e Lesões Elementares.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Dermatologia / 01. Histologia e Fisiologia da Pele e Lesões Elementares / Flashcard (1) / Flashcard - Histologia e Fisiologia da Pele e Lesões Elementares.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "17KaDDr71PMkrjTCZpdhK_7qCEamXZ68A",
+      "name": "Flashcard - Hanseníase.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Dermatologia / 02. Hanseníase / Flashcard (1) / Flashcard - Hanseníase.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1SXwKMtc4QENJ7e5EawhEYmdqPaG7xkEr",
+      "name": "Flashcard - Oncologia Cutânea (Câncer de Pele).pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Dermatologia / 03. Oncologia Cutânea (Câncer de Pele) / Flashcard (1) / Flashcard - Oncologia Cutânea (Câncer de Pele).pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1c8Yy3Y4iOq4EO6mhnfS_9QVYBxssO3uo",
+      "name": "Flashcard - Dermatoses Infecciosas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Dermatologia / 04. Dermatoses Infecciosas / Flashcard (1) / Flashcard - Dermatoses Infecciosas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1d6McdBD8dieFQVCnCKDWokZS3BKoxRCF",
+      "name": "Flashcard - Dermatoses Eczematosas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Dermatologia / 05. Dermatoses Eczematosas / Flashcard (1) / Flashcard - Dermatoses Eczematosas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1lD_gdjHqK7wbkxKnBcCu2vs3flJLrZqT",
+      "name": "Flashcard - Farmacodermias.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Dermatologia / 06. Farmacodermias / Flashcard (1) / Flashcard - Farmacodermias.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1hMkqCxLMmiDTw5MSdTLXG8683Q7P5IV0",
+      "name": "Flashcard - Dermatoses Papuloescamosas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Dermatologia / 07. Dermatoses Papuloescamosas / Flashcard (1) / Flashcard - Dermatoses Papuloescamosas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1m_Xl5fKdRMaEkemSzoYaR8l1bnLDnuZk",
+      "name": "Flashcard - Dermatoses Vesicobolhosas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Dermatologia / 08. Dermatoses Vesicobolhosas / Flashcard (1) / Flashcard - Dermatoses Vesicobolhosas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1FSJtFUOunDTHjXCRkH8ComN6-iuwx36d",
+      "name": "Flashcard - Síndromes Verrucosas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Dermatologia / 10. Síndromes Verrucosas / Flashcard (1) / Flashcard - Síndromes Verrucosas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1JffzIh01UUzMARtJw1JplFG4I29z_Pdz",
+      "name": "Flashcard - Piodermites.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Dermatologia / 11. Piodermites / Flashcard (1) / Flashcard - Piodermites.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1rdaykM7xVpwTgfCVhypyXcg67tRkAJWl",
+      "name": "Flashcard - Quadril Pediátrico.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Ortopedia / 01. Quadril Pediátrico / Flashcard (1) / Flashcard - Quadril Pediátrico.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1-EvJkeoex0_nqJzUy3lyYnKHH2OiwM_x",
+      "name": "Flashcard - Politrauma Ortopédico.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Ortopedia / 02. Politrauma Ortopédico / Flashcard (1) / Flashcard - Politrauma Ortopédico.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "177DF-GDEIVG9_DnwPW_J4ltD8Kes4v_O",
+      "name": "Flashcard 1 - Transtornos do Humor.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Psiquiatria / 01. Transtornos do Humor / Flashcard (2) / Flashcard 1 - Transtornos do Humor.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1wzQTk6z59B-N2iNgQpvdpQa8rH0Egjfo",
+      "name": "Flashcard 2 - Transtornos do Humor.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Psiquiatria / 01. Transtornos do Humor / Flashcard (2) / Flashcard 2 - Transtornos do Humor.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1VD7s9mmLQyMFxRXjpDkIHpz4lE4oT8vp",
+      "name": "Flashcard - Transtornos de Ansiedade.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Psiquiatria / 02. Transtornos de Ansiedade / Flashcard (1) / Flashcard - Transtornos de Ansiedade.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1drkXY5G3iAsQzRd7tGOLldH9BTWJauU0",
+      "name": "Flashcard - Transtornos Psicóticos.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Psiquiatria / 03. Transtornos Psicóticos / Flashcard (1) / Flashcard - Transtornos Psicóticos.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1DaDr-WRNC-IiVYm27DjZfH9g-tATvT9T",
+      "name": "Flashcard - Dependência Química.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Psiquiatria / 04. Dependência Química / Flashcard (1) / Flashcard - Dependência Química.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1pBzo2_xfujnwaBNW4pIfhJioP_Hrpgu-",
+      "name": "Flashcard - TOC, Transtornos Somáticos, Dissociativos e do Estresse.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Psiquiatria / 05. TOC, Transtornos Somáticos, Dissociativos e do Estresse / Flashcard (1) / Flashcard - TOC, Transtornos Somáticos, Dissociativos e do Estresse.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1cMequuN93qybOM513LBrXdZ5WkPx0evQ",
+      "name": "Flashcard - Psiquiatria Infantil.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Psiquiatria / 06. Psiquiatria Infantil / Flashcard (1) / Flashcard - Psiquiatria Infantil.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1QuJpec-IvgdCx3Rgrl3Tpkg_C2qjFaFt",
+      "name": "Flashcard - Transtornos Alimentares.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Psiquiatria / 08. Transtornos Alimentares / Flashcard (1) / Flashcard - Transtornos Alimentares.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1aUEMFxTu_PAD7Nl7HIQubhwNMwdPmQRc",
+      "name": "Flashcard - Psicofarmacologia.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Psiquiatria / 09. Psicofarmacologia / Flashcard (1) / Flashcard - Psicofarmacologia.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1_bDFyA2Jb_I9KFtg9f0ixa-t2pjscGQN",
+      "name": "Flashcard - Psicopatologia.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Psiquiatria / 10. Psicopatologia / Flashcard (1) / Flashcard - Psicopatologia.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1VZlKd6F35oYUjXYznO8eHMZlKCrHvQ4Z",
+      "name": "Flashcard - Psiquiatria Social e Reforma Psiquiátrica.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Psiquiatria / 11. Psiquiatria Social e Reforma Psiquiátrica / Flashcard (1) / Flashcard - Psiquiatria Social e Reforma Psiquiátrica.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1Zw6hE6xAsMywB3ZJVofoFTXiefuFxBuF",
+      "name": "Flashcard - Intoxicações Exógenas.pdf",
+      "path": "APOSTILAS / Apostilas Médicas 2025 - EMED / Outras Especialidades / Psiquiatria / 12. Intoxicações Exógenas / Flashcard (1) / Flashcard - Intoxicações Exógenas.pdf",
+      "course": "APOSTILAS",
+      "subject": "Outras Especialidades"
+    },
+    {
+      "id": "1uMTe2Z8pXNVAyAtmz2OtY0RVFpPkzG82",
+      "name": "Flashcards_-_Nor.pdf",
+      "path": "Estratégia / Estratégia MED 2024 / Extensivo / Medicina Preventiva - Extensivo / Bases de Saúde do Trabalhador e Normas Regulamentadoras / 1 / Flashcards_-_Nor.pdf",
+      "course": "Estratégia",
+      "subject": "Extensivo"
+    }
+  ]
+}

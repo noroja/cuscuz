@@ -1,0 +1,43 @@
+# Rodar o Cuscuz-MED no seu computador
+
+Node 22 ou superior. O app lê o arquivo `.env` sozinho.
+
+## Modo 1 — tudo local (sem Vercel)
+1. `npm install`
+2. Se `.env` ainda não existir, copie `.env.example` para `.env`. Configure ao menos uma chave de IA (`GEMINI_API_KEY`, `GROQ_API_KEY` ou `OPENROUTER_API_KEY`) para habilitar geração; configure o Drive apenas se for usar materiais sincronizados. `MEDIA_TICKET_SECRET` protege links temporários de mídia e não é a senha de login.
+3. `npm run local` e abra http://localhost:3000.
+4. No celular, na mesma rede Wi-Fi: `http://<IP-do-PC>:3000` (o servidor escuta em todas as interfaces; libere a porta 3000 no firewall se precisar).
+
+Login: o cadastro público permanece desativado. Login Google exige Supabase configurado e uma conta autorizada; login local exige uma conta já existente em `data/users.json`. Um `.env` sozinho não cria uma conta.
+
+Limites: só funciona com o PC ligado. Sem Supabase, usuários e sessões ficam em `data/` neste computador. Os dados de estudo (marcações, planner) ficam no navegador de cada aparelho. Sem chaves de IA, os fluxos determinísticos continuam disponíveis, mas as gerações dependentes de provedor ficam indisponíveis.
+
+### Chaves por funcionalidade de IA
+
+- Texto, Aula do Dia, Mentor e mapas mentais: pelo menos uma chave entre Gemini, Groq ou OpenRouter.
+- Transcrição: Groq para Whisper; Gemini é usado como reserva quando configurado.
+- Busca semântica do acervo: Hugging Face (`HF_TOKEN` com acesso ao EmbeddingGemma) e Supabase (`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`); Cohere (`COHERE_API_KEY`) é opcional para refinar a ordem dos resultados. Gere o índice com `npm run index:acervo-semantico`.
+- Login Google, usuários duráveis e armazenamento do índice: Supabase configurado. Login Google também depende do provedor Google habilitado no Supabase e de uma conta previamente autorizada.
+
+`npm run local` lê `.env` automaticamente. O `.env` local é ignorado pelo Git; nunca copie chaves para `.env.example` nem as envie em logs ou mensagens.
+
+As variáveis cadastradas no projeto Vercel são usadas pelo app publicado. O comando `vercel env pull` pode substituir valores secretos por `[SENSITIVE]`; esse marcador não é uma chave válida. Para desenvolvimento local, configure credenciais próprias no `.env` e evite apontar o processo local para dados de produção sem intenção explícita.
+
+## Modo 2 — híbrido: site na Vercel, vídeos e PDFs no seu PC
+Objetivo: parar de gastar a "Transferência rápida de origem" (10 GB no plano Hobby). Vídeos e PDFs são o que mais pesa, e passam inteiros pela função da Vercel. Com este modo a Vercel só **redireciona** (poucos bytes) e o arquivo vem do seu PC.
+
+1. No PC, o `.env` precisa ter o mesmo `MEDIA_TICKET_SECRET` (ou `APP_PASSWORD` legado) da Vercel, além das mesmas credenciais do Drive.
+2. `npm run local:midia`. Sobe na porta 3001 (mude com `MEDIA_PORT`). Esse modo responde **somente** `/m/*` e `/api/health`; todo o resto é 404, então é seguro expor num túnel.
+3. Publique a porta em HTTPS, por exemplo:
+   - Cloudflare: `cloudflared tunnel --url http://localhost:3001` (o endereço muda a cada execução, salvo túnel nomeado).
+   - Tailscale: `tailscale funnel 3001` (endereço fixo `https://<pc>.<tailnet>.ts.net`).
+4. Confira: `curl https://SEU-ENDERECO/api/health` deve responder `ok`.
+5. Na Vercel, defina `MEDIA_ORIGIN=https://SEU-ENDERECO` (sem barra final) e faça o redeploy.
+
+Como funciona: `/api/drive/stream/:id`, `/api/drive/pdf/:id` e `/m/:ticket` na Vercel respondem `307` para `MEDIA_ORIGIN/m/<ticket>`. O navegador baixa direto do seu PC. Sem `MEDIA_ORIGIN`, nada muda.
+
+Atenção:
+- Com o PC desligado ou o túnel fora do ar, vídeos e PDFs não abrem.
+- A banda passa a ser a do upload da sua internet.
+- Os limites e termos do túnel escolhido valem para você; não foram verificados aqui.
+- As rotas `/api/drive/*` exigem sessão do Cuscuz-MED. Os links `/m/<ticket>` são credenciais temporárias de posse, válidas por até 12 horas; não os compartilhe.

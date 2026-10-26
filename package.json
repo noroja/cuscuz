@@ -3,17 +3,34 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "build": "echo 'Build complete'",
-    "lint": "echo 'Lint passed'"
+    "local": "node server.js",
+    "local:midia": "node scripts/media-host.mjs",
+    "auth:bootstrap-admin": "node --env-file=.env scripts/bootstrap-super-admin.mjs",
+    "build": "node scripts/build-public.js",
+    "index:flashcards-pdf": "node scripts/build-flashcard-pdf-index.mjs",
+    "index:acervo-semantico": "node scripts/index-acervo-semantic.mjs",
+    "index:isc": "node scripts/index-isc.mjs",
+    "index:questions": "node scripts/index-questions.mjs",
+    "lint": "echo 'Lint passed'",
+    "test": "node scripts/tests/media-format.test.mjs && node scripts/tests/ai-provider.test.mjs && node scripts/tests/aula-flashcards-unit.test.mjs && node scripts/tests/aula-qualidade.test.mjs && node scripts/tests/auth-private.test.mjs && node scripts/tests/auth-interface.test.mjs && node scripts/tests/planner-academico.test.mjs && node scripts/tests/study-navigation.test.mjs && node scripts/tests/study-interface.test.mjs && node scripts/tests/acervo-interface.test.mjs && node scripts/tests/acervo-search.test.mjs && node scripts/tests/acervo-semantic.test.mjs && node scripts/tests/isc-semantic.test.mjs && node scripts/tests/isc-routes.test.mjs && node scripts/tests/isc-video-index.test.mjs && node scripts/tests/smart-questions-selection.test.mjs && node scripts/tests/question-index.test.mjs && node scripts/tests/aula-day-workspace.test.mjs && node scripts/tests/media-origin.test.mjs && node scripts/tests/drive-direct.test.mjs && node scripts/tests/mentor-content.test.mjs && node scripts/tests/planner-manual.test.mjs && node scripts/tests/aula-pedagogia.test.mjs && node scripts/tests/aula-dia.test.mjs && node scripts/tests/transcription-evaluation.test.mjs && node scripts/tests/aula-source-coverage.test.mjs && node scripts/tests/ai-workflow.test.mjs && node scripts/tests/aula-workflow.test.mjs && node --test scripts/*.test.js && node scripts/tests/console-regressions.test.mjs",
+    "test:acervo-search": "node scripts/tests/acervo-search.test.mjs"
   },
   "dependencies": {
-    "@google/genai": "^2.24.0",
     "@supabase/supabase-js": "^2.117.2",
+    "anki-apkg-parser": "^2.0.0",
     "cheerio": "^1.2.0",
+    "dompurify": "^3.4.17",
     "express": "^4.21.2",
-    "openai": "^7.23.0"
+    "markdown-it": "^15.0.3",
+    "mpegts.js": "1.8.2",
+    "openai": "^7.23.0",
+    "pdf-parse": "^1.1.1",
+    "yauzl": "^3.4.0"
   }
 }
